@@ -1,0 +1,175 @@
+import { afterAll, describe, expect, it } from "vitest";
+import { app } from "./app";
+
+afterAll(async () => {
+    await app.close();
+});
+
+describe("GET /health", () => {
+    it("returns an ok status", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/health",
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({
+            status: "ok",
+        });
+    });
+});
+
+describe("POST /videos", () => {
+    it("creates a video", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos",
+            payload: {
+                title: "Bachata lesson summary",
+                sourceType: "youtube",
+                sourceUrl: "https://youtube.com/watch?v=test123",
+            },
+        });
+
+        expect(response.statusCode).toBe(201);
+        expect(response.json()).toMatchObject({
+            title: "Bachata lesson summary",
+            sourceType: "youtube",
+            sourceUrl: "https://youtube.com/watch?v=test123",
+        });
+    });
+
+    it("rejects a video with missing required fields", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos",
+            payload: {
+                title: "Incomplete lesson",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toEqual({
+            error: "title, sourceType, and sourceUrl are required",
+        });
+    });
+});
+
+describe("POST /videos/:videoId/segments", () => {
+    it("creates a segment for an existing video", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/sample-video-1/segments",
+            payload: {
+                name: "Shoulder roll transition",
+                description: "Keep the movement continuous.",
+                startSeconds: 500,
+                endSeconds: 530,
+                tags: ["isolation", "transition"],
+                difficulty: "hard",
+                confidence: "low",
+                practicePriority: "high",
+            },
+        });
+
+        expect(response.statusCode).toBe(201);
+        expect(response.json()).toMatchObject({
+            videoId: "sample-video-1",
+            name: "Shoulder roll transition",
+            startSeconds: 500,
+            endSeconds: 530,
+            difficulty: "hard",
+            confidence: "low",
+            practicePriority: "high",
+        });
+    });
+
+    it("rejects a segment for a video that does not exist", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/not-real/segments",
+            payload: {
+                name: "Missing video segment",
+                startSeconds: 10,
+                endSeconds: 20,
+            },
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: "Video not found",
+        });
+    });
+
+    it("rejects a segment whose end is not after its start", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/sample-video-1/segments",
+            payload: {
+                name: "Invalid timestamp segment",
+                startSeconds: 30,
+                endSeconds: 20,
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toEqual({
+            error: "endSeconds must be greater than startSeconds",
+        });
+    });
+});
+
+describe("GET /segments", () => {
+    it("filters segments by tag", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/segments?tag=wave",
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        const body = response.json();
+
+        expect(body.segments).toHaveLength(2);
+        expect(
+            body.segments.every((segment: { tags: string[] }) =>
+                segment.tags.includes("wave")
+            )
+        ).toBe(true);
+    });
+});
+
+describe("GET /practice-queue", () => {
+    it("orders segments by practice priority", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/practice-queue",
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        const body = response.json();
+        const priorityRank = {
+            high: 3,
+            medium: 2,
+            low: 1,
+        };
+
+        for (let index = 1; index < body.segments.length; index++) {
+            const previousSegment = body.segments[index - 1];
+            const currentSegment = body.segments[index];
+
+            const previousPriority =
+                priorityRank[
+                    previousSegment.practicePriority as keyof typeof priorityRank
+                ];
+
+            const currentPriority =
+                priorityRank[
+                    currentSegment.practicePriority as keyof typeof priorityRank
+                ];
+
+            expect(previousPriority).toBeGreaterThanOrEqual(currentPriority);
+        }
+    });
+});
