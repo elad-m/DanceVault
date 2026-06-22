@@ -1,0 +1,57 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Video {
+  id         String    @id @default(uuid())
+  title      String
+  sourceType String
+  sourceUrl  String
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  segments   Segment[]
+}
+
+enum Difficulty {
+  easy
+  medium
+  hard
+  very_hard
+}
+
+enum Confidence {
+  low
+  medium
+  high
+}
+
+enum PracticePriority {
+  low
+  medium
+  high
+}
+
+model Segment {
+  id               String           @id @default(uuid())
+  videoId          String
+  name             String
+  description      String?
+  startSeconds     Int
+  endSeconds       Int
+  tags             String[]
+  difficulty       Difficulty       @default(medium)
+  confidence       Confidence       @default(medium)
+  practicePriority PracticePriority @default(medium)
+  createdAt        DateTime         @default(now()) @db.Timestamptz(3)
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+}
