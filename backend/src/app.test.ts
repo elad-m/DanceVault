@@ -146,6 +146,126 @@ describe("POST /videos", () => {
     });
 });
 
+describe("PATCH /videos/:videoId", () => {
+    it("updates editable video properties", async () => {
+        const video = await prisma.video.create({
+            data: {
+                title: "Video before update",
+                sourceType: "youtube",
+                sourceUrl: "https://youtube.com/watch?v=before-update",
+            },
+        });
+
+        const response = await app.inject({
+            method: "PATCH",
+            url: `/videos/${video.id}`,
+            payload: {
+                title: "Updated test lesson",
+                sourceType: "external_url",
+                sourceUrl: "https://example.com/updated-video",
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({
+            id: video.id,
+            title: "Updated test lesson",
+            sourceType: "external_url",
+            sourceUrl: "https://example.com/updated-video",
+        });
+
+        const savedVideo = await prisma.video.findUniqueOrThrow({
+            where: {
+                id: video.id,
+            },
+        });
+
+        expect(savedVideo.title).toBe("Updated test lesson");
+    });
+
+    it("returns 404 for a video that does not exist", async () => {
+        const response = await app.inject({
+            method: "PATCH",
+            url: "/videos/not-real",
+            payload: {
+                title: "Missing video",
+            },
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: "Video not found",
+        });
+    });
+
+    it("rejects an empty update", async () => {
+        const response = await app.inject({
+            method: "PATCH",
+            url: "/videos/sample-video-1",
+            payload: {},
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+});
+
+describe("DELETE /videos/:videoId", () => {
+    it("deletes a video and its segments", async () => {
+        const video = await prisma.video.create({
+            data: {
+                title: "Video to delete",
+                sourceType: "external_url",
+                sourceUrl: "https://example.com/video-to-delete",
+                segments: {
+                    create: {
+                        name: "Dependent segment",
+                        startSeconds: 10,
+                        endSeconds: 20,
+                        tags: [],
+                    },
+                },
+            },
+            include: {
+                segments: true,
+            },
+        });
+
+        const response = await app.inject({
+            method: "DELETE",
+            url: `/videos/${video.id}`,
+        });
+
+        expect(response.statusCode).toBe(204);
+        expect(response.body).toBe("");
+
+        const deletedVideo = await prisma.video.findUnique({
+            where: {
+                id: video.id,
+            },
+        });
+        const deletedSegment = await prisma.segment.findUnique({
+            where: {
+                id: video.segments[0].id,
+            },
+        });
+
+        expect(deletedVideo).toBeNull();
+        expect(deletedSegment).toBeNull();
+    });
+
+    it("returns 404 for a video that does not exist", async () => {
+        const response = await app.inject({
+            method: "DELETE",
+            url: "/videos/not-real",
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: "Video not found",
+        });
+    });
+});
+
 describe("POST /videos/:videoId/segments", () => {
     it("creates a segment for an existing video", async () => {
         const response = await app.inject({
