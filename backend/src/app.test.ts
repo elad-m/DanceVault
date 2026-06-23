@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { app } from "./app";
+import { buildApp } from "./app";
 import { prisma } from "./db";
+
+const app = buildApp();
 
 beforeAll(async () => {
     await prisma.segment.deleteMany();
