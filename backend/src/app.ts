@@ -1,8 +1,15 @@
 import Fastify from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { prisma } from "./db";
 
 export const app = Fastify({
     logger: true,
+    ajv: {
+        customOptions: {
+            coerceTypes: false,
+            removeAdditional: false,
+        },
+    },
 });
 
 type Difficulty = "easy" | "medium" | "hard" | "very_hard";
@@ -10,6 +17,21 @@ type Difficulty = "easy" | "medium" | "hard" | "very_hard";
 type Confidence = "low" | "medium" | "high";
 
 type PracticePriority = "low" | "medium" | "high";
+
+const difficultySchema = {
+    type: "string",
+    enum: ["easy", "medium", "hard", "very_hard"],
+} as const;
+
+const confidenceSchema = {
+    type: "string",
+    enum: ["low", "medium", "high"],
+} as const;
+
+const practicePrioritySchema = {
+    type: "string",
+    enum: ["low", "medium", "high"],
+} as const;
 
 app.get("/health", async () => {
     return { status: "ok" };
@@ -80,7 +102,7 @@ app.get<{
     };
 });
 
-app.get<{
+type SearchSegmentsRequest = {
     Querystring: {
         tag?: string;
         difficulty?: Difficulty;
@@ -88,8 +110,33 @@ app.get<{
         practicePriority?: PracticePriority;
         text?: string;
     };
-}>("/segments", async (request) => {
+};
 
+const searchSegmentsRoute = "/segments";
+
+const searchSegmentsRouteOptions = {
+    schema: {
+        querystring: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+                tag: {
+                    type: "string",
+                },
+                text: {
+                    type: "string",
+                },
+                difficulty: difficultySchema,
+                confidence: confidenceSchema,
+                practicePriority: practicePrioritySchema,
+            },
+        },
+    },
+} as const;
+
+async function searchSegmentsHandler(
+    request: FastifyRequest<SearchSegmentsRequest>
+) {
     const tag = request.query.tag;
     const difficulty = request.query.difficulty;
     const confidence = request.query.confidence;
@@ -131,7 +178,13 @@ app.get<{
     return {
         segments: results,
     };
-});
+}
+
+app.get<SearchSegmentsRequest>(
+    searchSegmentsRoute,
+    searchSegmentsRouteOptions,
+    searchSegmentsHandler
+);
 
 app.get("/practice-queue", async () => {
     const queue = await prisma.segment.findMany({
@@ -150,20 +203,45 @@ app.get("/practice-queue", async () => {
     };
 });
 
-app.post<{
+type CreateVideoRequest = {
     Body: {
-        title?: string;
-        sourceType?: string;
-        sourceUrl?: string;
+        title: string;
+        sourceType: string;
+        sourceUrl: string;
     };
-}>("/videos", async (request, reply) => {
-    const { title, sourceType, sourceUrl } = request.body;
+};
 
-    if (!title || !sourceType || !sourceUrl) {
-        return reply.status(400).send({
-            error: "title, sourceType, and sourceUrl are required",
-        });
-    }
+const createVideoRoute = "/videos";
+
+const createVideoRouteOptions = {
+    schema: {
+        body: {
+            type: "object",
+            additionalProperties: false,
+            required: ["title", "sourceType", "sourceUrl"],
+            properties: {
+                title: {
+                    type: "string",
+                    minLength: 1,
+                },
+                sourceType: {
+                    type: "string",
+                    minLength: 1,
+                },
+                sourceUrl: {
+                    type: "string",
+                    minLength: 1,
+                },
+            },
+        },
+    },
+} as const;
+
+async function createVideoHandler(
+    request: FastifyRequest<CreateVideoRequest>,
+    reply: FastifyReply
+) {
+    const { title, sourceType, sourceUrl } = request.body;
 
     const video = await prisma.video.create({
         data: {
@@ -174,23 +252,70 @@ app.post<{
     });
 
     return reply.status(201).send(video);
-});
+}
 
-app.post<{
+app.post<CreateVideoRequest>(
+    createVideoRoute,
+    createVideoRouteOptions,
+    createVideoHandler
+);
+
+type CreateSegmentRequest = {
     Params: {
         videoId: string;
     };
     Body: {
-        name?: string;
+        name: string;
         description?: string;
-        startSeconds?: number;
-        endSeconds?: number;
+        startSeconds: number;
+        endSeconds: number;
         tags?: string[];
         difficulty?: Difficulty;
         confidence?: Confidence;
         practicePriority?: PracticePriority;
     };
-}>("/videos/:videoId/segments", async (request, reply) => {
+};
+
+const createSegmentRoute = "/videos/:videoId/segments";
+const createSegmentRouteOptions = {
+    schema: {
+        body: {
+            type: "object",
+            additionalProperties: false,
+            required: ["name", "startSeconds", "endSeconds"],
+            properties: {
+                name: {
+                    type: "string",
+                    minLength: 1,
+                },
+                description: {
+                    type: "string",
+                },
+                startSeconds: {
+                    type: "integer",
+                    minimum: 0,
+                },
+                endSeconds: {
+                    type: "integer",
+                    minimum: 1,
+                },
+                tags: {
+                    type: "array",
+                    items: {
+                        type: "string",
+                    },
+                },
+                difficulty: difficultySchema,
+                confidence: confidenceSchema,
+                practicePriority: practicePrioritySchema,
+            },
+        },
+    },
+} as const;
+async function createSegmentHandler(
+    request: FastifyRequest<CreateSegmentRequest>,
+    reply: FastifyReply
+) {
     const video = await prisma.video.findUnique({
         where: {
             id: request.params.videoId,
@@ -204,11 +329,7 @@ app.post<{
     }
 
     const { name, startSeconds, endSeconds } = request.body;
-    if (!name || startSeconds === undefined || endSeconds === undefined) {
-        return reply.status(400).send({
-            error: "name, startSeconds, and endSeconds are required",
-        });
-    }
+
     if (endSeconds <= startSeconds) {
         return reply.status(400).send({
             error: "endSeconds must be greater than startSeconds",
@@ -230,4 +351,9 @@ app.post<{
     });
 
     return reply.status(201).send(segment);
-});
+}
+app.post<CreateSegmentRequest>(
+    createSegmentRoute,
+    createSegmentRouteOptions,
+    createSegmentHandler
+);

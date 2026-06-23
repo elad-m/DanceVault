@@ -98,9 +98,49 @@ describe("POST /videos", () => {
         });
 
         expect(response.statusCode).toBe(400);
-        expect(response.json()).toEqual({
-            error: "title, sourceType, and sourceUrl are required",
+    });
+
+    it("rejects an empty video title", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos",
+            payload: {
+                title: "",
+                sourceType: "youtube",
+                sourceUrl: "https://youtube.com/watch?v=test123",
+            },
         });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects video fields with the wrong type", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos",
+            payload: {
+                title: "Bachata lesson summary",
+                sourceType: 42,
+                sourceUrl: "https://youtube.com/watch?v=test123",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects unexpected video properties", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos",
+            payload: {
+                title: "Bachata lesson summary",
+                sourceType: "youtube",
+                sourceUrl: "https://youtube.com/watch?v=test123",
+                admin: true,
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
     });
 });
 
@@ -166,6 +206,123 @@ describe("POST /videos/:videoId/segments", () => {
             error: "endSeconds must be greater than startSeconds",
         });
     });
+
+    it("rejects an unsupported difficulty value", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/sample-video-1/segments",
+            payload: {
+                name: "Invalid difficulty segment",
+                startSeconds: 70,
+                endSeconds: 80,
+                difficulty: "impossible",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects an unsupported confidence value", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/sample-video-1/segments",
+            payload: {
+                name: "Invalid confidence segment",
+                startSeconds: 90,
+                endSeconds: 100,
+                confidence: "uncertain",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects an unsupported practice priority value", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/sample-video-1/segments",
+            payload: {
+                name: "Invalid priority segment",
+                startSeconds: 110,
+                endSeconds: 120,
+                practicePriority: "urgent",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects a negative start time", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/sample-video-1/segments",
+            payload: {
+                name: "Negative timestamp segment",
+                startSeconds: -1,
+                endSeconds: 10,
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects timestamps with the wrong type", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/sample-video-1/segments",
+            payload: {
+                name: "Wrong timestamp type segment",
+                startSeconds: "five",
+                endSeconds: 10,
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects tags containing non-string values", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/sample-video-1/segments",
+            payload: {
+                name: "Invalid tags segment",
+                startSeconds: 130,
+                endSeconds: 140,
+                tags: ["wave", 42],
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects an empty segment name", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/sample-video-1/segments",
+            payload: {
+                name: "",
+                startSeconds: 150,
+                endSeconds: 160,
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects unexpected properties", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/sample-video-1/segments",
+            payload: {
+                name: "Unexpected property segment",
+                startSeconds: 170,
+                endSeconds: 180,
+                admin: true,
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
 });
 
 describe("GET /segments", () => {
@@ -185,6 +342,42 @@ describe("GET /segments", () => {
                 segment.tags.includes("wave")
             )
         ).toBe(true);
+    });
+
+    it("rejects an unsupported difficulty filter", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/segments?difficulty=impossible",
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects an unsupported confidence filter", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/segments?confidence=uncertain",
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects an unsupported practice priority filter", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/segments?practicePriority=urgent",
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects unknown query parameters", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/segments?sortBy=magic",
+        });
+
+        expect(response.statusCode).toBe(400);
     });
 });
 
