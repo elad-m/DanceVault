@@ -381,6 +381,189 @@ describe("GET /segments", () => {
     });
 });
 
+describe("GET /segments/:segmentId", () => {
+    it("returns an existing segment", async () => {
+        const existingSegment = await prisma.segment.findFirstOrThrow({
+            where: {
+                name: "Open stance wave",
+            },
+        });
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/segments/${existingSegment.id}`,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({
+            id: existingSegment.id,
+            name: "Open stance wave",
+            videoId: "sample-video-1",
+        });
+    });
+
+    it("returns 404 for a segment that does not exist", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/segments/not-real",
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: "Segment not found",
+        });
+    });
+});
+
+describe("PATCH /segments/:segmentId", () => {
+    it("updates editable segment properties", async () => {
+        const existingSegment = await prisma.segment.findFirstOrThrow({
+            where: {
+                name: "Open stance wave",
+            },
+        });
+
+        const response = await app.inject({
+            method: "PATCH",
+            url: `/segments/${existingSegment.id}`,
+            payload: {
+                name: "Updated open stance wave",
+                description: "Updated description",
+                startSeconds: 12,
+                endSeconds: 24,
+                tags: ["wave", "updated"],
+                difficulty: "hard",
+                confidence: "high",
+                practicePriority: "low",
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({
+            id: existingSegment.id,
+            name: "Updated open stance wave",
+            description: "Updated description",
+            startSeconds: 12,
+            endSeconds: 24,
+            tags: ["wave", "updated"],
+            difficulty: "hard",
+            confidence: "high",
+            practicePriority: "low",
+        });
+
+        const savedSegment = await prisma.segment.findUniqueOrThrow({
+            where: {
+                id: existingSegment.id,
+            },
+        });
+
+        expect(savedSegment.name).toBe("Updated open stance wave");
+        expect(savedSegment.startSeconds).toBe(12);
+        expect(savedSegment.endSeconds).toBe(24);
+        expect(savedSegment.confidence).toBe("high");
+        expect(savedSegment.practicePriority).toBe("low");
+    });
+
+    it("returns 404 for a segment that does not exist", async () => {
+        const response = await app.inject({
+            method: "PATCH",
+            url: "/segments/not-real",
+            payload: {
+                confidence: "high",
+            },
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: "Segment not found",
+        });
+    });
+
+    it("rejects an empty update", async () => {
+        const existingSegment = await prisma.segment.findFirstOrThrow();
+
+        const response = await app.inject({
+            method: "PATCH",
+            url: `/segments/${existingSegment.id}`,
+            payload: {},
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects unsupported update values", async () => {
+        const existingSegment = await prisma.segment.findFirstOrThrow();
+
+        const response = await app.inject({
+            method: "PATCH",
+            url: `/segments/${existingSegment.id}`,
+            payload: {
+                confidence: "perfect",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("validates timestamps using unchanged stored values", async () => {
+        const existingSegment = await prisma.segment.findFirstOrThrow();
+
+        const response = await app.inject({
+            method: "PATCH",
+            url: `/segments/${existingSegment.id}`,
+            payload: {
+                startSeconds: existingSegment.endSeconds,
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toEqual({
+            error: "endSeconds must be greater than startSeconds",
+        });
+    });
+});
+
+describe("DELETE /segments/:segmentId", () => {
+    it("deletes an existing segment", async () => {
+        const segment = await prisma.segment.create({
+            data: {
+                videoId: "sample-video-1",
+                name: "Segment to delete",
+                startSeconds: 200,
+                endSeconds: 210,
+                tags: [],
+            },
+        });
+
+        const response = await app.inject({
+            method: "DELETE",
+            url: `/segments/${segment.id}`,
+        });
+
+        expect(response.statusCode).toBe(204);
+
+        const deletedSegment = await prisma.segment.findUnique({
+            where: {
+                id: segment.id,
+            },
+        });
+
+        expect(deletedSegment).toBeNull();
+    });
+
+    it("returns 404 for a segment that does not exist", async () => {
+        const response = await app.inject({
+            method: "DELETE",
+            url: "/segments/not-real",
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: "Segment not found",
+        });
+    });
+});
+
 describe("GET /practice-queue", () => {
     it("orders segments by practice priority", async () => {
         const response = await app.inject({

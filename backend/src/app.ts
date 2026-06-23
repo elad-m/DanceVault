@@ -186,6 +186,176 @@ app.get<SearchSegmentsRequest>(
     searchSegmentsHandler
 );
 
+type GetSegmentRequest = {
+    Params: {
+        segmentId: string;
+    };
+};
+
+const getSegmentRoute = "/segments/:segmentId";
+
+async function getSegmentHandler(
+    request: FastifyRequest<GetSegmentRequest>,
+    reply: FastifyReply
+) {
+    const segment = await prisma.segment.findUnique({
+        where: {
+            id: request.params.segmentId,
+        },
+    });
+
+    if (!segment) {
+        return reply.status(404).send({
+            error: "Segment not found",
+        });
+    }
+
+    return segment;
+}
+
+app.get<GetSegmentRequest>(getSegmentRoute, getSegmentHandler);
+
+type UpdateSegmentRequest = {
+    Params: {
+        segmentId: string;
+    };
+    Body: {
+        name?: string;
+        description?: string;
+        startSeconds?: number;
+        endSeconds?: number;
+        tags?: string[];
+        difficulty?: Difficulty;
+        confidence?: Confidence;
+        practicePriority?: PracticePriority;
+    };
+};
+
+const updateSegmentRoute = "/segments/:segmentId";
+
+const updateSegmentRouteOptions = {
+    schema: {
+        body: {
+            type: "object",
+            additionalProperties: false,
+            minProperties: 1,
+            properties: {
+                name: {
+                    type: "string",
+                    minLength: 1,
+                },
+                description: {
+                    type: "string",
+                },
+                startSeconds: {
+                    type: "integer",
+                    minimum: 0,
+                },
+                endSeconds: {
+                    type: "integer",
+                    minimum: 1,
+                },
+                tags: {
+                    type: "array",
+                    items: {
+                        type: "string",
+                    },
+                },
+                difficulty: difficultySchema,
+                confidence: confidenceSchema,
+                practicePriority: practicePrioritySchema,
+            },
+        },
+    },
+} as const;
+
+async function updateSegmentHandler(
+    request: FastifyRequest<UpdateSegmentRequest>,
+    reply: FastifyReply
+) {
+    const existingSegment = await prisma.segment.findUnique({
+        where: {
+            id: request.params.segmentId,
+        },
+    });
+
+    if (!existingSegment) {
+        return reply.status(404).send({
+            error: "Segment not found",
+        });
+    }
+
+    const nextStartSeconds =
+        request.body.startSeconds ?? existingSegment.startSeconds;
+    const nextEndSeconds =
+        request.body.endSeconds ?? existingSegment.endSeconds;
+
+    if (nextEndSeconds <= nextStartSeconds) {
+        return reply.status(400).send({
+            error: "endSeconds must be greater than startSeconds",
+        });
+    }
+
+    const segment = await prisma.segment.update({
+        where: {
+            id: existingSegment.id,
+        },
+        data: {
+            name: request.body.name,
+            description: request.body.description,
+            startSeconds: request.body.startSeconds,
+            endSeconds: request.body.endSeconds,
+            tags: request.body.tags,
+            difficulty: request.body.difficulty,
+            confidence: request.body.confidence,
+            practicePriority: request.body.practicePriority,
+        },
+    });
+
+    return segment;
+}
+
+app.patch<UpdateSegmentRequest>(
+    updateSegmentRoute,
+    updateSegmentRouteOptions,
+    updateSegmentHandler
+);
+
+type DeleteSegmentRequest = {
+    Params: {
+        segmentId: string;
+    };
+};
+
+const deleteSegmentRoute = "/segments/:segmentId";
+
+async function deleteSegmentHandler(
+    request: FastifyRequest<DeleteSegmentRequest>,
+    reply: FastifyReply
+) {
+    const existingSegment = await prisma.segment.findUnique({
+        where: {
+            id: request.params.segmentId,
+        },
+    });
+
+    if (!existingSegment) {
+        return reply.status(404).send({
+            error: "Segment not found",
+        });
+    }
+
+    await prisma.segment.delete({
+        where: {
+            id: existingSegment.id,
+        },
+    });
+
+    return reply.status(204).send();
+}
+
+app.delete<DeleteSegmentRequest>(deleteSegmentRoute, deleteSegmentHandler);
+
 app.get("/practice-queue", async () => {
     const queue = await prisma.segment.findMany({
         orderBy: [
