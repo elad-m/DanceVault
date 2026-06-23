@@ -5,6 +5,7 @@ import type {
 } from "fastify";
 import { prisma } from "../db";
 import {
+    buildSegmentPlaybackUrl,
     confidenceSchema,
     difficultySchema,
     practicePrioritySchema,
@@ -59,6 +60,23 @@ type CreateSegmentRequest = {
         practicePriority?: PracticePriority;
     };
 };
+
+type SegmentWithPlaybackSource = {
+    startSeconds: number;
+    video: {
+        sourceType: string;
+        sourceUrl: string;
+    };
+};
+
+function toSegmentResponse<T extends SegmentWithPlaybackSource>(segment: T) {
+    const { video, ...segmentData } = segment;
+
+    return {
+        ...segmentData,
+        playbackUrl: buildSegmentPlaybackUrl(video, segment.startSeconds),
+    };
+}
 
 const segmentProperties = {
     name: {
@@ -165,10 +183,18 @@ async function searchSegmentsHandler(
         orderBy: {
             createdAt: "asc",
         },
+        include: {
+            video: {
+                select: {
+                    sourceType: true,
+                    sourceUrl: true,
+                },
+            },
+        },
     });
 
     return {
-        segments: results,
+        segments: results.map(toSegmentResponse),
     };
 }
 
@@ -180,6 +206,14 @@ async function getSegmentHandler(
         where: {
             id: request.params.segmentId,
         },
+        include: {
+            video: {
+                select: {
+                    sourceType: true,
+                    sourceUrl: true,
+                },
+            },
+        },
     });
 
     if (!segment) {
@@ -188,7 +222,7 @@ async function getSegmentHandler(
         });
     }
 
-    return segment;
+    return toSegmentResponse(segment);
 }
 
 async function updateSegmentHandler(
@@ -198,6 +232,14 @@ async function updateSegmentHandler(
     const existingSegment = await prisma.segment.findUnique({
         where: {
             id: request.params.segmentId,
+        },
+        include: {
+            video: {
+                select: {
+                    sourceType: true,
+                    sourceUrl: true,
+                },
+            },
         },
     });
 
@@ -218,11 +260,16 @@ async function updateSegmentHandler(
         });
     }
 
-    return prisma.segment.update({
+    const updatedSegment = await prisma.segment.update({
         where: {
             id: existingSegment.id,
         },
         data: request.body,
+    });
+
+    return toSegmentResponse({
+        ...updatedSegment,
+        video: existingSegment.video,
     });
 }
 
@@ -289,7 +336,12 @@ async function createSegmentHandler(
         },
     });
 
-    return reply.status(201).send(segment);
+    return reply.status(201).send(
+        toSegmentResponse({
+            ...segment,
+            video,
+        })
+    );
 }
 
 export function registerSegmentRoutes(app: FastifyInstance) {
@@ -315,10 +367,18 @@ export function registerSegmentRoutes(app: FastifyInstance) {
                     createdAt: "asc",
                 },
             ],
+            include: {
+                video: {
+                    select: {
+                        sourceType: true,
+                        sourceUrl: true,
+                    },
+                },
+            },
         });
 
         return {
-            segments: queue,
+            segments: queue.map(toSegmentResponse),
         };
     });
     app.post<CreateSegmentRequest>(

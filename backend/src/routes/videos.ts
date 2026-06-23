@@ -4,6 +4,7 @@ import type {
     FastifyRequest,
 } from "fastify";
 import { prisma } from "../db";
+import { buildSegmentPlaybackUrl } from "../domain/segment";
 
 type VideoParams = {
     Params: {
@@ -184,7 +185,13 @@ export function registerVideoRoutes(app: FastifyInstance) {
             });
 
             return {
-                segments: videoSegments,
+                segments: videoSegments.map((segment) => ({
+                    ...segment,
+                    playbackUrl: buildSegmentPlaybackUrl(
+                        video,
+                        segment.startSeconds
+                    ),
+                })),
             };
         }
     );

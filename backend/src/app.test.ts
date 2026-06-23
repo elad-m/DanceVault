@@ -292,6 +292,8 @@ describe("POST /videos/:videoId/segments", () => {
             difficulty: "hard",
             confidence: "low",
             practicePriority: "high",
+            playbackUrl:
+                "https://youtube.com/watch?v=test-video&t=500s",
         });
     });
 
@@ -521,6 +523,8 @@ describe("GET /segments/:segmentId", () => {
             id: existingSegment.id,
             name: "Open stance wave",
             videoId: "sample-video-1",
+            playbackUrl:
+                "https://youtube.com/watch?v=test-video&t=10s",
         });
     });
 
@@ -571,6 +575,8 @@ describe("PATCH /segments/:segmentId", () => {
             difficulty: "hard",
             confidence: "high",
             practicePriority: "low",
+            playbackUrl:
+                "https://youtube.com/watch?v=test-video&t=12s",
         });
 
         const savedSegment = await prisma.segment.findUniqueOrThrow({
