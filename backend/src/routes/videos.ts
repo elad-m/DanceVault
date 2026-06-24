@@ -5,6 +5,7 @@ import type {
 } from "fastify";
 import { prisma } from "../db";
 import { buildSegmentPlaybackUrl } from "../domain/segment";
+import { ApiErrorCode, sendApiError } from "../httpErrors";
 
 type VideoParams = {
     Params: {
@@ -93,8 +94,9 @@ async function updateVideoHandler(
     });
 
     if (!existingVideo) {
-        return reply.status(404).send({
-            error: "Video not found",
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.VideoNotFound,
         });
     }
 
@@ -117,8 +119,9 @@ async function deleteVideoHandler(
     });
 
     if (!existingVideo) {
-        return reply.status(404).send({
-            error: "Video not found",
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.VideoNotFound,
         });
     }
 
@@ -152,8 +155,9 @@ export function registerVideoRoutes(app: FastifyInstance) {
         });
 
         if (!video) {
-            return reply.status(404).send({
-                error: "Video not found",
+            return sendApiError(reply, {
+                statusCode: 404,
+                code: ApiErrorCode.VideoNotFound,
             });
         }
 
@@ -170,8 +174,9 @@ export function registerVideoRoutes(app: FastifyInstance) {
             });
 
             if (!video) {
-                return reply.status(404).send({
-                    error: "Video not found",
+                return sendApiError(reply, {
+                    statusCode: 404,
+                    code: ApiErrorCode.VideoNotFound,
                 });
             }
 

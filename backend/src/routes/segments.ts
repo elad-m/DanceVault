@@ -10,6 +10,7 @@ import {
     difficultySchema,
     practicePrioritySchema,
 } from "../domain/segment";
+import { ApiErrorCode, sendApiError } from "../httpErrors";
 import type {
     Confidence,
     Difficulty,
@@ -23,6 +24,8 @@ type SearchSegmentsRequest = {
         confidence?: Confidence;
         practicePriority?: PracticePriority;
         text?: string;
+        limit?: string;
+        cursor?: string;
     };
 };
 
@@ -120,6 +123,14 @@ const searchSegmentsRouteOptions = {
                 difficulty: difficultySchema,
                 confidence: confidenceSchema,
                 practicePriority: practicePrioritySchema,
+                limit: {
+                    type: "string",
+                    pattern: "^([1-9]|[1-4][0-9]|50)$",
+                },
+                cursor: {
+                    type: "string",
+                    minLength: 1,
+                },
             },
         },
     },
@@ -150,8 +161,16 @@ const createSegmentRouteOptions = {
 async function searchSegmentsHandler(
     request: FastifyRequest<SearchSegmentsRequest>
 ) {
-    const { tag, difficulty, confidence, practicePriority, text } =
+    const {
+        tag,
+        difficulty,
+        confidence,
+        practicePriority,
+        text,
+        cursor,
+    } =
         request.query;
+    const limit = request.query.limit ? Number(request.query.limit) : 20;
 
     const results = await prisma.segment.findMany({
         where: {
@@ -180,9 +199,21 @@ async function searchSegmentsHandler(
                   ]
                 : undefined,
         },
-        orderBy: {
-            createdAt: "asc",
-        },
+        orderBy: [
+            {
+                createdAt: "asc",
+            },
+            {
+                id: "asc",
+            },
+        ],
+        take: limit + 1,
+        cursor: cursor
+            ? {
+                  id: cursor,
+              }
+            : undefined,
+        skip: cursor ? 1 : 0,
         include: {
             video: {
                 select: {
@@ -192,9 +223,15 @@ async function searchSegmentsHandler(
             },
         },
     });
+    const segments = results.slice(0, limit);
+    const hasNextPage = results.length > limit;
+    const nextCursor = hasNextPage
+        ? segments[segments.length - 1]?.id ?? null
+        : null;
 
     return {
-        segments: results.map(toSegmentResponse),
+        segments: segments.map(toSegmentResponse),
+        nextCursor,
     };
 }
 
@@ -217,8 +254,9 @@ async function getSegmentHandler(
     });
 
     if (!segment) {
-        return reply.status(404).send({
-            error: "Segment not found",
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.SegmentNotFound,
         });
     }
 
@@ -244,8 +282,9 @@ async function updateSegmentHandler(
     });
 
     if (!existingSegment) {
-        return reply.status(404).send({
-            error: "Segment not found",
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.SegmentNotFound,
         });
     }
 
@@ -255,8 +294,9 @@ async function updateSegmentHandler(
         request.body.endSeconds ?? existingSegment.endSeconds;
 
     if (nextEndSeconds <= nextStartSeconds) {
-        return reply.status(400).send({
-            error: "endSeconds must be greater than startSeconds",
+        return sendApiError(reply, {
+            statusCode: 400,
+            code: ApiErrorCode.InvalidSegmentTimestamps,
         });
     }
 
@@ -284,8 +324,9 @@ async function deleteSegmentHandler(
     });
 
     if (!existingSegment) {
-        return reply.status(404).send({
-            error: "Segment not found",
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.SegmentNotFound,
         });
     }
 
@@ -309,16 +350,18 @@ async function createSegmentHandler(
     });
 
     if (!video) {
-        return reply.status(404).send({
-            error: "Video not found",
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.VideoNotFound,
         });
     }
 
     const { name, startSeconds, endSeconds } = request.body;
 
     if (endSeconds <= startSeconds) {
-        return reply.status(400).send({
-            error: "endSeconds must be greater than startSeconds",
+        return sendApiError(reply, {
+            statusCode: 400,
+            code: ApiErrorCode.InvalidSegmentTimestamps,
         });
     }
 

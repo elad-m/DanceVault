@@ -100,6 +100,11 @@ describe("POST /videos", () => {
         });
 
         expect(response.statusCode).toBe(400);
+        expect(response.json()).toMatchObject({
+            error: {
+                code: "VALIDATION_ERROR",
+            },
+        });
     });
 
     it("rejects an empty video title", async () => {
@@ -194,7 +199,10 @@ describe("PATCH /videos/:videoId", () => {
 
         expect(response.statusCode).toBe(404);
         expect(response.json()).toEqual({
-            error: "Video not found",
+            error: {
+                code: "VIDEO_NOT_FOUND",
+                message: "Video not found",
+            },
         });
     });
 
@@ -261,7 +269,10 @@ describe("DELETE /videos/:videoId", () => {
 
         expect(response.statusCode).toBe(404);
         expect(response.json()).toEqual({
-            error: "Video not found",
+            error: {
+                code: "VIDEO_NOT_FOUND",
+                message: "Video not found",
+            },
         });
     });
 });
@@ -310,7 +321,10 @@ describe("POST /videos/:videoId/segments", () => {
 
         expect(response.statusCode).toBe(404);
         expect(response.json()).toEqual({
-            error: "Video not found",
+            error: {
+                code: "VIDEO_NOT_FOUND",
+                message: "Video not found",
+            },
         });
     });
 
@@ -327,7 +341,10 @@ describe("POST /videos/:videoId/segments", () => {
 
         expect(response.statusCode).toBe(400);
         expect(response.json()).toEqual({
-            error: "endSeconds must be greater than startSeconds",
+            error: {
+                code: "INVALID_SEGMENT_TIMESTAMPS",
+                message: "endSeconds must be greater than startSeconds",
+            },
         });
     });
 
@@ -503,6 +520,70 @@ describe("GET /segments", () => {
 
         expect(response.statusCode).toBe(400);
     });
+
+    it("paginates segment search results with a cursor", async () => {
+        await prisma.video.create({
+            data: {
+                title: "Pagination lesson",
+                sourceType: "youtube",
+                sourceUrl: "https://youtube.com/watch?v=pagination-test",
+                segments: {
+                    create: [
+                        {
+                            name: "Pagination segment 1",
+                            startSeconds: 10,
+                            endSeconds: 20,
+                            tags: ["pagination-test"],
+                        },
+                        {
+                            name: "Pagination segment 2",
+                            startSeconds: 30,
+                            endSeconds: 40,
+                            tags: ["pagination-test"],
+                        },
+                        {
+                            name: "Pagination segment 3",
+                            startSeconds: 50,
+                            endSeconds: 60,
+                            tags: ["pagination-test"],
+                        },
+                    ],
+                },
+            },
+        });
+
+        const firstPageResponse = await app.inject({
+            method: "GET",
+            url: "/segments?tag=pagination-test&limit=2",
+        });
+
+        expect(firstPageResponse.statusCode).toBe(200);
+
+        const firstPage = firstPageResponse.json();
+        expect(firstPage.segments).toHaveLength(2);
+        expect(firstPage.nextCursor).toEqual(expect.any(String));
+
+        const secondPageResponse = await app.inject({
+            method: "GET",
+            url: `/segments?tag=pagination-test&limit=2&cursor=${firstPage.nextCursor}`,
+        });
+
+        expect(secondPageResponse.statusCode).toBe(200);
+
+        const secondPage = secondPageResponse.json();
+        expect(secondPage.segments).toHaveLength(1);
+        expect(secondPage.nextCursor).toBeNull();
+        expect(secondPage.segments[0].id).not.toBe(firstPage.segments[1].id);
+    });
+
+    it("rejects invalid pagination limits", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/segments?limit=100",
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
 });
 
 describe("GET /segments/:segmentId", () => {
@@ -536,7 +617,10 @@ describe("GET /segments/:segmentId", () => {
 
         expect(response.statusCode).toBe(404);
         expect(response.json()).toEqual({
-            error: "Segment not found",
+            error: {
+                code: "SEGMENT_NOT_FOUND",
+                message: "Segment not found",
+            },
         });
     });
 });
@@ -603,7 +687,10 @@ describe("PATCH /segments/:segmentId", () => {
 
         expect(response.statusCode).toBe(404);
         expect(response.json()).toEqual({
-            error: "Segment not found",
+            error: {
+                code: "SEGMENT_NOT_FOUND",
+                message: "Segment not found",
+            },
         });
     });
 
@@ -646,7 +733,10 @@ describe("PATCH /segments/:segmentId", () => {
 
         expect(response.statusCode).toBe(400);
         expect(response.json()).toEqual({
-            error: "endSeconds must be greater than startSeconds",
+            error: {
+                code: "INVALID_SEGMENT_TIMESTAMPS",
+                message: "endSeconds must be greater than startSeconds",
+            },
         });
     });
 });
@@ -687,7 +777,10 @@ describe("DELETE /segments/:segmentId", () => {
 
         expect(response.statusCode).toBe(404);
         expect(response.json()).toEqual({
-            error: "Segment not found",
+            error: {
+                code: "SEGMENT_NOT_FOUND",
+                message: "Segment not found",
+            },
         });
     });
 });
