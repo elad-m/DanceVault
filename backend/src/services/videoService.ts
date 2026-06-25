@@ -16,18 +16,18 @@ export async function createVideo(input: CreateVideoInput) {
     });
 }
 
-export async function listVideos() {
-    return prisma.video.findMany({
-        orderBy: {
-            createdAt: "asc",
-        },
-    });
-}
-
 export async function getVideoById(videoId: string) {
     return prisma.video.findUnique({
         where: {
             id: videoId,
+        },
+    });
+}
+
+export async function listVideos() {
+    return prisma.video.findMany({
+        orderBy: {
+            createdAt: "asc",
         },
     });
 }

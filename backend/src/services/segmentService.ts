@@ -6,6 +6,8 @@ import type {
     PracticePriority,
 } from "../domain/segment";
 
+// Helpers
+
 type SegmentWithPlaybackSource = {
     startSeconds: number;
     video: {
@@ -55,6 +57,8 @@ export async function findVideoForSegmentCreation(videoId: string) {
         },
     });
 }
+
+// CRUD Operations
 
 type CreateSegmentInput = {
     videoId: string;

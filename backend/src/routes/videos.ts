@@ -14,17 +14,17 @@ import {
     updateVideo,
 } from "../services/videoService";
 
-type VideoParams = {
-    Params: {
-        videoId: string;
-    };
-};
-
 type CreateVideoRequest = {
     Body: {
         title: string;
         sourceType: string;
         sourceUrl: string;
+    };
+};
+
+type VideoParams = {
+    Params: {
+        videoId: string;
     };
 };
 
@@ -84,14 +84,6 @@ async function createVideoHandler(
     return reply.status(201).send(video);
 }
 
-async function listVideosHandler() {
-    const videos = await listVideos();
-
-    return {
-        videos,
-    };
-}
-
 async function getVideoHandler(
     request: FastifyRequest<VideoParams>,
     reply: FastifyReply
@@ -106,6 +98,14 @@ async function getVideoHandler(
     }
 
     return video;
+}
+
+async function listVideosHandler() {
+    const videos = await listVideos();
+
+    return {
+        videos,
+    };
 }
 
 async function getVideoSegmentsHandler(
@@ -171,17 +171,14 @@ async function deleteVideoHandler(
 }
 
 export function registerVideoRoutes(app: FastifyInstance) {
-    app.get("/videos", listVideosHandler);
-
-    app.get<VideoParams>("/videos/:videoId", getVideoHandler);
-
-    app.get<VideoParams>("/videos/:videoId/segments", getVideoSegmentsHandler);
-
     app.post<CreateVideoRequest>(
         "/videos",
         createVideoRouteOptions,
         createVideoHandler
     );
+    app.get<VideoParams>("/videos/:videoId", getVideoHandler);
+    app.get("/videos", listVideosHandler);
+    app.get<VideoParams>("/videos/:videoId/segments", getVideoSegmentsHandler);
     app.patch<UpdateVideoRequest>(
         "/videos/:videoId",
         updateVideoRouteOptions,
