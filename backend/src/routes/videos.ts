@@ -3,9 +3,16 @@ import type {
     FastifyReply,
     FastifyRequest,
 } from "fastify";
-import { prisma } from "../db";
-import { buildSegmentPlaybackUrl } from "../domain/segment";
+import { toSegmentResponse } from "../services/segmentService";
 import { ApiErrorCode, sendApiError } from "../httpErrors";
+import {
+    createVideo,
+    deleteVideo,
+    getVideoById,
+    getVideoSegments,
+    listVideos,
+    updateVideo,
+} from "../services/videoService";
 
 type VideoParams = {
     Params: {
@@ -72,26 +79,65 @@ async function createVideoHandler(
 ) {
     const { title, sourceType, sourceUrl } = request.body;
 
-    const video = await prisma.video.create({
-        data: {
-            title,
-            sourceType,
-            sourceUrl,
-        },
-    });
+    const video = await createVideo({ title, sourceType, sourceUrl });
 
     return reply.status(201).send(video);
+}
+
+async function listVideosHandler() {
+    const videos = await listVideos();
+
+    return {
+        videos,
+    };
+}
+
+async function getVideoHandler(
+    request: FastifyRequest<VideoParams>,
+    reply: FastifyReply
+) {
+    const video = await getVideoById(request.params.videoId);
+
+    if (!video) {
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.VideoNotFound,
+        });
+    }
+
+    return video;
+}
+
+async function getVideoSegmentsHandler(
+    request: FastifyRequest<VideoParams>,
+    reply: FastifyReply
+) {
+    const video = await getVideoById(request.params.videoId);
+
+    if (!video) {
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.VideoNotFound,
+        });
+    }
+
+    const videoSegments = await getVideoSegments(request.params.videoId);
+
+    return {
+        segments: videoSegments.map((segment) =>
+            toSegmentResponse({
+                ...segment,
+                video,
+            })
+        ),
+    };
 }
 
 async function updateVideoHandler(
     request: FastifyRequest<UpdateVideoRequest>,
     reply: FastifyReply
 ) {
-    const existingVideo = await prisma.video.findUnique({
-        where: {
-            id: request.params.videoId,
-        },
-    });
+    const existingVideo = await getVideoById(request.params.videoId);
 
     if (!existingVideo) {
         return sendApiError(reply, {
@@ -100,11 +146,9 @@ async function updateVideoHandler(
         });
     }
 
-    return prisma.video.update({
-        where: {
-            id: existingVideo.id,
-        },
-        data: request.body,
+    return updateVideo({
+        videoId: request.params.videoId,
+        ...request.body,
     });
 }
 
@@ -112,11 +156,7 @@ async function deleteVideoHandler(
     request: FastifyRequest<VideoParams>,
     reply: FastifyReply
 ) {
-    const existingVideo = await prisma.video.findUnique({
-        where: {
-            id: request.params.videoId,
-        },
-    });
+    const existingVideo = await getVideoById(request.params.videoId);
 
     if (!existingVideo) {
         return sendApiError(reply, {
@@ -125,81 +165,17 @@ async function deleteVideoHandler(
         });
     }
 
-    await prisma.video.delete({
-        where: {
-            id: existingVideo.id,
-        },
-    });
+    await deleteVideo(request.params.videoId);
 
     return reply.status(204).send();
 }
 
 export function registerVideoRoutes(app: FastifyInstance) {
-    app.get("/videos", async () => {
-        const videos = await prisma.video.findMany({
-            orderBy: {
-                createdAt: "asc",
-            },
-        });
+    app.get("/videos", listVideosHandler);
 
-        return {
-            videos,
-        };
-    });
+    app.get<VideoParams>("/videos/:videoId", getVideoHandler);
 
-    app.get<VideoParams>("/videos/:videoId", async (request, reply) => {
-        const video = await prisma.video.findUnique({
-            where: {
-                id: request.params.videoId,
-            },
-        });
-
-        if (!video) {
-            return sendApiError(reply, {
-                statusCode: 404,
-                code: ApiErrorCode.VideoNotFound,
-            });
-        }
-
-        return video;
-    });
-
-    app.get<VideoParams>(
-        "/videos/:videoId/segments",
-        async (request, reply) => {
-            const video = await prisma.video.findUnique({
-                where: {
-                    id: request.params.videoId,
-                },
-            });
-
-            if (!video) {
-                return sendApiError(reply, {
-                    statusCode: 404,
-                    code: ApiErrorCode.VideoNotFound,
-                });
-            }
-
-            const videoSegments = await prisma.segment.findMany({
-                where: {
-                    videoId: request.params.videoId,
-                },
-                orderBy: {
-                    startSeconds: "asc",
-                },
-            });
-
-            return {
-                segments: videoSegments.map((segment) => ({
-                    ...segment,
-                    playbackUrl: buildSegmentPlaybackUrl(
-                        video,
-                        segment.startSeconds
-                    ),
-                })),
-            };
-        }
-    );
+    app.get<VideoParams>("/videos/:videoId/segments", getVideoSegmentsHandler);
 
     app.post<CreateVideoRequest>(
         "/videos",

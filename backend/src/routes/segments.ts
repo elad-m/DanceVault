@@ -3,9 +3,7 @@ import type {
     FastifyReply,
     FastifyRequest,
 } from "fastify";
-import { prisma } from "../db";
 import {
-    buildSegmentPlaybackUrl,
     confidenceSchema,
     difficultySchema,
     practicePrioritySchema,
@@ -16,6 +14,18 @@ import type {
     Difficulty,
     PracticePriority,
 } from "../domain/segment";
+import {
+    areSegmentTimestampsValid,
+    createSegment,
+    deleteSegment,
+    findSegmentForDeletion,
+    findVideoForSegmentCreation,
+    getPracticeQueue,
+    getSegmentById,
+    searchSegments,
+    toSegmentResponse,
+    updateSegment,
+} from "../services/segmentService";
 
 type SearchSegmentsRequest = {
     Querystring: {
@@ -63,23 +73,6 @@ type CreateSegmentRequest = {
         practicePriority?: PracticePriority;
     };
 };
-
-type SegmentWithPlaybackSource = {
-    startSeconds: number;
-    video: {
-        sourceType: string;
-        sourceUrl: string;
-    };
-};
-
-function toSegmentResponse<T extends SegmentWithPlaybackSource>(segment: T) {
-    const { video, ...segmentData } = segment;
-
-    return {
-        ...segmentData,
-        playbackUrl: buildSegmentPlaybackUrl(video, segment.startSeconds),
-    };
-}
 
 const segmentProperties = {
     name: {
@@ -168,66 +161,17 @@ async function searchSegmentsHandler(
         practicePriority,
         text,
         cursor,
-    } =
-        request.query;
+    } = request.query;
     const limit = request.query.limit ? Number(request.query.limit) : 20;
-
-    const results = await prisma.segment.findMany({
-        where: {
-            tags: tag
-                ? {
-                      has: tag,
-                  }
-                : undefined,
-            difficulty,
-            confidence,
-            practicePriority,
-            OR: text
-                ? [
-                      {
-                          name: {
-                              contains: text,
-                              mode: "insensitive",
-                          },
-                      },
-                      {
-                          description: {
-                              contains: text,
-                              mode: "insensitive",
-                          },
-                      },
-                  ]
-                : undefined,
-        },
-        orderBy: [
-            {
-                createdAt: "asc",
-            },
-            {
-                id: "asc",
-            },
-        ],
-        take: limit + 1,
-        cursor: cursor
-            ? {
-                  id: cursor,
-              }
-            : undefined,
-        skip: cursor ? 1 : 0,
-        include: {
-            video: {
-                select: {
-                    sourceType: true,
-                    sourceUrl: true,
-                },
-            },
-        },
+    const { items: segments, nextCursor } = await searchSegments({
+        tag,
+        difficulty,
+        confidence,
+        practicePriority,
+        text,
+        limit,
+        cursor,
     });
-    const segments = results.slice(0, limit);
-    const hasNextPage = results.length > limit;
-    const nextCursor = hasNextPage
-        ? segments[segments.length - 1]?.id ?? null
-        : null;
 
     return {
         segments: segments.map(toSegmentResponse),
@@ -239,19 +183,7 @@ async function getSegmentHandler(
     request: FastifyRequest<SegmentParams>,
     reply: FastifyReply
 ) {
-    const segment = await prisma.segment.findUnique({
-        where: {
-            id: request.params.segmentId,
-        },
-        include: {
-            video: {
-                select: {
-                    sourceType: true,
-                    sourceUrl: true,
-                },
-            },
-        },
-    });
+    const segment = await getSegmentById(request.params.segmentId);
 
     if (!segment) {
         return sendApiError(reply, {
@@ -267,19 +199,7 @@ async function updateSegmentHandler(
     request: FastifyRequest<UpdateSegmentRequest>,
     reply: FastifyReply
 ) {
-    const existingSegment = await prisma.segment.findUnique({
-        where: {
-            id: request.params.segmentId,
-        },
-        include: {
-            video: {
-                select: {
-                    sourceType: true,
-                    sourceUrl: true,
-                },
-            },
-        },
-    });
+    const existingSegment = await getSegmentById(request.params.segmentId);
 
     if (!existingSegment) {
         return sendApiError(reply, {
@@ -293,18 +213,16 @@ async function updateSegmentHandler(
     const nextEndSeconds =
         request.body.endSeconds ?? existingSegment.endSeconds;
 
-    if (nextEndSeconds <= nextStartSeconds) {
+    if (!areSegmentTimestampsValid(nextStartSeconds, nextEndSeconds)) {
         return sendApiError(reply, {
             statusCode: 400,
             code: ApiErrorCode.InvalidSegmentTimestamps,
         });
     }
 
-    const updatedSegment = await prisma.segment.update({
-        where: {
-            id: existingSegment.id,
-        },
-        data: request.body,
+    const updatedSegment = await updateSegment({
+        segmentId: existingSegment.id,
+        ...request.body,
     });
 
     return toSegmentResponse({
@@ -317,11 +235,9 @@ async function deleteSegmentHandler(
     request: FastifyRequest<SegmentParams>,
     reply: FastifyReply
 ) {
-    const existingSegment = await prisma.segment.findUnique({
-        where: {
-            id: request.params.segmentId,
-        },
-    });
+    const existingSegment = await findSegmentForDeletion(
+        request.params.segmentId
+    );
 
     if (!existingSegment) {
         return sendApiError(reply, {
@@ -330,11 +246,7 @@ async function deleteSegmentHandler(
         });
     }
 
-    await prisma.segment.delete({
-        where: {
-            id: existingSegment.id,
-        },
-    });
+    await deleteSegment(existingSegment.id);
 
     return reply.status(204).send();
 }
@@ -343,11 +255,7 @@ async function createSegmentHandler(
     request: FastifyRequest<CreateSegmentRequest>,
     reply: FastifyReply
 ) {
-    const video = await prisma.video.findUnique({
-        where: {
-            id: request.params.videoId,
-        },
-    });
+    const video = await findVideoForSegmentCreation(request.params.videoId);
 
     if (!video) {
         return sendApiError(reply, {
@@ -358,25 +266,23 @@ async function createSegmentHandler(
 
     const { name, startSeconds, endSeconds } = request.body;
 
-    if (endSeconds <= startSeconds) {
+    if (!areSegmentTimestampsValid(startSeconds, endSeconds)) {
         return sendApiError(reply, {
             statusCode: 400,
             code: ApiErrorCode.InvalidSegmentTimestamps,
         });
     }
 
-    const segment = await prisma.segment.create({
-        data: {
-            videoId: video.id,
-            name,
-            description: request.body.description,
-            startSeconds,
-            endSeconds,
-            tags: request.body.tags ?? [],
-            difficulty: request.body.difficulty ?? "medium",
-            confidence: request.body.confidence ?? "medium",
-            practicePriority: request.body.practicePriority ?? "medium",
-        },
+    const segment = await createSegment({
+        videoId: video.id,
+        name,
+        description: request.body.description,
+        startSeconds,
+        endSeconds,
+        tags: request.body.tags,
+        difficulty: request.body.difficulty,
+        confidence: request.body.confidence,
+        practicePriority: request.body.practicePriority,
     });
 
     return reply.status(201).send(
@@ -385,6 +291,14 @@ async function createSegmentHandler(
             video,
         })
     );
+}
+
+async function getPracticeQueueHandler() {
+    const queue = await getPracticeQueue();
+
+    return {
+        segments: queue.map(toSegmentResponse),
+    };
 }
 
 export function registerSegmentRoutes(app: FastifyInstance) {
@@ -400,30 +314,7 @@ export function registerSegmentRoutes(app: FastifyInstance) {
         updateSegmentHandler
     );
     app.delete<SegmentParams>("/segments/:segmentId", deleteSegmentHandler);
-    app.get("/practice-queue", async () => {
-        const queue = await prisma.segment.findMany({
-            orderBy: [
-                {
-                    practicePriority: "desc",
-                },
-                {
-                    createdAt: "asc",
-                },
-            ],
-            include: {
-                video: {
-                    select: {
-                        sourceType: true,
-                        sourceUrl: true,
-                    },
-                },
-            },
-        });
-
-        return {
-            segments: queue.map(toSegmentResponse),
-        };
-    });
+    app.get("/practice-queue", getPracticeQueueHandler);
     app.post<CreateSegmentRequest>(
         "/videos/:videoId/segments",
         createSegmentRouteOptions,
