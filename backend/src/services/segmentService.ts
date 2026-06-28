@@ -16,6 +16,18 @@ type SegmentWithPlaybackSource = {
     };
 };
 
+type UserScope = {
+    userId: string;
+};
+
+type VideoScope = UserScope & {
+    videoId: string;
+};
+
+type SegmentScope = UserScope & {
+    segmentId: string;
+};
+
 export function toSegmentResponse<T extends SegmentWithPlaybackSource>(
     segment: T
 ) {
@@ -50,18 +62,21 @@ export function paginateResults<T extends { id: string }>(
     };
 }
 
-export async function findVideoForSegmentCreation(videoId: string) {
-    return prisma.video.findUnique({
+export async function findVideoForSegmentCreation({
+    videoId,
+    userId,
+}: VideoScope) {
+    return prisma.video.findFirst({
         where: {
             id: videoId,
+            userId,
         },
     });
 }
 
 // CRUD Operations
 
-type CreateSegmentInput = {
-    videoId: string;
+type CreateSegmentInput = VideoScope & {
     name: string;
     description?: string;
     startSeconds: number;
@@ -75,7 +90,12 @@ type CreateSegmentInput = {
 export async function createSegment(input: CreateSegmentInput) {
     return prisma.segment.create({
         data: {
-            videoId: input.videoId,
+            video: {
+                connect: {
+                    id: input.videoId,
+                    userId: input.userId,
+                },
+            },
             name: input.name,
             description: input.description,
             startSeconds: input.startSeconds,
@@ -88,10 +108,16 @@ export async function createSegment(input: CreateSegmentInput) {
     });
 }
 
-export async function getSegmentById(segmentId: string) {
-    return prisma.segment.findUnique({
+export async function getSegmentById({
+    segmentId,
+    userId,
+}: SegmentScope) {
+    return prisma.segment.findFirst({
         where: {
             id: segmentId,
+            video: {
+                userId,
+            },
         },
         include: {
             video: {
@@ -109,40 +135,44 @@ type PaginationInput = {
     cursor?: string;
 };
 
-type SearchSegmentsInput = PaginationInput & {
-    tag?: string;
-    difficulty?: Difficulty;
-    confidence?: Confidence;
-    practicePriority?: PracticePriority;
-    text?: string;
-};
+type SearchSegmentsInput = UserScope &
+    PaginationInput & {
+        tag?: string;
+        difficulty?: Difficulty;
+        confidence?: Confidence;
+        practicePriority?: PracticePriority;
+        text?: string;
+    };
 
 export async function searchSegments(input: SearchSegmentsInput) {
     const results = await prisma.segment.findMany({
         where: {
+            video: {
+                userId: input.userId,
+            },
             tags: input.tag
                 ? {
-                      has: input.tag,
-                  }
+                    has: input.tag,
+                }
                 : undefined,
             difficulty: input.difficulty,
             confidence: input.confidence,
             practicePriority: input.practicePriority,
             OR: input.text
                 ? [
-                      {
-                          name: {
-                              contains: input.text,
-                              mode: "insensitive",
-                          },
-                      },
-                      {
-                          description: {
-                              contains: input.text,
-                              mode: "insensitive",
-                          },
-                      },
-                  ]
+                    {
+                        name: {
+                            contains: input.text,
+                            mode: "insensitive",
+                        },
+                    },
+                    {
+                        description: {
+                            contains: input.text,
+                            mode: "insensitive",
+                        },
+                    },
+                ]
                 : undefined,
         },
         orderBy: [
@@ -156,8 +186,8 @@ export async function searchSegments(input: SearchSegmentsInput) {
         take: input.limit + 1,
         cursor: input.cursor
             ? {
-                  id: input.cursor,
-              }
+                id: input.cursor,
+            }
             : undefined,
         skip: input.cursor ? 1 : 0,
         include: {
@@ -173,9 +203,12 @@ export async function searchSegments(input: SearchSegmentsInput) {
     return paginateResults(results, input.limit);
 }
 
-export async function getPracticeQueue(input: PaginationInput) {
+export async function getPracticeQueue(input: UserScope & PaginationInput) {
     const results = await prisma.segment.findMany({
         where: {
+            video: {
+                userId: input.userId,
+            },
             OR: [
                 {
                     practicePriority: "high",
@@ -202,8 +235,8 @@ export async function getPracticeQueue(input: PaginationInput) {
         take: input.limit + 1,
         cursor: input.cursor
             ? {
-                  id: input.cursor,
-              }
+                id: input.cursor,
+            }
             : undefined,
         skip: input.cursor ? 1 : 0,
         include: {
@@ -219,8 +252,7 @@ export async function getPracticeQueue(input: PaginationInput) {
     return paginateResults(results, input.limit);
 }
 
-type UpdateSegmentInput = {
-    segmentId: string;
+type UpdateSegmentInput = SegmentScope & {
     name?: string;
     description?: string;
     startSeconds?: number;
@@ -232,28 +264,43 @@ type UpdateSegmentInput = {
 };
 
 export async function updateSegment(input: UpdateSegmentInput) {
-    const { segmentId, ...data } = input;
+    const { segmentId, userId, ...data } = input;
 
     return prisma.segment.update({
         where: {
             id: segmentId,
+            video: {
+                userId,
+            },
         },
         data,
     });
 }
 
-export async function findSegmentForDeletion(segmentId: string) {
-    return prisma.segment.findUnique({
+export async function findSegmentForDeletion({
+    segmentId,
+    userId,
+}: SegmentScope) {
+    return prisma.segment.findFirst({
         where: {
             id: segmentId,
+            video: {
+                userId,
+            },
         },
     });
 }
 
-export async function deleteSegment(segmentId: string) {
+export async function deleteSegment({
+    segmentId,
+    userId,
+}: SegmentScope) {
     return prisma.segment.delete({
         where: {
             id: segmentId,
+            video: {
+                userId,
+            },
         },
     });
 }

@@ -3,10 +3,13 @@ import { buildApp } from "../app";
 import { prisma } from "../db";
 import {
     clearTestDatabase,
+    registerTestAuthentication,
     resetTestDatabase,
+    TEST_USER_ID,
 } from "../test/testDatabase";
 
 const app = buildApp();
+registerTestAuthentication(app);
 
 beforeEach(async () => {
     await resetTestDatabase();
@@ -194,6 +197,11 @@ describe("PATCH /videos/:videoId", () => {
                 title: "Video before update",
                 sourceType: "youtube",
                 sourceUrl: "https://youtube.com/watch?v=before-update",
+                user: {
+                    connect: {
+                        id: TEST_USER_ID,
+                    },
+                },
             },
         });
 
@@ -260,6 +268,11 @@ describe("DELETE /videos/:videoId", () => {
                 title: "Video to delete",
                 sourceType: "external_url",
                 sourceUrl: "https://example.com/video-to-delete",
+                user: {
+                    connect: {
+                        id: TEST_USER_ID,
+                    },
+                },
                 segments: {
                     create: {
                         name: "Dependent segment",

@@ -1,19 +1,39 @@
 import { prisma } from "../db";
+import type { FastifyInstance } from "fastify";
+
+export const TEST_USER_ID = "test-user-1";
+
+export function registerTestAuthentication(app: FastifyInstance) {
+    app.addHook("onRequest", async (request) => {
+        request.headers["x-user-id"] = TEST_USER_ID;
+    });
+}
 
 export async function clearTestDatabase() {
     await prisma.segment.deleteMany();
     await prisma.video.deleteMany();
+    await prisma.user.deleteMany();
 }
 
 export async function resetTestDatabase() {
     await clearTestDatabase();
-
+    await prisma.user.create({
+        data: {
+            id: TEST_USER_ID,
+            email: "test-user@dancevault.local",
+        },
+    });
     await prisma.video.create({
         data: {
             id: "sample-video-1",
             title: "Test lesson summary",
             sourceType: "youtube",
             sourceUrl: "https://youtube.com/watch?v=test-video",
+            user: {
+                connect: {
+                    id: TEST_USER_ID,
+                },
+            },
             segments: {
                 create: [
                     {

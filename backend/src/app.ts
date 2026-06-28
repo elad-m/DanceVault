@@ -3,6 +3,7 @@ import type { FastifyError } from "fastify";
 import { ApiErrorCode, sendApiError } from "./httpErrors";
 import { registerSegmentRoutes } from "./routes/segments";
 import { registerVideoRoutes } from "./routes/videos";
+import { registerDevelopmentAuthentication } from "./auth/developmentAuth";
 
 export function buildApp() {
     const app = Fastify({
@@ -36,6 +37,7 @@ export function buildApp() {
         return { status: "ok" };
     });
 
+    registerDevelopmentAuthentication(app);
     registerVideoRoutes(app);
     registerSegmentRoutes(app);
 

@@ -176,7 +176,10 @@ async function createSegmentHandler(
     request: FastifyRequest<CreateSegmentRequest>,
     reply: FastifyReply
 ) {
-    const video = await findVideoForSegmentCreation(request.params.videoId);
+    const video = await findVideoForSegmentCreation({
+        videoId: request.params.videoId,
+        userId: request.userId,
+    });
 
     if (!video) {
         return sendApiError(reply, {
@@ -195,6 +198,7 @@ async function createSegmentHandler(
     }
 
     const segment = await createSegment({
+        userId: request.userId,
         videoId: video.id,
         name,
         description: request.body.description,
@@ -218,7 +222,10 @@ async function getSegmentHandler(
     request: FastifyRequest<SegmentParams>,
     reply: FastifyReply
 ) {
-    const segment = await getSegmentById(request.params.segmentId);
+    const segment = await getSegmentById({
+        segmentId: request.params.segmentId,
+        userId: request.userId,
+    });
 
     if (!segment) {
         return sendApiError(reply, {
@@ -243,6 +250,7 @@ async function searchSegmentsHandler(
     } = request.query;
     const limit = request.query.limit ? Number(request.query.limit) : 20;
     const { items: segments, nextCursor } = await searchSegments({
+        userId: request.userId,
         tag,
         difficulty,
         confidence,
@@ -263,6 +271,7 @@ async function getPracticeQueueHandler(
 ) {
     const limit = request.query.limit ? Number(request.query.limit) : 20;
     const { items: segments, nextCursor } = await getPracticeQueue({
+        userId: request.userId,
         limit,
         cursor: request.query.cursor,
     });
@@ -277,7 +286,10 @@ async function updateSegmentHandler(
     request: FastifyRequest<UpdateSegmentRequest>,
     reply: FastifyReply
 ) {
-    const existingSegment = await getSegmentById(request.params.segmentId);
+    const existingSegment = await getSegmentById({
+        segmentId: request.params.segmentId,
+        userId: request.userId,
+    });
 
     if (!existingSegment) {
         return sendApiError(reply, {
@@ -299,6 +311,7 @@ async function updateSegmentHandler(
     }
 
     const updatedSegment = await updateSegment({
+        userId: request.userId,
         segmentId: existingSegment.id,
         ...request.body,
     });
@@ -313,9 +326,10 @@ async function deleteSegmentHandler(
     request: FastifyRequest<SegmentParams>,
     reply: FastifyReply
 ) {
-    const existingSegment = await findSegmentForDeletion(
-        request.params.segmentId
-    );
+    const existingSegment = await findSegmentForDeletion({
+        segmentId: request.params.segmentId,
+        userId: request.userId,
+    });
 
     if (!existingSegment) {
         return sendApiError(reply, {
@@ -324,7 +338,10 @@ async function deleteSegmentHandler(
         });
     }
 
-    await deleteSegment(existingSegment.id);
+    await deleteSegment({
+        segmentId: existingSegment.id,
+        userId: request.userId,
+    });
 
     return reply.status(204).send();
 }

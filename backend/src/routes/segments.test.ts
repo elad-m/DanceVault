@@ -3,10 +3,13 @@ import { buildApp } from "../app";
 import { prisma } from "../db";
 import {
     clearTestDatabase,
+    registerTestAuthentication,
     resetTestDatabase,
+    TEST_USER_ID,
 } from "../test/testDatabase";
 
 const app = buildApp();
+registerTestAuthentication(app);
 
 beforeEach(async () => {
     await resetTestDatabase();
@@ -270,6 +273,11 @@ describe("GET /segments", () => {
                 title: "Pagination lesson",
                 sourceType: "youtube",
                 sourceUrl: "https://youtube.com/watch?v=pagination-test",
+                user: {
+                    connect: {
+                        id: TEST_USER_ID,
+                    },
+                },
                 segments: {
                     create: [
                         {

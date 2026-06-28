@@ -6,6 +6,7 @@ export const ApiErrorCode = {
     SegmentNotFound: "SEGMENT_NOT_FOUND",
     ValidationError: "VALIDATION_ERROR",
     VideoNotFound: "VIDEO_NOT_FOUND",
+    Unauthorized: "UNAUTHORIZED",
 } as const;
 
 export type ApiErrorCode =
@@ -19,6 +20,7 @@ export const ApiErrorMessage: ApiErrorMessageMap = {
     [ApiErrorCode.SegmentNotFound]: "Segment not found",
     [ApiErrorCode.ValidationError]: "Request validation failed",
     [ApiErrorCode.VideoNotFound]: "Video not found",
+    [ApiErrorCode.Unauthorized]: "Authentication is required",
 };
 
 type SendApiErrorOptions = {

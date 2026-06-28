@@ -79,7 +79,12 @@ async function createVideoHandler(
 ) {
     const { title, sourceType, sourceUrl } = request.body;
 
-    const video = await createVideo({ title, sourceType, sourceUrl });
+    const video = await createVideo({
+        userId: request.userId,
+        title,
+        sourceType,
+        sourceUrl,
+    });
 
     return reply.status(201).send(video);
 }
@@ -88,7 +93,10 @@ async function getVideoHandler(
     request: FastifyRequest<VideoParams>,
     reply: FastifyReply
 ) {
-    const video = await getVideoById(request.params.videoId);
+    const video = await getVideoById({
+        videoId: request.params.videoId,
+        userId: request.userId,
+    });
 
     if (!video) {
         return sendApiError(reply, {
@@ -100,19 +108,22 @@ async function getVideoHandler(
     return video;
 }
 
-async function listVideosHandler() {
-    const videos = await listVideos();
+async function listVideosHandler(request: FastifyRequest) {
+    const videos = await listVideos({
+        userId: request.userId,
+    });
 
-    return {
-        videos,
-    };
+    return { videos };
 }
 
 async function getVideoSegmentsHandler(
     request: FastifyRequest<VideoParams>,
     reply: FastifyReply
 ) {
-    const video = await getVideoById(request.params.videoId);
+    const video = await getVideoById({
+        videoId: request.params.videoId,
+        userId: request.userId,
+    });
 
     if (!video) {
         return sendApiError(reply, {
@@ -121,7 +132,10 @@ async function getVideoSegmentsHandler(
         });
     }
 
-    const videoSegments = await getVideoSegments(request.params.videoId);
+    const videoSegments = await getVideoSegments({
+        videoId: request.params.videoId,
+        userId: request.userId,
+    });
 
     return {
         segments: videoSegments.map((segment) =>
@@ -137,7 +151,10 @@ async function updateVideoHandler(
     request: FastifyRequest<UpdateVideoRequest>,
     reply: FastifyReply
 ) {
-    const existingVideo = await getVideoById(request.params.videoId);
+    const existingVideo = await getVideoById({
+        videoId: request.params.videoId,
+        userId: request.userId,
+    });
 
     if (!existingVideo) {
         return sendApiError(reply, {
@@ -148,6 +165,7 @@ async function updateVideoHandler(
 
     return updateVideo({
         videoId: request.params.videoId,
+        userId: request.userId,
         ...request.body,
     });
 }
@@ -156,7 +174,10 @@ async function deleteVideoHandler(
     request: FastifyRequest<VideoParams>,
     reply: FastifyReply
 ) {
-    const existingVideo = await getVideoById(request.params.videoId);
+    const existingVideo = await getVideoById({
+        videoId: request.params.videoId,
+        userId: request.userId,
+    });
 
     if (!existingVideo) {
         return sendApiError(reply, {
@@ -165,7 +186,10 @@ async function deleteVideoHandler(
         });
     }
 
-    await deleteVideo(request.params.videoId);
+    await deleteVideo({
+        videoId: request.params.videoId,
+        userId: request.userId,
+    });
 
     return reply.status(204).send();
 }

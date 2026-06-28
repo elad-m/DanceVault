@@ -1,13 +1,34 @@
 import { prisma } from "../src/db";
 
 async function seed() {
+    const user = await prisma.user.upsert({
+        where: {
+            id: "initial-user",
+        },
+        update: {},
+        create: {
+            id: "initial-user",
+            email: "owner@dancevault.local",
+        },
+    });
     await prisma.video.upsert({
         where: {
             id: "sample-video-1",
         },
-        update: {},
+        update: {
+            user: {
+                connect: {
+                    id: user.id,
+                },
+            },
+        },
         create: {
             id: "sample-video-1",
+            user: {
+                connect: {
+                    id: user.id,
+                },
+            },
             title: "Salsa lesson summary",
             sourceType: "youtube",
             sourceUrl: "https://youtube.com/watch?v=abc123",
