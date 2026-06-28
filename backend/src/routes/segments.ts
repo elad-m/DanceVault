@@ -55,6 +55,13 @@ type SearchSegmentsRequest = {
     };
 };
 
+type PracticeQueueRequest = {
+    Querystring: {
+        limit?: string;
+        cursor?: string;
+    };
+};
+
 type SegmentParams = {
     Params: {
         segmentId: string;
@@ -112,6 +119,17 @@ const createSegmentRouteOptions = {
     },
 } as const;
 
+const paginationQueryProperties = {
+    limit: {
+        type: "string",
+        pattern: "^([1-9]|[1-4][0-9]|50)$",
+    },
+    cursor: {
+        type: "string",
+        minLength: 1,
+    },
+} as const;
+
 const searchSegmentsRouteOptions = {
     schema: {
         querystring: {
@@ -127,15 +145,18 @@ const searchSegmentsRouteOptions = {
                 difficulty: difficultySchema,
                 confidence: confidenceSchema,
                 practicePriority: practicePrioritySchema,
-                limit: {
-                    type: "string",
-                    pattern: "^([1-9]|[1-4][0-9]|50)$",
-                },
-                cursor: {
-                    type: "string",
-                    minLength: 1,
-                },
+                ...paginationQueryProperties,
             },
+        },
+    },
+} as const;
+
+const practiceQueueRouteOptions = {
+    schema: {
+        querystring: {
+            type: "object",
+            additionalProperties: false,
+            properties: paginationQueryProperties,
         },
     },
 } as const;
@@ -237,11 +258,18 @@ async function searchSegmentsHandler(
     };
 }
 
-async function getPracticeQueueHandler() {
-    const queue = await getPracticeQueue();
+async function getPracticeQueueHandler(
+    request: FastifyRequest<PracticeQueueRequest>
+) {
+    const limit = request.query.limit ? Number(request.query.limit) : 20;
+    const { items: segments, nextCursor } = await getPracticeQueue({
+        limit,
+        cursor: request.query.cursor,
+    });
 
     return {
-        segments: queue.map(toSegmentResponse),
+        segments: segments.map(toSegmentResponse),
+        nextCursor,
     };
 }
 
@@ -313,7 +341,11 @@ export function registerSegmentRoutes(app: FastifyInstance) {
         searchSegmentsRouteOptions,
         searchSegmentsHandler
     );
-    app.get("/practice-queue", getPracticeQueueHandler);
+    app.get<PracticeQueueRequest>(
+        "/practice-queue",
+        practiceQueueRouteOptions,
+        getPracticeQueueHandler
+    );
     app.patch<UpdateSegmentRequest>(
         "/segments/:segmentId",
         updateSegmentRouteOptions,

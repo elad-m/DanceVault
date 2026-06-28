@@ -104,14 +104,17 @@ export async function getSegmentById(segmentId: string) {
     });
 }
 
-type SearchSegmentsInput = {
+type PaginationInput = {
+    limit: number;
+    cursor?: string;
+};
+
+type SearchSegmentsInput = PaginationInput & {
     tag?: string;
     difficulty?: Difficulty;
     confidence?: Confidence;
     practicePriority?: PracticePriority;
     text?: string;
-    limit: number;
-    cursor?: string;
 };
 
 export async function searchSegments(input: SearchSegmentsInput) {
@@ -170,16 +173,39 @@ export async function searchSegments(input: SearchSegmentsInput) {
     return paginateResults(results, input.limit);
 }
 
-export async function getPracticeQueue() {
-    return prisma.segment.findMany({
+export async function getPracticeQueue(input: PaginationInput) {
+    const results = await prisma.segment.findMany({
+        where: {
+            OR: [
+                {
+                    practicePriority: "high",
+                },
+                {
+                    confidence: "low",
+                },
+            ],
+        },
         orderBy: [
             {
                 practicePriority: "desc",
             },
             {
+                confidence: "asc",
+            },
+            {
                 createdAt: "asc",
             },
+            {
+                id: "asc",
+            },
         ],
+        take: input.limit + 1,
+        cursor: input.cursor
+            ? {
+                  id: input.cursor,
+              }
+            : undefined,
+        skip: input.cursor ? 1 : 0,
         include: {
             video: {
                 select: {
@@ -189,6 +215,8 @@ export async function getPracticeQueue() {
             },
         },
     });
+
+    return paginateResults(results, input.limit);
 }
 
 type UpdateSegmentInput = {

@@ -878,36 +878,111 @@ describe("DELETE /segments/:segmentId", () => {
 });
 
 describe("GET /practice-queue", () => {
-    it("orders segments by practice priority", async () => {
-        const response = await app.inject({
-            method: "GET",
-            url: "/practice-queue",
+    it("selects weak or high-priority segments in practice order", async () => {
+        await prisma.segment.updateMany({
+            data: {
+                confidence: "high",
+                practicePriority: "low",
+            },
         });
 
-        expect(response.statusCode).toBe(200);
+        await prisma.segment.createMany({
+            data: [
+                {
+                    id: "queue-high-low",
+                    videoId: "sample-video-1",
+                    name: "Queue high priority and low confidence",
+                    startSeconds: 300,
+                    endSeconds: 310,
+                    tags: ["practice-queue-test"],
+                    confidence: "low",
+                    practicePriority: "high",
+                },
+                {
+                    id: "queue-high-high",
+                    videoId: "sample-video-1",
+                    name: "Queue high priority and high confidence",
+                    startSeconds: 320,
+                    endSeconds: 330,
+                    tags: ["practice-queue-test"],
+                    confidence: "high",
+                    practicePriority: "high",
+                },
+                {
+                    id: "queue-medium-low",
+                    videoId: "sample-video-1",
+                    name: "Queue medium priority and low confidence",
+                    startSeconds: 340,
+                    endSeconds: 350,
+                    tags: ["practice-queue-test"],
+                    confidence: "low",
+                    practicePriority: "medium",
+                },
+                {
+                    id: "queue-medium-medium",
+                    videoId: "sample-video-1",
+                    name: "Not queued medium segment",
+                    startSeconds: 360,
+                    endSeconds: 370,
+                    tags: ["practice-queue-test"],
+                    confidence: "medium",
+                    practicePriority: "medium",
+                },
+                {
+                    id: "queue-low-high",
+                    videoId: "sample-video-1",
+                    name: "Not queued low-priority segment",
+                    startSeconds: 380,
+                    endSeconds: 390,
+                    tags: ["practice-queue-test"],
+                    confidence: "high",
+                    practicePriority: "low",
+                },
+            ],
+        });
 
-        const body = response.json();
-        const priorityRank = {
-            high: 3,
-            medium: 2,
-            low: 1,
-        };
+        const firstPageResponse = await app.inject({
+            method: "GET",
+            url: "/practice-queue?limit=2",
+        });
 
-        for (let index = 1; index < body.segments.length; index++) {
-            const previousSegment = body.segments[index - 1];
-            const currentSegment = body.segments[index];
+        expect(firstPageResponse.statusCode).toBe(200);
 
-            const previousPriority =
-                priorityRank[
-                    previousSegment.practicePriority as keyof typeof priorityRank
-                ];
+        const firstPage = firstPageResponse.json();
+        const firstPageSegmentIds = firstPage.segments.map(
+            (segment: { id: string }) => segment.id
+        );
 
-            const currentPriority =
-                priorityRank[
-                    currentSegment.practicePriority as keyof typeof priorityRank
-                ];
+        expect(firstPageSegmentIds).toEqual([
+            "queue-high-low",
+            "queue-high-high",
+        ]);
+        expect(firstPage.nextCursor).toBe("queue-high-high");
 
-            expect(previousPriority).toBeGreaterThanOrEqual(currentPriority);
-        }
+        const secondPageResponse = await app.inject({
+            method: "GET",
+            url: `/practice-queue?limit=2&cursor=${firstPage.nextCursor}`,
+        });
+
+        expect(secondPageResponse.statusCode).toBe(200);
+
+        const secondPage = secondPageResponse.json();
+        const secondPageSegmentIds = secondPage.segments.map(
+            (segment: { id: string }) => segment.id
+        );
+
+        expect(secondPageSegmentIds).toEqual([
+            "queue-medium-low",
+        ]);
+        expect(secondPage.nextCursor).toBeNull();
+    });
+
+    it("rejects invalid pagination limits", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/practice-queue?limit=100",
+        });
+
+        expect(response.statusCode).toBe(400);
     });
 });
