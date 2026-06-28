@@ -7,7 +7,7 @@ afterAll(async () => {
     await app.close();
 });
 
-// Health route
+// Public routes
 
 describe("GET /health", () => {
     it("returns an ok status", async () => {
@@ -19,6 +19,25 @@ describe("GET /health", () => {
         expect(response.statusCode).toBe(200);
         expect(response.json()).toEqual({
             status: "ok",
+        });
+    });
+});
+
+// Authentication
+
+describe("Authentication", () => {
+    it("rejects protected requests without a user identity", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/videos",
+        });
+
+        expect(response.statusCode).toBe(401);
+        expect(response.json()).toEqual({
+            error: {
+                code: "UNAUTHORIZED",
+                message: "Authentication is required",
+            },
         });
     });
 });
