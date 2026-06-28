@@ -56,6 +56,8 @@ afterAll(async () => {
     await prisma.$disconnect();
 });
 
+// Health route
+
 describe("GET /health", () => {
     it("returns an ok status", async () => {
         const response = await app.inject({
@@ -69,6 +71,8 @@ describe("GET /health", () => {
         });
     });
 });
+
+// Video routes
 
 describe("POST /videos", () => {
     it("creates a video", async () => {
@@ -148,6 +152,92 @@ describe("POST /videos", () => {
         });
 
         expect(response.statusCode).toBe(400);
+    });
+});
+
+describe("GET /videos/:videoId", () => {
+    it("returns an existing video", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/videos/sample-video-1",
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({
+            id: "sample-video-1",
+            title: "Test lesson summary",
+            sourceType: "youtube",
+            sourceUrl: "https://youtube.com/watch?v=test-video",
+        });
+    });
+
+    it("returns 404 for a video that does not exist", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/videos/not-real",
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: {
+                code: "VIDEO_NOT_FOUND",
+                message: "Video not found",
+            },
+        });
+    });
+});
+
+describe("GET /videos", () => {
+    it("returns the stored videos", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/videos",
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json().videos).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: "sample-video-1",
+                    title: "Test lesson summary",
+                }),
+            ])
+        );
+    });
+});
+
+describe("GET /videos/:videoId/segments", () => {
+    it("returns the video's segments with playback URLs", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/videos/sample-video-1/segments",
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json().segments).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    name: "Open stance wave",
+                    playbackUrl:
+                        "https://youtube.com/watch?v=test-video&t=10s",
+                }),
+            ])
+        );
+    });
+
+    it("returns 404 for a video that does not exist", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/videos/not-real/segments",
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: {
+                code: "VIDEO_NOT_FOUND",
+                message: "Video not found",
+            },
+        });
     });
 });
 
@@ -276,6 +366,8 @@ describe("DELETE /videos/:videoId", () => {
         });
     });
 });
+
+// Segment routes
 
 describe("POST /videos/:videoId/segments", () => {
     it("creates a segment for an existing video", async () => {
