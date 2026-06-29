@@ -28,6 +28,8 @@ model Video {
   sourceUrl  String
   createdAt  DateTime  @default(now()) @db.Timestamptz(3)
   segments   Segment[]
+
+  @@index([userId, createdAt])
 }
 
 enum Difficulty {
@@ -63,4 +65,6 @@ model Segment {
   createdAt        DateTime         @default(now()) @db.Timestamptz(3)
 
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([videoId, startSeconds])
 }
