@@ -1,9 +1,10 @@
 import { prisma } from "../db";
+import type { ExternalVideoSourceType } from "../domain/video";
 
 type CreateVideoInput = {
     userId: string;
     title: string;
-    sourceType: string;
+    sourceType: ExternalVideoSourceType;
     sourceUrl: string;
 };
 
@@ -21,6 +22,31 @@ export async function createVideo(input: CreateVideoInput) {
             title: input.title,
             sourceType: input.sourceType,
             sourceUrl: input.sourceUrl,
+            user: {
+                connect: {
+                    id: input.userId,
+                },
+            },
+        },
+    });
+}
+
+type CreatePendingUploadVideoInput = {
+    userId: string;
+    title: string;
+    storageKey: string;
+};
+
+export async function createPendingUploadVideo(
+    input: CreatePendingUploadVideoInput
+) {
+    return prisma.video.create({
+        data: {
+            title: input.title,
+            sourceType: "uploaded",
+            sourceUrl: null,
+            storageKey: input.storageKey,
+            status: "pending_upload",
             user: {
                 connect: {
                     id: input.userId,
@@ -66,8 +92,6 @@ export async function getVideoSegments({ videoId, userId }: VideoScope) {
 
 type UpdateVideoInput = VideoScope & {
     title?: string;
-    sourceType?: string;
-    sourceUrl?: string;
 };
 
 export async function updateVideo(input: UpdateVideoInput) {

@@ -3,9 +3,11 @@ import type {
     FastifyReply,
     FastifyRequest,
 } from "fastify";
+import { randomUUID } from "node:crypto";
 import { toSegmentResponse } from "../services/segmentService";
 import { ApiErrorCode, sendApiError } from "../httpErrors";
 import {
+    createPendingUploadVideo,
     createVideo,
     deleteVideo,
     getVideoById,
@@ -13,12 +15,27 @@ import {
     listVideos,
     updateVideo,
 } from "../services/videoService";
+import {
+    createVideoStorageKey,
+    externalVideoSourceTypeSchema,
+    supportedVideoContentTypeSchema,
+    type ExternalVideoSourceType,
+    type SupportedVideoContentType,
+} from "../domain/video";
 
 type CreateVideoRequest = {
     Body: {
         title: string;
-        sourceType: string;
+        sourceType: ExternalVideoSourceType;
         sourceUrl: string;
+    };
+};
+
+type CreateVideoUploadRequest = {
+    Body: {
+        title: string;
+        fileName: string;
+        contentType: SupportedVideoContentType;
     };
 };
 
@@ -31,8 +48,6 @@ type VideoParams = {
 type UpdateVideoRequest = VideoParams & {
     Body: {
         title?: string;
-        sourceType?: string;
-        sourceUrl?: string;
     };
 };
 
@@ -41,13 +56,29 @@ const videoProperties = {
         type: "string",
         minLength: 1,
     },
-    sourceType: {
-        type: "string",
-        minLength: 1,
-    },
+    sourceType: externalVideoSourceTypeSchema,
     sourceUrl: {
         type: "string",
         minLength: 1,
+    },
+} as const;
+
+const createVideoUploadRouteOptions = {
+    schema: {
+        body: {
+            type: "object",
+            additionalProperties: false,
+            required: ["title", "fileName", "contentType"],
+            properties: {
+                title: videoProperties.title,
+                fileName: {
+                    type: "string",
+                    minLength: 1,
+                    maxLength: 255,
+                },
+                contentType: supportedVideoContentTypeSchema,
+            },
+        },
     },
 } as const;
 
@@ -68,7 +99,9 @@ const updateVideoRouteOptions = {
             type: "object",
             additionalProperties: false,
             minProperties: 1,
-            properties: videoProperties,
+            properties: {
+                title: videoProperties.title,
+            },
         },
     },
 } as const;
@@ -84,6 +117,25 @@ async function createVideoHandler(
         title,
         sourceType,
         sourceUrl,
+    });
+
+    return reply.status(201).send(video);
+}
+
+async function createVideoUploadHandler(
+    request: FastifyRequest<CreateVideoUploadRequest>,
+    reply: FastifyReply
+) {
+    const uploadId = randomUUID();
+    const storageKey = createVideoStorageKey({
+        userId: request.userId,
+        uploadId,
+        contentType: request.body.contentType,
+    });
+    const video = await createPendingUploadVideo({
+        userId: request.userId,
+        title: request.body.title,
+        storageKey,
     });
 
     return reply.status(201).send(video);
@@ -199,6 +251,11 @@ export function registerVideoRoutes(app: FastifyInstance) {
         "/videos",
         createVideoRouteOptions,
         createVideoHandler
+    );
+    app.post<CreateVideoUploadRequest>(
+        "/video-uploads",
+        createVideoUploadRouteOptions,
+        createVideoUploadHandler
     );
     app.get<VideoParams>("/videos/:videoId", getVideoHandler);
     app.get("/videos", listVideosHandler);

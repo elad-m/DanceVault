@@ -21,13 +21,17 @@ export const practicePrioritySchema = {
 
 type SegmentPlaybackSource = {
     sourceType: string;
-    sourceUrl: string;
+    sourceUrl: string | null;
 };
 
 export function buildSegmentPlaybackUrl(
     source: SegmentPlaybackSource,
     startSeconds: number
-) {
+): string | null {
+    if (!source.sourceUrl) {
+        return null;
+    }
+
     try {
         const url = new URL(source.sourceUrl);
 

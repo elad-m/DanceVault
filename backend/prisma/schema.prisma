@@ -20,13 +20,15 @@ model User {
 }
 
 model Video {
-  id         String    @id @default(uuid())
+  id         String          @id @default(uuid())
   userId     String
-  user       User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user       User            @relation(fields: [userId], references: [id], onDelete: Restrict)
   title      String
-  sourceType String
-  sourceUrl  String
-  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  sourceType VideoSourceType
+  sourceUrl  String?
+  storageKey String?         @unique
+  status     VideoStatus     @default(ready)
+  createdAt  DateTime        @default(now()) @db.Timestamptz(3)
   segments   Segment[]
 
   @@index([userId, createdAt])
@@ -67,4 +69,16 @@ model Segment {
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
   @@index([videoId, startSeconds])
+}
+
+enum VideoSourceType {
+  youtube
+  external_url
+  uploaded
+}
+
+enum VideoStatus {
+  pending_upload
+  ready
+  upload_failed
 }

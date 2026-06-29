@@ -12,7 +12,7 @@ type SegmentWithPlaybackSource = {
     startSeconds: number;
     video: {
         sourceType: string;
-        sourceUrl: string;
+        sourceUrl: string | null;
     };
 };
 

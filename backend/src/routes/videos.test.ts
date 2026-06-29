@@ -105,6 +105,69 @@ describe("POST /videos", () => {
 
         expect(response.statusCode).toBe(400);
     });
+
+    it("rejects uploaded files because they use the upload route", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos",
+            payload: {
+                title: "Uploaded lesson",
+                sourceType: "uploaded",
+                sourceUrl: "not-used-for-uploads",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+});
+
+describe("POST /video-uploads", () => {
+    it("creates a pending uploaded video with a server-owned storage key", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/video-uploads",
+            payload: {
+                title: "Uploaded salsa lesson",
+                fileName: "lesson.mp4",
+                contentType: "video/mp4",
+            },
+        });
+
+        expect(response.statusCode).toBe(201);
+        expect(response.json()).toMatchObject({
+            userId: TEST_USER_ID,
+            title: "Uploaded salsa lesson",
+            sourceType: "uploaded",
+            sourceUrl: null,
+            status: "pending_upload",
+            storageKey: expect.stringMatching(
+                /^users\/test-user-1\/videos\/[0-9a-f-]+\.mp4$/
+            ),
+        });
+
+        const storedVideo = await prisma.video.findUniqueOrThrow({
+            where: {
+                id: response.json().id,
+            },
+        });
+
+        expect(storedVideo.status).toBe("pending_upload");
+        expect(storedVideo.sourceUrl).toBeNull();
+    });
+
+    it("rejects unsupported content types", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/video-uploads",
+            payload: {
+                title: "Invalid upload",
+                fileName: "lesson.avi",
+                contentType: "video/x-msvideo",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
 });
 
 describe("GET /videos/:videoId", () => {
@@ -194,7 +257,7 @@ describe("GET /videos/:videoId/segments", () => {
 });
 
 describe("PATCH /videos/:videoId", () => {
-    it("updates editable video properties", async () => {
+    it("updates the video title", async () => {
         const video = await prisma.video.create({
             data: {
                 title: "Video before update",
@@ -213,8 +276,6 @@ describe("PATCH /videos/:videoId", () => {
             url: `/videos/${video.id}`,
             payload: {
                 title: "Updated test lesson",
-                sourceType: "external_url",
-                sourceUrl: "https://example.com/updated-video",
             },
         });
 
@@ -222,8 +283,8 @@ describe("PATCH /videos/:videoId", () => {
         expect(response.json()).toMatchObject({
             id: video.id,
             title: "Updated test lesson",
-            sourceType: "external_url",
-            sourceUrl: "https://example.com/updated-video",
+            sourceType: "youtube",
+            sourceUrl: "https://youtube.com/watch?v=before-update",
         });
 
         const savedVideo = await prisma.video.findUniqueOrThrow({
@@ -233,6 +294,18 @@ describe("PATCH /videos/:videoId", () => {
         });
 
         expect(savedVideo.title).toBe("Updated test lesson");
+    });
+
+    it("rejects source changes outside their dedicated workflow", async () => {
+        const response = await app.inject({
+            method: "PATCH",
+            url: "/videos/sample-video-1",
+            payload: {
+                sourceUrl: "https://example.com/replacement",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
     });
 
     it("returns 404 for a video that does not exist", async () => {

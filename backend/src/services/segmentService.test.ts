@@ -63,4 +63,17 @@ describe("toSegmentResponse", () => {
         });
         expect(response).not.toHaveProperty("video");
     });
+
+    it("returns no playback URL while an uploaded video is pending", () => {
+        const response = toSegmentResponse({
+            id: "segment-1",
+            startSeconds: 15,
+            video: {
+                sourceType: "uploaded",
+                sourceUrl: null,
+            },
+        });
+
+        expect(response.playbackUrl).toBeNull();
+    });
 });
