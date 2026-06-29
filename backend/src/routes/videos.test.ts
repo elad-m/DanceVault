@@ -6,6 +6,8 @@ import {
     registerTestAuthentication,
     resetTestDatabase,
     TEST_USER_ID,
+    createOtherUserTestData,
+    OTHER_TEST_VIDEO_ID,
 } from "../test/testDatabase";
 
 const app = buildApp();
@@ -37,6 +39,7 @@ describe("POST /videos", () => {
 
         expect(response.statusCode).toBe(201);
         expect(response.json()).toMatchObject({
+            userId: TEST_USER_ID,
             title: "Bachata lesson summary",
             sourceType: "youtube",
             sourceUrl: "https://youtube.com/watch?v=test123",
@@ -326,3 +329,85 @@ describe("DELETE /videos/:videoId", () => {
     });
 });
 
+describe("Video ownership", () => {
+    it("does not list another user's video", async () => {
+        await createOtherUserTestData();
+
+        const response = await app.inject({
+            method: "GET",
+            url: "/videos",
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json().videos).not.toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: OTHER_TEST_VIDEO_ID,
+                }),
+            ])
+        );
+    });
+
+    it("returns 404 when reading another user's video", async () => {
+        await createOtherUserTestData();
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/videos/${OTHER_TEST_VIDEO_ID}`,
+        });
+
+        expect(response.statusCode).toBe(404);
+    });
+
+    it("does not update another user's video", async () => {
+        await createOtherUserTestData();
+
+        const response = await app.inject({
+            method: "PATCH",
+            url: `/videos/${OTHER_TEST_VIDEO_ID}`,
+            payload: {
+                title: "Unauthorized update",
+            },
+        });
+
+        expect(response.statusCode).toBe(404);
+
+        const storedVideo = await prisma.video.findUniqueOrThrow({
+            where: {
+                id: OTHER_TEST_VIDEO_ID,
+            },
+        });
+
+        expect(storedVideo.title).toBe("Another user's lesson");
+    });
+
+    it("does not delete another user's video", async () => {
+        await createOtherUserTestData();
+
+        const response = await app.inject({
+            method: "DELETE",
+            url: `/videos/${OTHER_TEST_VIDEO_ID}`,
+        });
+
+        expect(response.statusCode).toBe(404);
+
+        const storedVideo = await prisma.video.findUnique({
+            where: {
+                id: OTHER_TEST_VIDEO_ID,
+            },
+        });
+
+        expect(storedVideo).not.toBeNull();
+    });
+
+    it("does not return segments from another user's video", async () => {
+        await createOtherUserTestData();
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/videos/${OTHER_TEST_VIDEO_ID}/segments`,
+        });
+
+        expect(response.statusCode).toBe(404);
+    });
+});

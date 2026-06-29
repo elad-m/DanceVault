@@ -6,6 +6,9 @@ import {
     registerTestAuthentication,
     resetTestDatabase,
     TEST_USER_ID,
+    createOtherUserTestData,
+    OTHER_TEST_SEGMENT_ID,
+    OTHER_TEST_VIDEO_ID,
 } from "../test/testDatabase";
 
 const app = buildApp();
@@ -646,3 +649,108 @@ describe("GET /practice-queue", () => {
     });
 });
 
+describe("Segment ownership", () => {
+    it("does not create a segment inside another user's video", async () => {
+        await createOtherUserTestData();
+
+        const response = await app.inject({
+            method: "POST",
+            url: `/videos/${OTHER_TEST_VIDEO_ID}/segments`,
+            payload: {
+                name: "Unauthorized segment",
+                startSeconds: 30,
+                endSeconds: 40,
+            },
+        });
+
+        expect(response.statusCode).toBe(404);
+
+        const storedSegment = await prisma.segment.findFirst({
+            where: {
+                name: "Unauthorized segment",
+            },
+        });
+
+        expect(storedSegment).toBeNull();
+    });
+
+    it("returns 404 when reading another user's segment", async () => {
+        await createOtherUserTestData();
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/segments/${OTHER_TEST_SEGMENT_ID}`,
+        });
+
+        expect(response.statusCode).toBe(404);
+    });
+
+    it("excludes another user's segments from collections", async () => {
+        await createOtherUserTestData();
+
+        const searchResponse = await app.inject({
+            method: "GET",
+            url: "/segments?tag=other-user-test",
+        });
+
+        expect(searchResponse.statusCode).toBe(200);
+        expect(searchResponse.json().segments).toEqual([]);
+
+        const queueResponse = await app.inject({
+            method: "GET",
+            url: "/practice-queue",
+        });
+
+        expect(queueResponse.statusCode).toBe(200);
+        expect(queueResponse.json().segments).not.toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: OTHER_TEST_SEGMENT_ID,
+                }),
+            ])
+        );
+    });
+
+    it("does not update another user's segment", async () => {
+        await createOtherUserTestData();
+
+        const response = await app.inject({
+            method: "PATCH",
+            url: `/segments/${OTHER_TEST_SEGMENT_ID}`,
+            payload: {
+                name: "Unauthorized update",
+            },
+        });
+
+        expect(response.statusCode).toBe(404);
+
+        const storedSegment = await prisma.segment.findUniqueOrThrow({
+            where: {
+                id: OTHER_TEST_SEGMENT_ID,
+            },
+        });
+
+        expect(storedSegment.name).toBe(
+            "Another user's weak segment"
+        );
+    });
+
+    it("does not delete another user's segment", async () => {
+        await createOtherUserTestData();
+
+        const response = await app.inject({
+            method: "DELETE",
+            url: `/segments/${OTHER_TEST_SEGMENT_ID}`,
+        });
+
+        expect(response.statusCode).toBe(404);
+
+        const storedSegment = await prisma.segment.findUnique({
+            where: {
+                id: OTHER_TEST_SEGMENT_ID,
+            },
+        });
+
+        expect(storedSegment).not.toBeNull();
+    });
+});
