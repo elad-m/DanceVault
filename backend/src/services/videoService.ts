@@ -35,6 +35,7 @@ type CreatePendingUploadVideoInput = {
     userId: string;
     title: string;
     storageKey: string;
+    originalFileName: string;
 };
 
 export async function createPendingUploadVideo(
@@ -46,6 +47,7 @@ export async function createPendingUploadVideo(
             sourceType: "uploaded",
             sourceUrl: null,
             storageKey: input.storageKey,
+            originalFileName: input.originalFileName,
             status: "pending_upload",
             user: {
                 connect: {

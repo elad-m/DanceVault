@@ -140,6 +140,7 @@ describe("POST /video-uploads", () => {
             sourceType: "uploaded",
             sourceUrl: null,
             status: "pending_upload",
+            originalFileName: "lesson.mp4",
             storageKey: expect.stringMatching(
                 /^users\/test-user-1\/videos\/[0-9a-f-]+\.mp4$/
             ),
@@ -153,6 +154,7 @@ describe("POST /video-uploads", () => {
 
         expect(storedVideo.status).toBe("pending_upload");
         expect(storedVideo.sourceUrl).toBeNull();
+        expect(storedVideo.originalFileName).toBe("lesson.mp4");
     });
 
     it("rejects unsupported content types", async () => {
@@ -163,6 +165,20 @@ describe("POST /video-uploads", () => {
                 title: "Invalid upload",
                 fileName: "lesson.avi",
                 contentType: "video/x-msvideo",
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects a non-MP4 filename", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/video-uploads",
+            payload: {
+                title: "Mismatched upload",
+                fileName: "lesson.mov",
+                contentType: "video/mp4",
             },
         });
 

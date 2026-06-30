@@ -75,6 +75,7 @@ const createVideoUploadRouteOptions = {
                     type: "string",
                     minLength: 1,
                     maxLength: 255,
+                    pattern: "^[^/\\\\]+\\.[mM][pP]4$",
                 },
                 contentType: supportedVideoContentTypeSchema,
             },
@@ -130,12 +131,12 @@ async function createVideoUploadHandler(
     const storageKey = createVideoStorageKey({
         userId: request.userId,
         uploadId,
-        contentType: request.body.contentType,
     });
     const video = await createPendingUploadVideo({
         userId: request.userId,
         title: request.body.title,
         storageKey,
+        originalFileName: request.body.fileName,
     });
 
     return reply.status(201).send(video);

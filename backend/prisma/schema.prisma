@@ -20,16 +20,17 @@ model User {
 }
 
 model Video {
-  id         String          @id @default(uuid())
-  userId     String
-  user       User            @relation(fields: [userId], references: [id], onDelete: Restrict)
-  title      String
-  sourceType VideoSourceType
-  sourceUrl  String?
-  storageKey String?         @unique
-  status     VideoStatus     @default(ready)
-  createdAt  DateTime        @default(now()) @db.Timestamptz(3)
-  segments   Segment[]
+  id               String          @id @default(uuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  title            String
+  sourceType       VideoSourceType
+  sourceUrl        String?
+  storageKey       String?         @unique
+  originalFileName String?
+  status           VideoStatus     @default(ready)
+  createdAt        DateTime        @default(now()) @db.Timestamptz(3)
+  segments         Segment[]
 
   @@index([userId, createdAt])
 }

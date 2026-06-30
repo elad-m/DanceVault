@@ -11,38 +11,23 @@ export const externalVideoSourceTypeSchema = {
     enum: ["youtube", "external_url"],
 } as const;
 
-export type SupportedVideoContentType =
-    | "video/mp4"
-    | "video/quicktime"
-    | "video/webm";
+export type SupportedVideoContentType = "video/mp4";
 
 export const supportedVideoContentTypeSchema = {
     type: "string",
-    enum: ["video/mp4", "video/quicktime", "video/webm"],
+    enum: ["video/mp4"],
 } as const;
-
-const fileExtensionByContentType: Record<
-    SupportedVideoContentType,
-    string
-> = {
-    "video/mp4": ".mp4",
-    "video/quicktime": ".mov",
-    "video/webm": ".webm",
-};
 
 type CreateVideoStorageKeyInput = {
     userId: string;
     uploadId: string;
-    contentType: SupportedVideoContentType;
 };
 
 export function createVideoStorageKey({
     userId,
     uploadId,
-    contentType,
 }: CreateVideoStorageKeyInput): string {
     const safeUserId = encodeURIComponent(userId);
-    const extension = fileExtensionByContentType[contentType];
 
-    return `users/${safeUserId}/videos/${uploadId}${extension}`;
+    return `users/${safeUserId}/videos/${uploadId}.mp4`;
 }
