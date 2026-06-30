@@ -16,7 +16,7 @@ type ApiErrorMessageMap = Record<ApiErrorCode, string>;
 export const ApiErrorMessage: ApiErrorMessageMap = {
     [ApiErrorCode.InternalServerError]: "Internal server error",
     [ApiErrorCode.InvalidSegmentTimestamps]:
-        "endSeconds must be greater than startSeconds",
+        "endMilliseconds must be greater than startMilliseconds",
     [ApiErrorCode.SegmentNotFound]: "Segment not found",
     [ApiErrorCode.ValidationError]: "Request validation failed",
     [ApiErrorCode.VideoNotFound]: "Video not found",

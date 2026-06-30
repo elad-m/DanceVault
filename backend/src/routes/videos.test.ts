@@ -368,8 +368,8 @@ describe("DELETE /videos/:videoId", () => {
                 segments: {
                     create: {
                         name: "Dependent segment",
-                        startSeconds: 10,
-                        endSeconds: 20,
+                        startMilliseconds: 10000,
+                        endMilliseconds: 20000,
                         tags: [],
                     },
                 },

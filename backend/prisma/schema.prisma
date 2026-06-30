@@ -55,21 +55,21 @@ enum PracticePriority {
 }
 
 model Segment {
-  id               String           @id @default(uuid())
-  videoId          String
-  name             String
-  description      String?
-  startSeconds     Int
-  endSeconds       Int
-  tags             String[]
-  difficulty       Difficulty       @default(medium)
-  confidence       Confidence       @default(medium)
-  practicePriority PracticePriority @default(medium)
-  createdAt        DateTime         @default(now()) @db.Timestamptz(3)
+  id                String           @id @default(uuid())
+  videoId           String
+  name              String
+  description       String?
+  startMilliseconds Int
+  endMilliseconds   Int
+  tags              String[]
+  difficulty        Difficulty       @default(medium)
+  confidence        Confidence       @default(medium)
+  practicePriority  PracticePriority @default(medium)
+  createdAt         DateTime         @default(now()) @db.Timestamptz(3)
 
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
-  @@index([videoId, startSeconds])
+  @@index([videoId, startMilliseconds])
 }
 
 enum VideoSourceType {

@@ -41,8 +41,8 @@ export async function resetTestDatabase() {
                 create: [
                     {
                         name: "Open stance wave",
-                        startSeconds: 10,
-                        endSeconds: 20,
+                        startMilliseconds: 10000,
+                        endMilliseconds: 20000,
                         tags: ["wave"],
                         difficulty: "medium",
                         confidence: "low",
@@ -50,8 +50,8 @@ export async function resetTestDatabase() {
                     },
                     {
                         name: "Closed stance wave",
-                        startSeconds: 30,
-                        endSeconds: 40,
+                        startMilliseconds: 30000,
+                        endMilliseconds: 40000,
                         tags: ["wave"],
                         difficulty: "hard",
                         confidence: "medium",
@@ -59,8 +59,8 @@ export async function resetTestDatabase() {
                     },
                     {
                         name: "Basic step",
-                        startSeconds: 50,
-                        endSeconds: 60,
+                        startMilliseconds: 50000,
+                        endMilliseconds: 60000,
                         tags: ["basic"],
                         difficulty: "easy",
                         confidence: "high",
@@ -88,8 +88,8 @@ export async function createOtherUserTestData() {
                         create: {
                             id: OTHER_TEST_SEGMENT_ID,
                             name: "Another user's weak segment",
-                            startSeconds: 10,
-                            endSeconds: 20,
+                            startMilliseconds: 10000,
+                            endMilliseconds: 20000,
                             tags: ["other-user-test"],
                             confidence: "low",
                             practicePriority: "high",

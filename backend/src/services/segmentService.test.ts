@@ -48,7 +48,7 @@ describe("toSegmentResponse", () => {
         const response = toSegmentResponse({
             id: "segment-1",
             name: "Open stance wave",
-            startSeconds: 15,
+            startMilliseconds: 15000,
             video: {
                 sourceType: "youtube",
                 sourceUrl: "https://youtube.com/watch?v=test-video",
@@ -58,7 +58,7 @@ describe("toSegmentResponse", () => {
         expect(response).toEqual({
             id: "segment-1",
             name: "Open stance wave",
-            startSeconds: 15,
+            startMilliseconds: 15000,
             playbackUrl: "https://youtube.com/watch?v=test-video&t=15s",
         });
         expect(response).not.toHaveProperty("video");
@@ -67,7 +67,7 @@ describe("toSegmentResponse", () => {
     it("returns no playback URL while an uploaded video is pending", () => {
         const response = toSegmentResponse({
             id: "segment-1",
-            startSeconds: 15,
+            startMilliseconds: 15000,
             video: {
                 sourceType: "uploaded",
                 sourceUrl: null,
@@ -75,5 +75,20 @@ describe("toSegmentResponse", () => {
         });
 
         expect(response.playbackUrl).toBeNull();
+    });
+
+    it("preserves millisecond precision in external playback URLs", () => {
+        const response = toSegmentResponse({
+            id: "segment-1",
+            startMilliseconds: 15500,
+            video: {
+                sourceType: "external_url",
+                sourceUrl: "https://example.com/video.mp4",
+            },
+        });
+
+        expect(response.playbackUrl).toBe(
+            "https://example.com/video.mp4#t=15.5"
+        );
     });
 });

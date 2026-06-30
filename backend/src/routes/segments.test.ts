@@ -34,8 +34,8 @@ describe("POST /videos/:videoId/segments", () => {
             payload: {
                 name: "Shoulder roll transition",
                 description: "Keep the movement continuous.",
-                startSeconds: 500,
-                endSeconds: 530,
+                startMilliseconds: 500000,
+                endMilliseconds: 530000,
                 tags: ["isolation", "transition"],
                 difficulty: "hard",
                 confidence: "low",
@@ -47,8 +47,8 @@ describe("POST /videos/:videoId/segments", () => {
         expect(response.json()).toMatchObject({
             videoId: "sample-video-1",
             name: "Shoulder roll transition",
-            startSeconds: 500,
-            endSeconds: 530,
+            startMilliseconds: 500000,
+            endMilliseconds: 530000,
             difficulty: "hard",
             confidence: "low",
             practicePriority: "high",
@@ -63,8 +63,8 @@ describe("POST /videos/:videoId/segments", () => {
             url: "/videos/not-real/segments",
             payload: {
                 name: "Missing video segment",
-                startSeconds: 10,
-                endSeconds: 20,
+                startMilliseconds: 10000,
+                endMilliseconds: 20000,
             },
         });
 
@@ -83,8 +83,8 @@ describe("POST /videos/:videoId/segments", () => {
             url: "/videos/sample-video-1/segments",
             payload: {
                 name: "Invalid timestamp segment",
-                startSeconds: 30,
-                endSeconds: 20,
+                startMilliseconds: 30000,
+                endMilliseconds: 20000,
             },
         });
 
@@ -92,7 +92,7 @@ describe("POST /videos/:videoId/segments", () => {
         expect(response.json()).toEqual({
             error: {
                 code: "INVALID_SEGMENT_TIMESTAMPS",
-                message: "endSeconds must be greater than startSeconds",
+                message: "endMilliseconds must be greater than startMilliseconds",
             },
         });
     });
@@ -103,8 +103,8 @@ describe("POST /videos/:videoId/segments", () => {
             url: "/videos/sample-video-1/segments",
             payload: {
                 name: "Invalid difficulty segment",
-                startSeconds: 70,
-                endSeconds: 80,
+                startMilliseconds: 70000,
+                endMilliseconds: 80000,
                 difficulty: "impossible",
             },
         });
@@ -118,8 +118,8 @@ describe("POST /videos/:videoId/segments", () => {
             url: "/videos/sample-video-1/segments",
             payload: {
                 name: "Invalid confidence segment",
-                startSeconds: 90,
-                endSeconds: 100,
+                startMilliseconds: 90000,
+                endMilliseconds: 100000,
                 confidence: "uncertain",
             },
         });
@@ -133,8 +133,8 @@ describe("POST /videos/:videoId/segments", () => {
             url: "/videos/sample-video-1/segments",
             payload: {
                 name: "Invalid priority segment",
-                startSeconds: 110,
-                endSeconds: 120,
+                startMilliseconds: 110000,
+                endMilliseconds: 120000,
                 practicePriority: "urgent",
             },
         });
@@ -148,8 +148,8 @@ describe("POST /videos/:videoId/segments", () => {
             url: "/videos/sample-video-1/segments",
             payload: {
                 name: "Negative timestamp segment",
-                startSeconds: -1,
-                endSeconds: 10,
+                startMilliseconds: -1000,
+                endMilliseconds: 10000,
             },
         });
 
@@ -162,8 +162,8 @@ describe("POST /videos/:videoId/segments", () => {
             url: "/videos/sample-video-1/segments",
             payload: {
                 name: "Wrong timestamp type segment",
-                startSeconds: "five",
-                endSeconds: 10,
+                startMilliseconds: "five",
+                endMilliseconds: 10000,
             },
         });
 
@@ -176,8 +176,8 @@ describe("POST /videos/:videoId/segments", () => {
             url: "/videos/sample-video-1/segments",
             payload: {
                 name: "Invalid tags segment",
-                startSeconds: 130,
-                endSeconds: 140,
+                startMilliseconds: 130000,
+                endMilliseconds: 140000,
                 tags: ["wave", 42],
             },
         });
@@ -191,8 +191,8 @@ describe("POST /videos/:videoId/segments", () => {
             url: "/videos/sample-video-1/segments",
             payload: {
                 name: "",
-                startSeconds: 150,
-                endSeconds: 160,
+                startMilliseconds: 150000,
+                endMilliseconds: 160000,
             },
         });
 
@@ -205,8 +205,8 @@ describe("POST /videos/:videoId/segments", () => {
             url: "/videos/sample-video-1/segments",
             payload: {
                 name: "Unexpected property segment",
-                startSeconds: 170,
-                endSeconds: 180,
+                startMilliseconds: 170000,
+                endMilliseconds: 180000,
                 admin: true,
             },
         });
@@ -285,20 +285,20 @@ describe("GET /segments", () => {
                     create: [
                         {
                             name: "Pagination segment 1",
-                            startSeconds: 10,
-                            endSeconds: 20,
+                            startMilliseconds: 10000,
+                            endMilliseconds: 20000,
                             tags: ["pagination-test"],
                         },
                         {
                             name: "Pagination segment 2",
-                            startSeconds: 30,
-                            endSeconds: 40,
+                            startMilliseconds: 30000,
+                            endMilliseconds: 40000,
                             tags: ["pagination-test"],
                         },
                         {
                             name: "Pagination segment 3",
-                            startSeconds: 50,
-                            endSeconds: 60,
+                            startMilliseconds: 50000,
+                            endMilliseconds: 60000,
                             tags: ["pagination-test"],
                         },
                     ],
@@ -393,8 +393,8 @@ describe("PATCH /segments/:segmentId", () => {
             payload: {
                 name: "Updated open stance wave",
                 description: "Updated description",
-                startSeconds: 12,
-                endSeconds: 24,
+                startMilliseconds: 12000,
+                endMilliseconds: 24000,
                 tags: ["wave", "updated"],
                 difficulty: "hard",
                 confidence: "high",
@@ -407,8 +407,8 @@ describe("PATCH /segments/:segmentId", () => {
             id: existingSegment.id,
             name: "Updated open stance wave",
             description: "Updated description",
-            startSeconds: 12,
-            endSeconds: 24,
+            startMilliseconds: 12000,
+            endMilliseconds: 24000,
             tags: ["wave", "updated"],
             difficulty: "hard",
             confidence: "high",
@@ -424,8 +424,8 @@ describe("PATCH /segments/:segmentId", () => {
         });
 
         expect(savedSegment.name).toBe("Updated open stance wave");
-        expect(savedSegment.startSeconds).toBe(12);
-        expect(savedSegment.endSeconds).toBe(24);
+        expect(savedSegment.startMilliseconds).toBe(12000);
+        expect(savedSegment.endMilliseconds).toBe(24000);
         expect(savedSegment.confidence).toBe("high");
         expect(savedSegment.practicePriority).toBe("low");
     });
@@ -481,7 +481,7 @@ describe("PATCH /segments/:segmentId", () => {
             method: "PATCH",
             url: `/segments/${existingSegment.id}`,
             payload: {
-                startSeconds: existingSegment.endSeconds,
+                startMilliseconds: existingSegment.endMilliseconds,
             },
         });
 
@@ -489,7 +489,7 @@ describe("PATCH /segments/:segmentId", () => {
         expect(response.json()).toEqual({
             error: {
                 code: "INVALID_SEGMENT_TIMESTAMPS",
-                message: "endSeconds must be greater than startSeconds",
+                message: "endMilliseconds must be greater than startMilliseconds",
             },
         });
     });
@@ -501,8 +501,8 @@ describe("DELETE /segments/:segmentId", () => {
             data: {
                 videoId: "sample-video-1",
                 name: "Segment to delete",
-                startSeconds: 200,
-                endSeconds: 210,
+                startMilliseconds: 200000,
+                endMilliseconds: 210000,
                 tags: [],
             },
         });
@@ -554,8 +554,8 @@ describe("GET /practice-queue", () => {
                     id: "queue-high-low",
                     videoId: "sample-video-1",
                     name: "Queue high priority and low confidence",
-                    startSeconds: 300,
-                    endSeconds: 310,
+                    startMilliseconds: 300000,
+                    endMilliseconds: 310000,
                     tags: ["practice-queue-test"],
                     confidence: "low",
                     practicePriority: "high",
@@ -564,8 +564,8 @@ describe("GET /practice-queue", () => {
                     id: "queue-high-high",
                     videoId: "sample-video-1",
                     name: "Queue high priority and high confidence",
-                    startSeconds: 320,
-                    endSeconds: 330,
+                    startMilliseconds: 320000,
+                    endMilliseconds: 330000,
                     tags: ["practice-queue-test"],
                     confidence: "high",
                     practicePriority: "high",
@@ -574,8 +574,8 @@ describe("GET /practice-queue", () => {
                     id: "queue-medium-low",
                     videoId: "sample-video-1",
                     name: "Queue medium priority and low confidence",
-                    startSeconds: 340,
-                    endSeconds: 350,
+                    startMilliseconds: 340000,
+                    endMilliseconds: 350000,
                     tags: ["practice-queue-test"],
                     confidence: "low",
                     practicePriority: "medium",
@@ -584,8 +584,8 @@ describe("GET /practice-queue", () => {
                     id: "queue-medium-medium",
                     videoId: "sample-video-1",
                     name: "Not queued medium segment",
-                    startSeconds: 360,
-                    endSeconds: 370,
+                    startMilliseconds: 360000,
+                    endMilliseconds: 370000,
                     tags: ["practice-queue-test"],
                     confidence: "medium",
                     practicePriority: "medium",
@@ -594,8 +594,8 @@ describe("GET /practice-queue", () => {
                     id: "queue-low-high",
                     videoId: "sample-video-1",
                     name: "Not queued low-priority segment",
-                    startSeconds: 380,
-                    endSeconds: 390,
+                    startMilliseconds: 380000,
+                    endMilliseconds: 390000,
                     tags: ["practice-queue-test"],
                     confidence: "high",
                     practicePriority: "low",
@@ -658,8 +658,8 @@ describe("Segment ownership", () => {
             url: `/videos/${OTHER_TEST_VIDEO_ID}/segments`,
             payload: {
                 name: "Unauthorized segment",
-                startSeconds: 30,
-                endSeconds: 40,
+                startMilliseconds: 30000,
+                endMilliseconds: 40000,
             },
         });
 

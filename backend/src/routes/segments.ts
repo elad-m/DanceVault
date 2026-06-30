@@ -34,8 +34,8 @@ type CreateSegmentRequest = {
     Body: {
         name: string;
         description?: string;
-        startSeconds: number;
-        endSeconds: number;
+        startMilliseconds: number;
+        endMilliseconds: number;
         tags?: string[];
         difficulty?: Difficulty;
         confidence?: Confidence;
@@ -72,8 +72,8 @@ type UpdateSegmentRequest = SegmentParams & {
     Body: {
         name?: string;
         description?: string;
-        startSeconds?: number;
-        endSeconds?: number;
+        startMilliseconds?: number;
+        endMilliseconds?: number;
         tags?: string[];
         difficulty?: Difficulty;
         confidence?: Confidence;
@@ -89,11 +89,11 @@ const segmentProperties = {
     description: {
         type: "string",
     },
-    startSeconds: {
+    startMilliseconds: {
         type: "integer",
         minimum: 0,
     },
-    endSeconds: {
+    endMilliseconds: {
         type: "integer",
         minimum: 1,
     },
@@ -113,7 +113,7 @@ const createSegmentRouteOptions = {
         body: {
             type: "object",
             additionalProperties: false,
-            required: ["name", "startSeconds", "endSeconds"],
+            required: ["name", "startMilliseconds", "endMilliseconds"],
             properties: segmentProperties,
         },
     },
@@ -188,9 +188,9 @@ async function createSegmentHandler(
         });
     }
 
-    const { name, startSeconds, endSeconds } = request.body;
+    const { name, startMilliseconds, endMilliseconds } = request.body;
 
-    if (!areSegmentTimestampsValid(startSeconds, endSeconds)) {
+    if (!areSegmentTimestampsValid(startMilliseconds, endMilliseconds)) {
         return sendApiError(reply, {
             statusCode: 400,
             code: ApiErrorCode.InvalidSegmentTimestamps,
@@ -202,8 +202,8 @@ async function createSegmentHandler(
         videoId: video.id,
         name,
         description: request.body.description,
-        startSeconds,
-        endSeconds,
+        startMilliseconds,
+        endMilliseconds,
         tags: request.body.tags,
         difficulty: request.body.difficulty,
         confidence: request.body.confidence,
@@ -299,9 +299,9 @@ async function updateSegmentHandler(
     }
 
     const nextStartSeconds =
-        request.body.startSeconds ?? existingSegment.startSeconds;
+        request.body.startMilliseconds ?? existingSegment.startMilliseconds;
     const nextEndSeconds =
-        request.body.endSeconds ?? existingSegment.endSeconds;
+        request.body.endMilliseconds ?? existingSegment.endMilliseconds;
 
     if (!areSegmentTimestampsValid(nextStartSeconds, nextEndSeconds)) {
         return sendApiError(reply, {

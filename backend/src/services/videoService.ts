@@ -87,7 +87,7 @@ export async function getVideoSegments({ videoId, userId }: VideoScope) {
             },
         },
         orderBy: {
-            startSeconds: "asc",
+            startMilliseconds: "asc",
         },
     });
 }

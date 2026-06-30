@@ -26,7 +26,7 @@ type SegmentPlaybackSource = {
 
 export function buildSegmentPlaybackUrl(
     source: SegmentPlaybackSource,
-    startSeconds: number
+    startMilliseconds: number
 ): string | null {
     if (!source.sourceUrl) {
         return null;
@@ -34,9 +34,10 @@ export function buildSegmentPlaybackUrl(
 
     try {
         const url = new URL(source.sourceUrl);
+        const startSeconds = startMilliseconds / 1000;
 
         if (source.sourceType === "youtube") {
-            url.searchParams.set("t", `${startSeconds}s`);
+            url.searchParams.set("t", `${Math.floor(startSeconds)}s`);
         } else {
             url.hash = `t=${startSeconds}`;
         }

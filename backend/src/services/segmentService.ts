@@ -9,7 +9,7 @@ import type {
 // Helpers
 
 type SegmentWithPlaybackSource = {
-    startSeconds: number;
+    startMilliseconds: number;
     video: {
         sourceType: string;
         sourceUrl: string | null;
@@ -35,15 +35,15 @@ export function toSegmentResponse<T extends SegmentWithPlaybackSource>(
 
     return {
         ...segmentData,
-        playbackUrl: buildSegmentPlaybackUrl(video, segment.startSeconds),
+        playbackUrl: buildSegmentPlaybackUrl(video, segment.startMilliseconds),
     };
 }
 
 export function areSegmentTimestampsValid(
-    startSeconds: number,
-    endSeconds: number
+    startMilliseconds: number,
+    endMilliseconds: number
 ) {
-    return endSeconds > startSeconds;
+    return endMilliseconds > startMilliseconds;
 }
 
 export function paginateResults<T extends { id: string }>(
@@ -79,8 +79,8 @@ export async function findVideoForSegmentCreation({
 type CreateSegmentInput = VideoScope & {
     name: string;
     description?: string;
-    startSeconds: number;
-    endSeconds: number;
+    startMilliseconds: number;
+    endMilliseconds: number;
     tags?: string[];
     difficulty?: Difficulty;
     confidence?: Confidence;
@@ -98,8 +98,8 @@ export async function createSegment(input: CreateSegmentInput) {
             },
             name: input.name,
             description: input.description,
-            startSeconds: input.startSeconds,
-            endSeconds: input.endSeconds,
+            startMilliseconds: input.startMilliseconds,
+            endMilliseconds: input.endMilliseconds,
             tags: input.tags ?? [],
             difficulty: input.difficulty ?? "medium",
             confidence: input.confidence ?? "medium",
@@ -255,8 +255,8 @@ export async function getPracticeQueue(input: UserScope & PaginationInput) {
 type UpdateSegmentInput = SegmentScope & {
     name?: string;
     description?: string;
-    startSeconds?: number;
-    endSeconds?: number;
+    startMilliseconds?: number;
+    endMilliseconds?: number;
     tags?: string[];
     difficulty?: Difficulty;
     confidence?: Confidence;
