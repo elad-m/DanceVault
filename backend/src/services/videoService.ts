@@ -58,6 +58,21 @@ export async function createPendingUploadVideo(
     });
 }
 
+export async function markVideoUploadReady({
+    videoId,
+    userId,
+}: VideoScope) {
+    return prisma.video.update({
+        where: {
+            id: videoId,
+            userId,
+        },
+        data: {
+            status: "ready",
+        },
+    });
+}
+
 export async function getVideoById({ videoId, userId }: VideoScope) {
     return prisma.video.findFirst({
         where: {

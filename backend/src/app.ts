@@ -4,8 +4,18 @@ import { ApiErrorCode, sendApiError } from "./httpErrors";
 import { registerSegmentRoutes } from "./routes/segments";
 import { registerVideoRoutes } from "./routes/videos";
 import { registerDevelopmentAuthentication } from "./auth/developmentAuth";
+import {
+    s3VideoStorage,
+    type VideoStorage,
+} from "./storage/s3Client";
 
-export function buildApp() {
+type BuildAppOptions = {
+    videoStorage?: VideoStorage;
+};
+
+export function buildApp({
+    videoStorage = s3VideoStorage,
+}: BuildAppOptions = {}) {
     const app = Fastify({
         logger: true,
         ajv: {
@@ -38,7 +48,7 @@ export function buildApp() {
     });
 
     registerDevelopmentAuthentication(app);
-    registerVideoRoutes(app);
+    registerVideoRoutes(app, videoStorage);
     registerSegmentRoutes(app);
 
     return app;

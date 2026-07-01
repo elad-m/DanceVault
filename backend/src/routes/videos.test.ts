@@ -1,4 +1,11 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import {
+    afterAll,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from "vitest";
 import { buildApp } from "../app";
 import { prisma } from "../db";
 import {
@@ -9,11 +16,30 @@ import {
     createOtherUserTestData,
     OTHER_TEST_VIDEO_ID,
 } from "../test/testDatabase";
+import type {
+    CreateVideoUploadUrlInput,
+    VideoStorage,
+} from "../storage/s3Client";
 
-const app = buildApp();
+const createVideoUploadUrlMock = vi.fn(
+    async ({ storageKey }: CreateVideoUploadUrlInput): Promise<string> =>
+        `http://storage.test/${storageKey}?X-Amz-Signature=test`
+);
+const videoObjectExistsMock = vi.fn(
+    async (_storageKey: string): Promise<boolean> => false
+);
+const fakeVideoStorage: VideoStorage = {
+    createVideoUploadUrl: createVideoUploadUrlMock,
+    videoObjectExists: videoObjectExistsMock,
+};
+
+const app = buildApp({ videoStorage: fakeVideoStorage });
 registerTestAuthentication(app);
 
 beforeEach(async () => {
+    createVideoUploadUrlMock.mockClear();
+    videoObjectExistsMock.mockClear();
+    videoObjectExistsMock.mockResolvedValue(false);
     await resetTestDatabase();
 });
 
@@ -134,13 +160,14 @@ describe("POST /video-uploads", () => {
         });
 
         expect(response.statusCode).toBe(201);
-        expect(response.json()).toMatchObject({
+        const body = response.json();
+        expect(body.video).toMatchObject({
             userId: TEST_USER_ID,
             title: "Uploaded salsa lesson",
             sourceType: "uploaded",
             sourceUrl: null,
-            status: "pending_upload",
             originalFileName: "lesson.mp4",
+            status: "pending_upload",
             storageKey: expect.stringMatching(
                 /^users\/test-user-1\/videos\/[0-9a-f-]+\.mp4$/
             ),
@@ -148,13 +175,15 @@ describe("POST /video-uploads", () => {
 
         const storedVideo = await prisma.video.findUniqueOrThrow({
             where: {
-                id: response.json().id,
+                id: body.video.id,
             },
         });
 
+        expect(body.uploadUrl).toEqual(expect.any(String));
+        expect(body.uploadUrl).toContain(body.video.storageKey);
+        expect(body.uploadUrl).toContain("X-Amz-Signature");
         expect(storedVideo.status).toBe("pending_upload");
-        expect(storedVideo.sourceUrl).toBeNull();
-        expect(storedVideo.originalFileName).toBe("lesson.mp4");
+        expect(storedVideo.storageKey).toBe(body.video.storageKey);
     });
 
     it("rejects unsupported content types", async () => {
@@ -183,6 +212,127 @@ describe("POST /video-uploads", () => {
         });
 
         expect(response.statusCode).toBe(400);
+    });
+});
+
+describe("POST /video-uploads/:videoId/complete", () => {
+    async function createPendingUploadTestVideo() {
+        return prisma.video.create({
+            data: {
+                id: "pending-upload-video",
+                userId: TEST_USER_ID,
+                title: "Pending uploaded lesson",
+                sourceType: "uploaded",
+                sourceUrl: null,
+                storageKey:
+                    "users/test-user-1/videos/pending-upload-video.mp4",
+                originalFileName: "lesson.mp4",
+                status: "pending_upload",
+            },
+        });
+    }
+
+    it("keeps the video pending when its storage object is missing", async () => {
+        const video = await createPendingUploadTestVideo();
+
+        const response = await app.inject({
+            method: "POST",
+            url: `/video-uploads/${video.id}/complete`,
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toMatchObject({
+            error: {
+                code: "VIDEO_UPLOAD_NOT_FOUND",
+            },
+        });
+        expect(videoObjectExistsMock).toHaveBeenCalledWith(
+            video.storageKey
+        );
+
+        const storedVideo = await prisma.video.findUniqueOrThrow({
+            where: {
+                id: video.id,
+            },
+        });
+        expect(storedVideo.status).toBe("pending_upload");
+    });
+
+    it("marks the video ready when its storage object exists", async () => {
+        const video = await createPendingUploadTestVideo();
+        videoObjectExistsMock.mockResolvedValueOnce(true);
+
+        const response = await app.inject({
+            method: "POST",
+            url: `/video-uploads/${video.id}/complete`,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({
+            id: video.id,
+            status: "ready",
+        });
+        expect(videoObjectExistsMock).toHaveBeenCalledWith(
+            video.storageKey
+        );
+
+        const storedVideo = await prisma.video.findUniqueOrThrow({
+            where: {
+                id: video.id,
+            },
+        });
+        expect(storedVideo.status).toBe("ready");
+    });
+
+    it("returns an already-ready video without checking storage again", async () => {
+        const video = await createPendingUploadTestVideo();
+        await prisma.video.update({
+            where: {
+                id: video.id,
+            },
+            data: {
+                status: "ready",
+            },
+        });
+
+        const response = await app.inject({
+            method: "POST",
+            url: `/video-uploads/${video.id}/complete`,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({
+            id: video.id,
+            status: "ready",
+        });
+        expect(videoObjectExistsMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects completion for a video that is not an upload", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/video-uploads/sample-video-1/complete",
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toMatchObject({
+            error: {
+                code: "INVALID_VIDEO_UPLOAD_STATE",
+            },
+        });
+        expect(videoObjectExistsMock).not.toHaveBeenCalled();
+    });
+
+    it("does not complete another user's video", async () => {
+        await createOtherUserTestData();
+
+        const response = await app.inject({
+            method: "POST",
+            url: `/video-uploads/${OTHER_TEST_VIDEO_ID}/complete`,
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(videoObjectExistsMock).not.toHaveBeenCalled();
     });
 });
 

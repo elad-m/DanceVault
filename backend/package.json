@@ -4,9 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "build": "tsc --noEmit",
     "dev": "tsx src/index.ts",
     "db:test:migrate": "cross-env DATABASE_URL=postgresql://dancevault:dancevault@localhost:5433/dancevault_test?schema=public prisma migrate deploy",
     "test": "npm run db:test:migrate && cross-env DATABASE_URL=postgresql://dancevault:dancevault@localhost:5433/dancevault_test?schema=public vitest run",
+    "test:storage:integration": "vitest run --config vitest.integration.config.ts",
     "db:seed": "tsx prisma/seed.ts"
   },
   "keywords": [],
@@ -23,6 +25,8 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1076.0",
+    "@aws-sdk/s3-request-presigner": "^3.1076.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "dotenv": "^17.4.2",
