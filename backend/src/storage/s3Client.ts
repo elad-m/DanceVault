@@ -1,8 +1,9 @@
 import "dotenv/config";
 import {
+    GetObjectCommand,
+    HeadObjectCommand,
     PutObjectCommand,
     S3Client,
-    HeadObjectCommand,
     S3ServiceException,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -39,8 +40,11 @@ export type VideoStorage = {
     createVideoUploadUrl(
         input: CreateVideoUploadUrlInput
     ): Promise<string>;
+    createVideoPlaybackUrl(storageKey: string): Promise<string>;
     videoObjectExists(storageKey: string): Promise<boolean>;
 };
+
+export const videoUrlExpirationSeconds = 15 * 60;
 
 export async function createVideoUploadUrl({
     storageKey,
@@ -53,7 +57,20 @@ export async function createVideoUploadUrl({
     });
 
     return getSignedUrl(s3Client, uploadCommand, {
-        expiresIn: 15 * 60,
+        expiresIn: videoUrlExpirationSeconds,
+    });
+}
+
+export async function createVideoPlaybackUrl(
+    storageKey: string
+): Promise<string> {
+    const playbackCommand = new GetObjectCommand({
+        Bucket: videoBucketName,
+        Key: storageKey,
+    });
+
+    return getSignedUrl(s3Client, playbackCommand, {
+        expiresIn: videoUrlExpirationSeconds,
     });
 }
 
@@ -81,6 +98,7 @@ export async function videoObjectExists(
 }
 
 export const s3VideoStorage: VideoStorage = {
+    createVideoPlaybackUrl,
     createVideoUploadUrl,
     videoObjectExists,
 };

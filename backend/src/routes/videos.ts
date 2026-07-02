@@ -23,7 +23,10 @@ import {
     type ExternalVideoSourceType,
     type SupportedVideoContentType,
 } from "../domain/video";
-import type { VideoStorage } from "../storage/s3Client";
+import {
+    videoUrlExpirationSeconds,
+    type VideoStorage,
+} from "../storage/s3Client";
 
 type CreateVideoRequest = {
     Body: {
@@ -218,6 +221,46 @@ async function getVideoHandler(
     return video;
 }
 
+async function getVideoPlaybackUrlHandler(
+    request: FastifyRequest<VideoParams>,
+    reply: FastifyReply,
+    videoStorage: VideoStorage
+) {
+    const video = await getVideoById({
+        videoId: request.params.videoId,
+        userId: request.userId,
+    });
+
+    if (!video) {
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.VideoNotFound,
+        });
+    }
+
+    if (video.sourceType !== "uploaded" || !video.storageKey) {
+        return sendApiError(reply, {
+            statusCode: 409,
+            code: ApiErrorCode.InvalidVideoUploadState,
+        });
+    }
+
+    if (video.status !== "ready") {
+        return sendApiError(reply, {
+            statusCode: 409,
+            code: ApiErrorCode.VideoNotReady,
+        });
+    }
+
+    const playbackUrl =
+        await videoStorage.createVideoPlaybackUrl(video.storageKey);
+
+    return {
+        playbackUrl,
+        expiresInSeconds: videoUrlExpirationSeconds,
+    };
+}
+
 async function listVideosHandler(request: FastifyRequest) {
     const videos = await listVideos({
         userId: request.userId,
@@ -325,6 +368,11 @@ export function registerVideoRoutes(
             completeVideoUploadHandler(request, reply, videoStorage)
     );
     app.get<VideoParams>("/videos/:videoId", getVideoHandler);
+    app.get<VideoParams>(
+        "/videos/:videoId/playback-url",
+        (request, reply) =>
+            getVideoPlaybackUrlHandler(request, reply, videoStorage)
+    );
     app.get("/videos", listVideosHandler);
     app.get<VideoParams>("/videos/:videoId/segments", getVideoSegmentsHandler);
     app.patch<UpdateVideoRequest>(

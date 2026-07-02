@@ -8,6 +8,7 @@ export const ApiErrorCode = {
     VideoNotFound: "VIDEO_NOT_FOUND",
     Unauthorized: "UNAUTHORIZED",
     InvalidVideoUploadState: "INVALID_VIDEO_UPLOAD_STATE",
+    VideoNotReady: "VIDEO_NOT_READY",
     VideoUploadNotFound: "VIDEO_UPLOAD_NOT_FOUND",
 } as const;
 
@@ -25,6 +26,7 @@ export const ApiErrorMessage: ApiErrorMessageMap = {
     [ApiErrorCode.Unauthorized]: "Authentication is required",
     [ApiErrorCode.InvalidVideoUploadState]:
         "Video is not an uploaded video",
+    [ApiErrorCode.VideoNotReady]: "Video is not ready for playback",
     [ApiErrorCode.VideoUploadNotFound]:
         "Uploaded video file was not found",
 };

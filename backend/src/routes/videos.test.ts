@@ -25,10 +25,15 @@ const createVideoUploadUrlMock = vi.fn(
     async ({ storageKey }: CreateVideoUploadUrlInput): Promise<string> =>
         `http://storage.test/${storageKey}?X-Amz-Signature=test`
 );
+const createVideoPlaybackUrlMock = vi.fn(
+    async (storageKey: string): Promise<string> =>
+        `http://storage.test/${storageKey}?X-Amz-Signature=playback-test`
+);
 const videoObjectExistsMock = vi.fn(
     async (_storageKey: string): Promise<boolean> => false
 );
 const fakeVideoStorage: VideoStorage = {
+    createVideoPlaybackUrl: createVideoPlaybackUrlMock,
     createVideoUploadUrl: createVideoUploadUrlMock,
     videoObjectExists: videoObjectExistsMock,
 };
@@ -37,6 +42,7 @@ const app = buildApp({ videoStorage: fakeVideoStorage });
 registerTestAuthentication(app);
 
 beforeEach(async () => {
+    createVideoPlaybackUrlMock.mockClear();
     createVideoUploadUrlMock.mockClear();
     videoObjectExistsMock.mockClear();
     videoObjectExistsMock.mockResolvedValue(false);
@@ -365,6 +371,87 @@ describe("GET /videos/:videoId", () => {
                 message: "Video not found",
             },
         });
+    });
+});
+
+describe("GET /videos/:videoId/playback-url", () => {
+    async function createUploadedVideo(status: "pending_upload" | "ready") {
+        return prisma.video.create({
+            data: {
+                id: `uploaded-video-${status}`,
+                userId: TEST_USER_ID,
+                title: "Uploaded lesson",
+                sourceType: "uploaded",
+                sourceUrl: null,
+                storageKey: `users/test-user-1/videos/${status}.mp4`,
+                originalFileName: "lesson.mp4",
+                status,
+            },
+        });
+    }
+
+    it("returns a signed playback URL for a ready uploaded video", async () => {
+        const video = await createUploadedVideo("ready");
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/videos/${video.id}/playback-url`,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({
+            playbackUrl:
+                `http://storage.test/${video.storageKey}` +
+                "?X-Amz-Signature=playback-test",
+            expiresInSeconds: 900,
+        });
+        expect(createVideoPlaybackUrlMock).toHaveBeenCalledWith(
+            video.storageKey
+        );
+    });
+
+    it("rejects playback while an upload is pending", async () => {
+        const video = await createUploadedVideo("pending_upload");
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/videos/${video.id}/playback-url`,
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toMatchObject({
+            error: {
+                code: "VIDEO_NOT_READY",
+            },
+        });
+        expect(createVideoPlaybackUrlMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects playback URLs for an external video", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url: "/videos/sample-video-1/playback-url",
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toMatchObject({
+            error: {
+                code: "INVALID_VIDEO_UPLOAD_STATE",
+            },
+        });
+        expect(createVideoPlaybackUrlMock).not.toHaveBeenCalled();
+    });
+
+    it("does not create a playback URL for another user's video", async () => {
+        await createOtherUserTestData();
+
+        const response = await app.inject({
+            method: "GET",
+            url: `/videos/${OTHER_TEST_VIDEO_ID}/playback-url`,
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(createVideoPlaybackUrlMock).not.toHaveBeenCalled();
     });
 });
 
