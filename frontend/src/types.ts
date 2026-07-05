@@ -42,3 +42,8 @@ export type CreateSegmentInput = {
     confidence?: Confidence;
     practicePriority?: PracticePriority;
 };
+
+export type UpdatePracticeFieldsInput = {
+    confidence?: Confidence;
+    practicePriority?: PracticePriority;
+};

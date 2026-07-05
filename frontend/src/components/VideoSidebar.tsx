@@ -1,10 +1,14 @@
-import { Film, Plus, RefreshCw, Upload } from "lucide-react";
+import { Film, ListChecks, Plus, RefreshCw, Upload } from "lucide-react";
 import type { Video } from "../types";
+
+export type AppView = "library" | "practice";
 
 type VideoSidebarProps = {
     videos: Video[];
     selectedVideoId: string | null;
     loading: boolean;
+    activeView: AppView;
+    onViewChange: (view: AppView) => void;
     onSelect: (video: Video) => void;
     onRefresh: () => void;
     onUpload: () => void;
@@ -14,6 +18,8 @@ export function VideoSidebar({
     videos,
     selectedVideoId,
     loading,
+    activeView,
+    onViewChange,
     onSelect,
     onRefresh,
     onUpload,
@@ -42,8 +48,18 @@ export function VideoSidebar({
                 </button>
             </div>
 
-            <div className="section-label">Videos <span>{videos.length}</span></div>
-            <nav className="video-list" aria-label="Videos">
+            <nav className="view-navigation" aria-label="Main views">
+                <button className={activeView === "library" ? "active" : ""} onClick={() => onViewChange("library")}>
+                    <Film size={16} /> Library
+                </button>
+                <button className={activeView === "practice" ? "active" : ""} onClick={() => onViewChange("practice")}>
+                    <ListChecks size={16} /> Practice queue
+                </button>
+            </nav>
+
+            {activeView === "library" && <>
+                <div className="section-label">Videos <span>{videos.length}</span></div>
+                <nav className="video-list" aria-label="Videos">
                 {videos.map((video) => (
                     <button
                         key={video.id}
@@ -63,7 +79,8 @@ export function VideoSidebar({
                 {!loading && videos.length === 0 && (
                     <p className="empty-copy">No videos yet.</p>
                 )}
-            </nav>
+                </nav>
+            </>}
         </aside>
     );
 }

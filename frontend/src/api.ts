@@ -1,4 +1,9 @@
-import type { CreateSegmentInput, Segment, Video } from "./types";
+import type {
+    CreateSegmentInput,
+    Segment,
+    UpdatePracticeFieldsInput,
+    Video,
+} from "./types";
 
 const developmentUserId = "initial-user";
 
@@ -44,6 +49,19 @@ export async function getVideoSegments(videoId: string): Promise<Segment[]> {
     return response.segments;
 }
 
+export async function getPracticeQueue(cursor?: string): Promise<{
+    segments: Segment[];
+    nextCursor: string | null;
+}> {
+    const query = new URLSearchParams({ limit: "20" });
+    if (cursor) query.set("cursor", cursor);
+
+    return requestJson<{
+        segments: Segment[];
+        nextCursor: string | null;
+    }>(`/practice-queue?${query.toString()}`);
+}
+
 export async function getPlaybackUrl(videoId: string): Promise<string> {
     const response = await requestJson<{
         playbackUrl: string;
@@ -58,6 +76,16 @@ export async function createSegment(
 ): Promise<Segment> {
     return requestJson<Segment>(`/videos/${videoId}/segments`, {
         method: "POST",
+        body: JSON.stringify(input),
+    });
+}
+
+export async function updateSegmentPracticeFields(
+    segmentId: string,
+    input: UpdatePracticeFieldsInput
+): Promise<Segment> {
+    return requestJson<Segment>(`/segments/${segmentId}`, {
+        method: "PATCH",
         body: JSON.stringify(input),
     });
 }

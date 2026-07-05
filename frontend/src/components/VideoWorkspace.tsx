@@ -1,4 +1,5 @@
 import {
+    ArrowLeft,
     ExternalLink,
     LoaderCircle,
     Maximize2,
@@ -16,10 +17,15 @@ import { SegmentEditor } from "./SegmentEditor";
 
 type VideoWorkspaceProps = {
     video: Video | null;
+    seekRequest: {
+        id: string;
+        milliseconds: number;
+    } | null;
+    onBackToPractice?: () => void;
     onError: (message: string) => void;
 };
 
-export function VideoWorkspace({ video, onError }: VideoWorkspaceProps) {
+export function VideoWorkspace({ video, seekRequest, onBackToPractice, onError }: VideoWorkspaceProps) {
     const playerShellRef = useRef<HTMLDivElement>(null);
     const playerRef = useRef<HTMLVideoElement>(null);
     const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
@@ -67,6 +73,14 @@ export function VideoWorkspace({ video, onError }: VideoWorkspaceProps) {
             cancelled = true;
         };
     }, [video, onError]);
+
+    useEffect(() => {
+        const player = playerRef.current;
+        if (!player || !playbackUrl || !seekRequest || player.readyState < 1) return;
+
+        player.currentTime = seekRequest.milliseconds / 1000;
+        setCurrentMilliseconds(seekRequest.milliseconds);
+    }, [playbackUrl, seekRequest]);
 
     async function saveSegment(input: CreateSegmentInput) {
         if (!video) return;
@@ -140,7 +154,14 @@ export function VideoWorkspace({ video, onError }: VideoWorkspaceProps) {
                     <span className="eyebrow">{video.sourceType.replace("_", " ")}</span>
                     <h1>{video.title}</h1>
                 </div>
-                <span className={`status-badge ${video.status}`}>{video.status.replace("_", " ")}</span>
+                <div className="workspace-header-actions">
+                    {onBackToPractice && (
+                        <button className="secondary-button" onClick={onBackToPractice}>
+                            <ArrowLeft size={16} /> Back to practice queue
+                        </button>
+                    )}
+                    <span className={`status-badge ${video.status}`}>{video.status.replace("_", " ")}</span>
+                </div>
             </header>
 
             <div className="workspace-grid">
@@ -161,6 +182,10 @@ export function VideoWorkspace({ video, onError }: VideoWorkspaceProps) {
                                             const player = event.currentTarget;
                                             setDurationMilliseconds(Math.round(player.duration * 1000));
                                             setVideoAspectRatio(`${player.videoWidth} / ${player.videoHeight}`);
+                                            if (seekRequest) {
+                                                player.currentTime = seekRequest.milliseconds / 1000;
+                                                setCurrentMilliseconds(seekRequest.milliseconds);
+                                            }
                                         }}
                                         onTimeUpdate={(event) => setCurrentMilliseconds(Math.round(event.currentTarget.currentTime * 1000))}
                                         onPlay={() => setIsPlaying(true)}
