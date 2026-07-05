@@ -20,6 +20,7 @@ type PracticePlayerProps = {
     onPrevious: () => void;
     onNext: () => void;
     onOpenFullVideo: (segment: Segment) => void;
+    onThumbnailCaptured: (segmentId: string, dataUrl: string) => void;
     onError: (message: string) => void;
 };
 
@@ -31,10 +32,12 @@ export function PracticePlayer({
     onPrevious,
     onNext,
     onOpenFullVideo,
+    onThumbnailCaptured,
     onError,
 }: PracticePlayerProps) {
     const shellRef = useRef<HTMLDivElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const thumbnailCapturedForSegmentRef = useRef<string | null>(null);
     const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
     const [currentMilliseconds, setCurrentMilliseconds] = useState(0);
     const [aspectRatio, setAspectRatio] = useState("16 / 9");
@@ -46,6 +49,7 @@ export function PracticePlayer({
         setPlaying(false);
         setAspectRatio("16 / 9");
         setCurrentMilliseconds(segment?.startMilliseconds ?? 0);
+        thumbnailCapturedForSegmentRef.current = null;
 
         if (!segment || !video || video.sourceType !== "uploaded" || video.status !== "ready") return;
 
@@ -91,6 +95,42 @@ export function PracticePlayer({
         setCurrentMilliseconds(milliseconds);
     }
 
+    function captureSegmentThumbnail(player: HTMLVideoElement) {
+        if (
+            !segment ||
+            thumbnailCapturedForSegmentRef.current === segment.id ||
+            player.videoWidth === 0 ||
+            player.videoHeight === 0 ||
+            Math.abs(player.currentTime * 1000 - segment.startMilliseconds) > 100
+        ) {
+            return;
+        }
+
+        thumbnailCapturedForSegmentRef.current = segment.id;
+        const segmentId = segment.id;
+
+        player.requestVideoFrameCallback(() => {
+            try {
+                const canvas = document.createElement("canvas");
+                canvas.width = 320;
+                canvas.height = Math.round(
+                    canvas.width * player.videoHeight / player.videoWidth
+                );
+                const context = canvas.getContext("2d");
+                if (!context) return;
+
+                context.drawImage(player, 0, 0, canvas.width, canvas.height);
+                onThumbnailCaptured(
+                    segmentId,
+                    canvas.toDataURL("image/jpeg", 0.78)
+                );
+            } catch {
+                thumbnailCapturedForSegmentRef.current = null;
+                // Thumbnail capture is optional and can be blocked by storage CORS policy.
+            }
+        });
+    }
+
     if (!segment || !video) {
         return (
             <section className="practice-player empty-practice-player">
@@ -122,6 +162,7 @@ export function PracticePlayer({
                             <video
                                 ref={videoRef}
                                 src={playbackUrl}
+                                crossOrigin="anonymous"
                                 preload="metadata"
                                 onClick={togglePlayback}
                                 onLoadedMetadata={(event) => {
@@ -129,6 +170,8 @@ export function PracticePlayer({
                                     setAspectRatio(`${player.videoWidth} / ${player.videoHeight}`);
                                     player.currentTime = segment.startMilliseconds / 1000;
                                 }}
+                                onLoadedData={(event) => captureSegmentThumbnail(event.currentTarget)}
+                                onSeeked={(event) => captureSegmentThumbnail(event.currentTarget)}
                                 onPlay={() => setPlaying(true)}
                                 onPause={() => setPlaying(false)}
                                 onTimeUpdate={(event) => {

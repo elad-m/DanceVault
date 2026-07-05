@@ -2,6 +2,10 @@ import { ListChecks, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { getPracticeQueue, updateSegmentPracticeFields } from "../api";
 import { formatDuration } from "../format";
+import {
+    getSegmentThumbnail,
+    saveSegmentThumbnail,
+} from "../thumbnailStorage";
 import type {
     Confidence,
     PracticePriority,
@@ -55,6 +59,7 @@ export function PracticeQueue({
     const [updatingSegmentId, setUpdatingSegmentId] = useState<string | null>(null);
     const [nextCursor, setNextCursor] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
     const initialSelectedSegmentIdRef = useRef(initialSelectedSegmentId);
 
     useEffect(() => {
@@ -65,6 +70,7 @@ export function PracticeQueue({
             .then((response) => {
                 if (cancelled) return;
                 setSegments(response.segments);
+                void loadStoredThumbnails(response.segments);
                 const initialSegment = response.segments.find(
                     (segment) => segment.id === initialSelectedSegmentIdRef.current
                 ) ?? response.segments[0];
@@ -89,12 +95,36 @@ export function PracticeQueue({
         onSelectSegment(segmentId);
     }
 
+    async function loadStoredThumbnails(segmentsToLoad: Segment[]) {
+        const entries = await Promise.all(
+            segmentsToLoad.map(async (segment): Promise<[string, string] | null> => {
+                try {
+                    const thumbnail = await getSegmentThumbnail(segment.id);
+                    return thumbnail ? [segment.id, thumbnail] : null;
+                } catch {
+                    return null;
+                }
+            })
+        );
+
+        setThumbnails((current) => ({
+            ...current,
+            ...Object.fromEntries(entries.filter((entry) => entry !== null)),
+        }));
+    }
+
+    function handleThumbnailCaptured(segmentId: string, dataUrl: string) {
+        setThumbnails((current) => ({ ...current, [segmentId]: dataUrl }));
+        void saveSegmentThumbnail(segmentId, dataUrl).catch(() => undefined);
+    }
+
     async function loadMore() {
         if (!nextCursor) return;
         setLoading(true);
         try {
             const response = await getPracticeQueue(nextCursor);
             setSegments((current) => [...current, ...response.segments]);
+            void loadStoredThumbnails(response.segments);
             setNextCursor(response.nextCursor);
         } catch (error) {
             onError(error instanceof Error ? error.message : "Could not load more segments");
@@ -153,6 +183,7 @@ export function PracticeQueue({
                     onPrevious={() => selectSegment(segments[selectedIndex - 1]?.id ?? null)}
                     onNext={() => selectSegment(segments[selectedIndex + 1]?.id ?? null)}
                     onOpenFullVideo={onOpenFullVideo}
+                    onThumbnailCaptured={handleThumbnailCaptured}
                     onError={onError}
                 />
 
@@ -169,6 +200,13 @@ export function PracticeQueue({
                                 key={segment.id}
                             >
                                 <button className="practice-list-select" onClick={() => selectSegment(segment.id)}>
+                                    <span className="queue-thumbnail">
+                                        {thumbnails[segment.id] ? (
+                                            <img src={thumbnails[segment.id]} alt="" />
+                                        ) : (
+                                            <ListChecks size={17} />
+                                        )}
+                                    </span>
                                     <span className="queue-time">{formatDuration(segment.startMilliseconds)}</span>
                                     <span className="queue-movement">
                                         <strong>{segment.name}</strong>

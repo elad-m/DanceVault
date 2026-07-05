@@ -140,14 +140,16 @@ textarea { resize: vertical; }
 .practice-list-item { border-top: 1px solid #e7e9e5; border-left: 3px solid transparent; }
 .practice-list-item:first-child { border-top: 0; }
 .practice-list-item.selected { border-left-color: #14a895; background: #f0faf8; }
-.practice-list-select { width: 100%; border: 0; background: transparent; padding: 11px 12px 8px; display: grid; grid-template-columns: 62px minmax(0, 1fr); align-items: center; gap: 8px; text-align: left; }
+.practice-list-select { width: 100%; border: 0; background: transparent; padding: 11px 12px 8px; display: grid; grid-template-columns: 64px 54px minmax(0, 1fr); align-items: center; gap: 8px; text-align: left; }
 .practice-list-select:hover { background: #f6f7f4; }
+.queue-thumbnail { width: 64px; height: 48px; display: grid; place-items: center; overflow: hidden; border-radius: 5px; background: #e8ecee; color: #858c93; }
+.queue-thumbnail img { width: 100%; height: 100%; display: block; object-fit: contain; background: #151719; }
 .queue-movement { min-width: 0; display: grid; gap: 4px; }
 .queue-movement strong, .queue-movement span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .queue-movement strong { font-size: 13px; }
 .queue-movement span { color: #7a807b; font-size: 11px; }
 .queue-time { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; color: #555b56; }
-.practice-field-controls { padding: 0 12px 11px 82px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.practice-field-controls { padding: 0 12px 11px 146px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .practice-field-controls label { font-size: 9px; text-transform: uppercase; }
 .practice-field-controls select { padding: 6px 7px; font-size: 11px; text-transform: capitalize; }
 .queue-state { min-height: 180px; display: flex; align-items: center; justify-content: center; gap: 9px; color: #7a807b; font-size: 13px; }
