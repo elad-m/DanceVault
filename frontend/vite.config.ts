@@ -12,9 +12,11 @@ const apiProxy = {
 export default defineConfig({
     plugins: [react()],
     server: {
+        host: "0.0.0.0",
         proxy: apiProxy,
     },
     preview: {
+        host: "0.0.0.0",
         proxy: apiProxy,
     },
 });

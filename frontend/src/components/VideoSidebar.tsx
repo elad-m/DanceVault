@@ -36,7 +36,7 @@ export function VideoSidebar({
 
             <div className="sidebar-actions">
                 <button className="primary-button" onClick={onUpload}>
-                    <Plus size={17} /> Add video
+                    <Plus size={17} /> <span className="add-video-label">Add video</span>
                 </button>
                 <button
                     className="icon-button"
