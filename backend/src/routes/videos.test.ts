@@ -32,9 +32,13 @@ const createVideoPlaybackUrlMock = vi.fn(
 const videoObjectExistsMock = vi.fn(
     async (_storageKey: string): Promise<boolean> => false
 );
+const deleteVideoObjectMock = vi.fn(
+    async (_storageKey: string): Promise<void> => {}
+);
 const fakeVideoStorage: VideoStorage = {
     createVideoPlaybackUrl: createVideoPlaybackUrlMock,
     createVideoUploadUrl: createVideoUploadUrlMock,
+    deleteVideoObject: deleteVideoObjectMock,
     videoObjectExists: videoObjectExistsMock,
 };
 
@@ -44,6 +48,7 @@ registerTestAuthentication(app);
 beforeEach(async () => {
     createVideoPlaybackUrlMock.mockClear();
     createVideoUploadUrlMock.mockClear();
+    deleteVideoObjectMock.mockClear();
     videoObjectExistsMock.mockClear();
     videoObjectExistsMock.mockResolvedValue(false);
     await resetTestDatabase();
@@ -591,7 +596,74 @@ describe("PATCH /videos/:videoId", () => {
 });
 
 describe("DELETE /videos/:videoId", () => {
-    it("deletes a video and its segments", async () => {
+    it("deletes an uploaded video's storage object and database record", async () => {
+        const video = await prisma.video.create({
+            data: {
+                userId: TEST_USER_ID,
+                title: "Uploaded video to delete",
+                sourceType: "uploaded",
+                sourceUrl: null,
+                storageKey:
+                    "users/test-user-1/videos/uploaded-video-to-delete.mp4",
+                originalFileName: "lesson.mp4",
+                status: "ready",
+            },
+        });
+
+        const response = await app.inject({
+            method: "DELETE",
+            url: `/videos/${video.id}`,
+        });
+
+        expect(response.statusCode).toBe(204);
+        expect(deleteVideoObjectMock).toHaveBeenCalledExactlyOnceWith(
+            video.storageKey
+        );
+
+        const deletedVideo = await prisma.video.findUnique({
+            where: {
+                id: video.id,
+            },
+        });
+
+        expect(deletedVideo).toBeNull();
+    });
+
+    it("keeps the database record when storage deletion fails", async () => {
+        const video = await prisma.video.create({
+            data: {
+                userId: TEST_USER_ID,
+                title: "Uploaded video with storage failure",
+                sourceType: "uploaded",
+                sourceUrl: null,
+                storageKey:
+                    "users/test-user-1/videos/storage-failure.mp4",
+                originalFileName: "lesson.mp4",
+                status: "ready",
+            },
+        });
+
+        deleteVideoObjectMock.mockRejectedValueOnce(
+            new Error("Storage deletion failed")
+        );
+
+        const response = await app.inject({
+            method: "DELETE",
+            url: `/videos/${video.id}`,
+        });
+
+        expect(response.statusCode).toBe(500);
+
+        const retainedVideo = await prisma.video.findUnique({
+            where: {
+                id: video.id,
+            },
+        });
+
+        expect(retainedVideo).not.toBeNull();
+    });
+
+    it("deletes an external video and its segments", async () => {
         const video = await prisma.video.create({
             data: {
                 title: "Video to delete",
@@ -623,6 +695,7 @@ describe("DELETE /videos/:videoId", () => {
 
         expect(response.statusCode).toBe(204);
         expect(response.body).toBe("");
+        expect(deleteVideoObjectMock).not.toHaveBeenCalled();
 
         const deletedVideo = await prisma.video.findUnique({
             where: {

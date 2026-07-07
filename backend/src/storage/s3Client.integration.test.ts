@@ -1,11 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { afterAll, describe, expect, it } from "vitest";
 import {
     createVideoPlaybackUrl,
     createVideoUploadUrl,
+    deleteVideoObject,
     s3Client,
-    videoBucketName,
     videoObjectExists,
 } from "./s3Client";
 
@@ -14,7 +13,7 @@ describe("S3 video storage integration", () => {
         s3Client.destroy();
     });
 
-    it("uploads and downloads through signed URLs", async () => {
+    it("uploads, downloads, and deletes an object", async () => {
         const storageKey = `integration-tests/${randomUUID()}.mp4`;
         const objectContents = "DanceVault storage integration test";
 
@@ -42,13 +41,12 @@ describe("S3 video storage integration", () => {
 
             expect(playbackResponse.status).toBe(200);
             expect(await playbackResponse.text()).toBe(objectContents);
+
+            await deleteVideoObject(storageKey);
+
+            expect(await videoObjectExists(storageKey)).toBe(false);
         } finally {
-            await s3Client.send(
-                new DeleteObjectCommand({
-                    Bucket: videoBucketName,
-                    Key: storageKey,
-                })
-            );
+            await deleteVideoObject(storageKey);
         }
     });
 });

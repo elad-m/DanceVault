@@ -1,5 +1,6 @@
 import "dotenv/config";
 import {
+    DeleteObjectCommand,
     GetObjectCommand,
     HeadObjectCommand,
     PutObjectCommand,
@@ -70,6 +71,7 @@ export type VideoStorage = {
     ): Promise<string>;
     createVideoPlaybackUrl(storageKey: string): Promise<string>;
     videoObjectExists(storageKey: string): Promise<boolean>;
+    deleteVideoObject(storageKey: string): Promise<void>;
 };
 
 export const videoUrlExpirationSeconds = 15 * 60;
@@ -125,8 +127,20 @@ export async function videoObjectExists(
     }
 }
 
+export async function deleteVideoObject(
+    storageKey: string
+): Promise<void> {
+    const command = new DeleteObjectCommand({
+        Bucket: videoBucketName,
+        Key: storageKey,
+    });
+
+    await s3Client.send(command);
+}
+
 export const s3VideoStorage: VideoStorage = {
     createVideoPlaybackUrl,
     createVideoUploadUrl,
+    deleteVideoObject,
     videoObjectExists,
 };

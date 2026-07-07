@@ -325,7 +325,8 @@ async function updateVideoHandler(
 
 async function deleteVideoHandler(
     request: FastifyRequest<VideoParams>,
-    reply: FastifyReply
+    reply: FastifyReply,
+    videoStorage: VideoStorage
 ) {
     const existingVideo = await getVideoById({
         videoId: request.params.videoId,
@@ -337,6 +338,13 @@ async function deleteVideoHandler(
             statusCode: 404,
             code: ApiErrorCode.VideoNotFound,
         });
+    }
+
+    if (
+        existingVideo.sourceType === "uploaded" &&
+        existingVideo.storageKey
+    ) {
+        await videoStorage.deleteVideoObject(existingVideo.storageKey);
     }
 
     await deleteVideo({
@@ -380,5 +388,9 @@ export function registerVideoRoutes(
         updateVideoRouteOptions,
         updateVideoHandler
     );
-    app.delete<VideoParams>("/videos/:videoId", deleteVideoHandler);
+    app.delete<VideoParams>(
+        "/videos/:videoId",
+        (request, reply) =>
+            deleteVideoHandler(request, reply, videoStorage)
+    );
 }
