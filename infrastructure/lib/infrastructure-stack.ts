@@ -65,6 +65,13 @@ export class InfrastructureStack extends cdk.Stack {
       }),
     );
 
+    localBackendRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:ListBucket'],
+        resources: [videoBucket.bucketArn],
+      }),
+    );
+
     new cdk.CfnOutput(this, 'LocalBackendRoleArn', {
       value: localBackendRole.roleArn,
     });

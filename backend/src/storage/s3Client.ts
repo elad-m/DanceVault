@@ -5,6 +5,7 @@ import {
     PutObjectCommand,
     S3Client,
     S3ServiceException,
+    type S3ClientConfig,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -18,18 +19,45 @@ function requireEnvironmentVariable(name: string): string {
     return value;
 }
 
+type StorageProvider = "aws" | "minio";
+
+function readStorageProvider(): StorageProvider {
+    const provider = requireEnvironmentVariable("S3_PROVIDER");
+
+    if (provider !== "aws" && provider !== "minio") {
+        throw new Error('S3_PROVIDER must be either "aws" or "minio"');
+    }
+
+    return provider;
+}
+
+function createS3ClientConfiguration(): S3ClientConfig {
+    const provider = readStorageProvider();
+    const region = requireEnvironmentVariable("S3_REGION");
+
+    if (provider === "aws") {
+        return {
+            region,
+        };
+    }
+
+    return {
+        region,
+        endpoint: requireEnvironmentVariable("S3_ENDPOINT"),
+        credentials: {
+            accessKeyId: requireEnvironmentVariable("S3_ACCESS_KEY"),
+            secretAccessKey: requireEnvironmentVariable("S3_SECRET_KEY"),
+        },
+        forcePathStyle: true,
+    };
+}
+
 export const videoBucketName: string =
     requireEnvironmentVariable("S3_BUCKET");
 
-export const s3Client: S3Client = new S3Client({
-    endpoint: requireEnvironmentVariable("S3_ENDPOINT"),
-    region: requireEnvironmentVariable("S3_REGION"),
-    credentials: {
-        accessKeyId: requireEnvironmentVariable("S3_ACCESS_KEY"),
-        secretAccessKey: requireEnvironmentVariable("S3_SECRET_KEY"),
-    },
-    forcePathStyle: true,
-});
+export const s3Client: S3Client = new S3Client(
+    createS3ClientConfiguration()
+);
 
 export type CreateVideoUploadUrlInput = {
     storageKey: string;

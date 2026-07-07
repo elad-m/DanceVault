@@ -1,6 +1,6 @@
 import { expect, test } from '@jest/globals';
 import * as cdk from 'aws-cdk-lib';
-import { Match, Template } from 'aws-cdk-lib/assertions';
+import { Template } from 'aws-cdk-lib/assertions';
 import { InfrastructureStack } from '../lib/infrastructure-stack';
 
 test('creates a private encrypted development video bucket', () => {
@@ -59,19 +59,22 @@ test('creates a least-privilege role for the local backend', () => {
   expect(localBackendRole).toBeDefined();
   expect(JSON.stringify(localBackendRole)).toContain('dancevault-admin');
 
-  template.hasResourceProperties('AWS::IAM::Policy', {
-    PolicyDocument: {
-      Statement: [
-        {
-          Action: [
-            's3:GetObject',
-            's3:PutObject',
-            's3:DeleteObject',
-          ],
-          Effect: 'Allow',
-          Resource: Match.anyValue(),
-        },
+  const policies = template.findResources('AWS::IAM::Policy');
+  const policy = Object.values(policies)[0];
+  const statements = policy.Properties.PolicyDocument.Statement;
+
+  expect(statements).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      Action: [
+        's3:GetObject',
+        's3:PutObject',
+        's3:DeleteObject',
       ],
-    },
-  });
+      Effect: 'Allow',
+    }),
+    expect.objectContaining({
+      Action: 's3:ListBucket',
+      Effect: 'Allow',
+    }),
+  ]));
 });
