@@ -3,6 +3,7 @@ import {
     DeleteObjectCommand,
     GetObjectCommand,
     HeadObjectCommand,
+    ListObjectsV2Command,
     PutObjectCommand,
     S3Client,
     S3ServiceException,
@@ -20,9 +21,9 @@ function requireEnvironmentVariable(name: string): string {
     return value;
 }
 
-type StorageProvider = "aws" | "minio";
+export type StorageProvider = "aws" | "minio";
 
-function readStorageProvider(): StorageProvider {
+export function readStorageProvider(): StorageProvider {
     const provider = requireEnvironmentVariable("S3_PROVIDER");
 
     if (provider !== "aws" && provider !== "minio") {
@@ -32,24 +33,66 @@ function readStorageProvider(): StorageProvider {
     return provider;
 }
 
-function createS3ClientConfiguration(): S3ClientConfig {
-    const provider = readStorageProvider();
-    const region = requireEnvironmentVariable("S3_REGION");
-
-    if (provider === "aws") {
-        return {
-            region,
-        };
-    }
-
+function createAWSS3ClientConfiguration(): S3ClientConfig {
     return {
-        region,
+        region: requireEnvironmentVariable("AWS_S3_REGION"),
+    };
+}
+
+function createMinIOS3ClientConfiguration(): S3ClientConfig {
+    return {
+        region: requireEnvironmentVariable("S3_REGION"),
         endpoint: requireEnvironmentVariable("S3_ENDPOINT"),
         credentials: {
             accessKeyId: requireEnvironmentVariable("S3_ACCESS_KEY"),
             secretAccessKey: requireEnvironmentVariable("S3_SECRET_KEY"),
         },
         forcePathStyle: true,
+    };
+}
+
+function createS3ClientConfiguration(): S3ClientConfig {
+    const provider = readStorageProvider();
+
+    if (provider === "aws") {
+        return createAWSS3ClientConfiguration();
+    }
+
+    return createMinIOS3ClientConfiguration();
+}
+
+export function createStorageClient(
+    provider: StorageProvider
+): S3Client {
+    const configuration =
+        provider === "aws"
+            ? createAWSS3ClientConfiguration()
+            : createMinIOS3ClientConfiguration();
+
+    return new S3Client(configuration);
+}
+
+export type StorageTarget = {
+    provider: StorageProvider;
+    client: S3Client;
+    bucketName: string;
+};
+
+export function createStorageTarget(
+    provider: StorageProvider
+): StorageTarget {
+    if (provider === "aws") {
+        return {
+            provider,
+            client: createStorageClient("aws"),
+            bucketName: requireEnvironmentVariable("AWS_S3_BUCKET"),
+        };
+    }
+
+    return {
+        provider,
+        client: createStorageClient("minio"),
+        bucketName: videoBucketName,
     };
 }
 
@@ -136,6 +179,38 @@ export async function deleteVideoObject(
     });
 
     await s3Client.send(command);
+}
+
+export const defaultStorageTarget: StorageTarget = {
+    provider: readStorageProvider(),
+    client: s3Client,
+    bucketName: videoBucketName,
+};
+
+export async function listVideoObjectKeys(
+    target: StorageTarget = defaultStorageTarget
+): Promise<string[]> {
+    const storageKeys: string[] = [];
+    let continuationToken: string | undefined;
+
+    do {
+        const command = new ListObjectsV2Command({
+            Bucket: target.bucketName,
+            ContinuationToken: continuationToken,
+        });
+
+        const response = await target.client.send(command);
+
+        for (const object of response.Contents ?? []) {
+            if (object.Key) {
+                storageKeys.push(object.Key);
+            }
+        }
+
+        continuationToken = response.NextContinuationToken;
+    } while (continuationToken);
+
+    return storageKeys.sort();
 }
 
 export const s3VideoStorage: VideoStorage = {
