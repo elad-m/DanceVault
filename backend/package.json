@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc --noEmit",
-    "dev": "tsx src/index.ts",
+    "local": "cross-env APP_ENVIRONMENT=local tsx src/index.ts",
+    "dev": "cross-env APP_ENVIRONMENT=dev tsx src/index.ts",
     "db:test:migrate": "cross-env DATABASE_URL=postgresql://dancevault:dancevault@localhost:5433/dancevault_test?schema=public prisma migrate deploy",
     "test": "npm run db:test:migrate && cross-env DATABASE_URL=postgresql://dancevault:dancevault@localhost:5433/dancevault_test?schema=public vitest run",
     "test:storage:integration": "vitest run --config vitest.integration.config.ts",

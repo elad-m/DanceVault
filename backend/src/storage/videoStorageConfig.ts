@@ -1,6 +1,7 @@
 import "dotenv/config";
 import type { S3ClientConfig } from "@aws-sdk/client-s3";
 import type { VideoStorageProviderName } from "../domain/video";
+import { runtime } from "../runtime";
 
 export function requireEnvironmentVariable(name: string): string {
     const value = process.env[name];
@@ -13,13 +14,7 @@ export function requireEnvironmentVariable(name: string): string {
 }
 
 export function getActiveVideoStorageProviderName(): VideoStorageProviderName {
-    const providerName = requireEnvironmentVariable("S3_PROVIDER");
-
-    if (providerName !== "awsS3" && providerName !== "minio") {
-        throw new Error('S3_PROVIDER must be either "awsS3" or "minio"');
-    }
-
-    return providerName;
+    return runtime.environment === "local" ? "minio" : "awsS3";
 }
 
 export function getVideoStorageBucketName(

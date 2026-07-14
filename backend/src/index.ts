@@ -1,12 +1,15 @@
 import { buildApp } from "./app";
+import { runtime } from "./runtime";
+import { getActiveVideoStorageProviderName } from "./storage";
 
 async function start() {
     const app = buildApp();
 
     app.log.info(
         {
-            s3Provider: process.env.S3_PROVIDER,
-            s3Bucket: process.env.S3_BUCKET,
+            environment: runtime.environment,
+            videoStorageProviderName:
+                getActiveVideoStorageProviderName(),
         },
         "Storage configuration"
     );
