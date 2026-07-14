@@ -5,16 +5,19 @@ import { registerSegmentRoutes } from "./routes/segments";
 import { registerVideoRoutes } from "./routes/videos";
 import { registerDevelopmentAuthentication } from "./auth/developmentAuth";
 import {
-    s3VideoStorage,
-    type VideoStorage,
-} from "./storage/s3Client";
+    createVideoStorageProvider,
+    getActiveVideoStorageProviderName,
+    type VideoStorageProvider,
+} from "./storage";
 
 type BuildAppOptions = {
-    videoStorage?: VideoStorage;
+    videoStorageProvider?: VideoStorageProvider;
 };
 
 export function buildApp({
-    videoStorage = s3VideoStorage,
+    videoStorageProvider = createVideoStorageProvider(
+        getActiveVideoStorageProviderName()
+    ),
 }: BuildAppOptions = {}) {
     const app = Fastify({
         logger: true,
@@ -24,6 +27,10 @@ export function buildApp({
                 removeAdditional: false,
             },
         },
+    });
+
+    app.addHook("onClose", () => {
+        videoStorageProvider.close();
     });
 
     app.setErrorHandler((error: FastifyError, request, reply) => {
@@ -48,7 +55,7 @@ export function buildApp({
     });
 
     registerDevelopmentAuthentication(app);
-    registerVideoRoutes(app, videoStorage);
+    registerVideoRoutes(app, videoStorageProvider);
     registerSegmentRoutes(app);
 
     return app;

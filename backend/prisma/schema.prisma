@@ -20,16 +20,18 @@ model User {
 }
 
 model Video {
-  id               String          @id @default(uuid())
+  id               String           @id @default(uuid())
   userId           String
-  user             User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user             User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  environment      AppEnvironment   @default(local)
   title            String
   sourceType       VideoSourceType
   sourceUrl        String?
-  storageKey       String?         @unique
+  storageKey       String?          @unique
+  storageProvider  StorageProvider?
   originalFileName String?
-  status           VideoStatus     @default(ready)
-  createdAt        DateTime        @default(now()) @db.Timestamptz(3)
+  status           VideoStatus      @default(ready)
+  createdAt        DateTime         @default(now()) @db.Timestamptz(3)
   segments         Segment[]
 
   @@index([userId, createdAt])
@@ -82,4 +84,14 @@ enum VideoStatus {
   pending_upload
   ready
   upload_failed
+}
+
+enum StorageProvider {
+  minio
+  awsS3
+}
+
+enum AppEnvironment {
+  local
+  dev
 }

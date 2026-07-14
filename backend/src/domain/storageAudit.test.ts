@@ -21,7 +21,7 @@ describe("auditStorageState", () => {
             videos: [video({})],
             storageKeys: {
                 minio: new Set(["users/user-1/videos/video-1.mp4"]),
-                aws: new Set(),
+                awsS3: new Set(),
             },
             now,
             pendingUploadMaxAgeMilliseconds: oneHour,
@@ -32,7 +32,7 @@ describe("auditStorageState", () => {
                 videoId: "video-1",
                 title: "Lesson video",
                 storageKey: "users/user-1/videos/video-1.mp4",
-                provider: "minio",
+                providerName: "minio",
             },
         ]);
         expect(report.issues).toEqual([]);
@@ -43,7 +43,7 @@ describe("auditStorageState", () => {
             videos: [video({})],
             storageKeys: {
                 minio: new Set(),
-                aws: new Set(),
+                awsS3: new Set(),
             },
             now,
             pendingUploadMaxAgeMilliseconds: oneHour,
@@ -64,7 +64,7 @@ describe("auditStorageState", () => {
             videos: [],
             storageKeys: {
                 minio: new Set(["users/user-1/videos/orphan.mp4"]),
-                aws: new Set(),
+                awsS3: new Set(),
             },
             now,
             pendingUploadMaxAgeMilliseconds: oneHour,
@@ -73,7 +73,7 @@ describe("auditStorageState", () => {
         expect(report.issues).toEqual([
             {
                 kind: "orphan_object",
-                provider: "minio",
+                providerName: "minio",
                 storageKey: "users/user-1/videos/orphan.mp4",
             },
         ]);
@@ -84,7 +84,7 @@ describe("auditStorageState", () => {
             videos: [video({})],
             storageKeys: {
                 minio: new Set(["users/user-1/videos/video-1.mp4"]),
-                aws: new Set(["users/user-1/videos/video-1.mp4"]),
+                awsS3: new Set(["users/user-1/videos/video-1.mp4"]),
             },
             now,
             pendingUploadMaxAgeMilliseconds: oneHour,
@@ -105,7 +105,7 @@ describe("auditStorageState", () => {
             videos: [video({ storageKey: null })],
             storageKeys: {
                 minio: new Set(),
-                aws: new Set(),
+                awsS3: new Set(),
             },
             now,
             pendingUploadMaxAgeMilliseconds: oneHour,
@@ -130,7 +130,7 @@ describe("auditStorageState", () => {
             ],
             storageKeys: {
                 minio: new Set(),
-                aws: new Set(),
+                awsS3: new Set(),
             },
             now,
             pendingUploadMaxAgeMilliseconds: oneHour,
@@ -156,7 +156,7 @@ describe("auditStorageState", () => {
             ],
             storageKeys: {
                 minio: new Set(),
-                aws: new Set(),
+                awsS3: new Set(),
             },
             now,
             pendingUploadMaxAgeMilliseconds: oneHour,
@@ -170,7 +170,7 @@ describe("auditStorageState", () => {
             videos: [video({ status: "upload_failed" })],
             storageKeys: {
                 minio: new Set(),
-                aws: new Set(["users/user-1/videos/video-1.mp4"]),
+                awsS3: new Set(["users/user-1/videos/video-1.mp4"]),
             },
             now,
             pendingUploadMaxAgeMilliseconds: oneHour,
@@ -182,7 +182,7 @@ describe("auditStorageState", () => {
                 videoId: "video-1",
                 title: "Lesson video",
                 storageKey: "users/user-1/videos/video-1.mp4",
-                provider: "aws",
+                providerName: "awsS3",
             },
         ]);
     });

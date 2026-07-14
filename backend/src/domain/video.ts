@@ -6,6 +6,8 @@ export type VideoSourceType =
     | ExternalVideoSourceType
     | "uploaded";
 
+export type VideoStorageProviderName = "minio" | "awsS3";
+
 export const externalVideoSourceTypeSchema = {
     type: "string",
     enum: ["youtube", "external_url"],

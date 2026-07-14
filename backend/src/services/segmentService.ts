@@ -5,6 +5,7 @@ import type {
     Difficulty,
     PracticePriority,
 } from "../domain/segment";
+import { runtime } from "../runtime";
 
 // Helpers
 
@@ -70,6 +71,7 @@ export async function findVideoForSegmentCreation({
         where: {
             id: videoId,
             userId,
+            environment: runtime.environment,
         },
     });
 }
@@ -94,6 +96,7 @@ export async function createSegment(input: CreateSegmentInput) {
                 connect: {
                     id: input.videoId,
                     userId: input.userId,
+                    environment: runtime.environment,
                 },
             },
             name: input.name,
@@ -117,6 +120,7 @@ export async function getSegmentById({
             id: segmentId,
             video: {
                 userId,
+                environment: runtime.environment,
             },
         },
         include: {
@@ -149,6 +153,7 @@ export async function searchSegments(input: SearchSegmentsInput) {
         where: {
             video: {
                 userId: input.userId,
+                environment: runtime.environment,
             },
             tags: input.tag
                 ? {
@@ -208,6 +213,7 @@ export async function getPracticeQueue(input: UserScope & PaginationInput) {
         where: {
             video: {
                 userId: input.userId,
+                environment: runtime.environment,
             },
             OR: [
                 {
@@ -271,6 +277,7 @@ export async function updateSegment(input: UpdateSegmentInput) {
             id: segmentId,
             video: {
                 userId,
+                environment: runtime.environment,
             },
         },
         data,
@@ -286,6 +293,7 @@ export async function findSegmentForDeletion({
             id: segmentId,
             video: {
                 userId,
+                environment: runtime.environment,
             },
         },
     });
@@ -300,6 +308,7 @@ export async function deleteSegment({
             id: segmentId,
             video: {
                 userId,
+                environment: runtime.environment,
             },
         },
     });

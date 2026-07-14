@@ -18,11 +18,14 @@ import {
 } from "../test/testDatabase";
 import type {
     CreateVideoUploadUrlInput,
-    VideoStorage,
-} from "../storage/s3Client";
+    VideoStorageProvider,
+} from "../storage";
+import { resetRuntimeForTest, setRuntimeForTest } from "../runtime";
 
 const createVideoUploadUrlMock = vi.fn(
-    async ({ storageKey }: CreateVideoUploadUrlInput): Promise<string> =>
+    async ({
+        storageKey,
+    }: CreateVideoUploadUrlInput): Promise<string> =>
         `http://storage.test/${storageKey}?X-Amz-Signature=test`
 );
 const createVideoPlaybackUrlMock = vi.fn(
@@ -35,17 +38,24 @@ const videoObjectExistsMock = vi.fn(
 const deleteVideoObjectMock = vi.fn(
     async (_storageKey: string): Promise<void> => {}
 );
-const fakeVideoStorage: VideoStorage = {
+const fakeVideoStorageProvider: VideoStorageProvider = {
+    name: "minio",
+    bucketName: "test-video-bucket",
     createVideoPlaybackUrl: createVideoPlaybackUrlMock,
     createVideoUploadUrl: createVideoUploadUrlMock,
     deleteVideoObject: deleteVideoObjectMock,
     videoObjectExists: videoObjectExistsMock,
+    listVideoObjectKeys: async () => [],
+    close: () => {},
 };
 
-const app = buildApp({ videoStorage: fakeVideoStorage });
+const app = buildApp({
+    videoStorageProvider: fakeVideoStorageProvider,
+});
 registerTestAuthentication(app);
 
 beforeEach(async () => {
+    resetRuntimeForTest();
     createVideoPlaybackUrlMock.mockClear();
     createVideoUploadUrlMock.mockClear();
     deleteVideoObjectMock.mockClear();
@@ -179,6 +189,7 @@ describe("POST /video-uploads", () => {
             sourceUrl: null,
             originalFileName: "lesson.mp4",
             status: "pending_upload",
+            storageProvider: "minio",
             storageKey: expect.stringMatching(
                 /^users\/test-user-1\/videos\/[0-9a-f-]+\.mp4$/
             ),
@@ -195,6 +206,7 @@ describe("POST /video-uploads", () => {
         expect(body.uploadUrl).toContain("X-Amz-Signature");
         expect(storedVideo.status).toBe("pending_upload");
         expect(storedVideo.storageKey).toBe(body.video.storageKey);
+        expect(storedVideo.storageProvider).toBe("minio");
     });
 
     it("rejects unsupported content types", async () => {
@@ -237,6 +249,7 @@ describe("POST /video-uploads/:videoId/complete", () => {
                 sourceUrl: null,
                 storageKey:
                     "users/test-user-1/videos/pending-upload-video.mp4",
+                storageProvider: "minio",
                 originalFileName: "lesson.mp4",
                 status: "pending_upload",
             },
@@ -389,6 +402,7 @@ describe("GET /videos/:videoId/playback-url", () => {
                 sourceType: "uploaded",
                 sourceUrl: null,
                 storageKey: `users/test-user-1/videos/${status}.mp4`,
+                storageProvider: "minio",
                 originalFileName: "lesson.mp4",
                 status,
             },
@@ -476,6 +490,60 @@ describe("GET /videos", () => {
                 }),
             ])
         );
+    });
+
+    it("does not list videos from another app environment", async () => {
+        await prisma.video.create({
+            data: {
+                id: "dev-video",
+                userId: TEST_USER_ID,
+                environment: "dev",
+                title: "Dev-only lesson",
+                sourceType: "youtube",
+                sourceUrl: "https://youtube.com/watch?v=dev-video",
+            },
+        });
+
+        const response = await app.inject({
+            method: "GET",
+            url: "/videos",
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json().videos).not.toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: "dev-video",
+                }),
+            ])
+        );
+    });
+
+    it("lists dev videos when the runtime environment is dev", async () => {
+        await prisma.video.create({
+            data: {
+                id: "dev-video",
+                userId: TEST_USER_ID,
+                environment: "dev",
+                title: "Dev-only lesson",
+                sourceType: "youtube",
+                sourceUrl: "https://youtube.com/watch?v=dev-video",
+            },
+        });
+
+        setRuntimeForTest({ environment: "dev" });
+
+        const response = await app.inject({
+            method: "GET",
+            url: "/videos",
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json().videos).toEqual([
+            expect.objectContaining({
+                id: "dev-video",
+            }),
+        ]);
     });
 });
 
@@ -596,7 +664,7 @@ describe("PATCH /videos/:videoId", () => {
 });
 
 describe("DELETE /videos/:videoId", () => {
-    it("deletes an uploaded video's storage object and database record", async () => {
+    it("deletes a MinIO uploaded video's storage object and database record", async () => {
         const video = await prisma.video.create({
             data: {
                 userId: TEST_USER_ID,
@@ -605,6 +673,7 @@ describe("DELETE /videos/:videoId", () => {
                 sourceUrl: null,
                 storageKey:
                     "users/test-user-1/videos/uploaded-video-to-delete.mp4",
+                storageProvider: "minio",
                 originalFileName: "lesson.mp4",
                 status: "ready",
             },
@@ -638,6 +707,7 @@ describe("DELETE /videos/:videoId", () => {
                 sourceUrl: null,
                 storageKey:
                     "users/test-user-1/videos/storage-failure.mp4",
+                storageProvider: "minio",
                 originalFileName: "lesson.mp4",
                 status: "ready",
             },
@@ -653,6 +723,43 @@ describe("DELETE /videos/:videoId", () => {
         });
 
         expect(response.statusCode).toBe(500);
+
+        const retainedVideo = await prisma.video.findUnique({
+            where: {
+                id: video.id,
+            },
+        });
+
+        expect(retainedVideo).not.toBeNull();
+    });
+
+    it("rejects a video stored by a different provider", async () => {
+        const video = await prisma.video.create({
+            data: {
+                userId: TEST_USER_ID,
+                title: "AWS uploaded video to delete",
+                sourceType: "uploaded",
+                sourceUrl: null,
+                storageKey:
+                    "users/test-user-1/videos/aws-video-to-delete.mp4",
+                storageProvider: "awsS3",
+                originalFileName: "lesson.mp4",
+                status: "ready",
+            },
+        });
+
+        const response = await app.inject({
+            method: "DELETE",
+            url: `/videos/${video.id}`,
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toMatchObject({
+            error: {
+                code: "INVALID_VIDEO_UPLOAD_STATE",
+            },
+        });
+        expect(deleteVideoObjectMock).not.toHaveBeenCalled();
 
         const retainedVideo = await prisma.video.findUnique({
             where: {

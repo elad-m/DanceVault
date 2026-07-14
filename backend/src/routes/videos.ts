@@ -3,30 +3,26 @@ import type {
     FastifyReply,
     FastifyRequest,
 } from "fastify";
-import { randomUUID } from "node:crypto";
 import { toSegmentResponse } from "../services/segmentService";
 import { ApiErrorCode, sendApiError } from "../httpErrors";
 import {
-    createPendingUploadVideo,
+    completeVideoUpload,
+    createUploadedVideoPlaybackUrl,
     createVideo,
-    deleteVideo,
+    deleteVideoWithStorage,
     getVideoById,
     getVideoSegments,
+    initializeVideoUpload,
     listVideos,
-    markVideoUploadReady,
     updateVideo,
 } from "../services/videoService";
 import {
-    createVideoStorageKey,
     externalVideoSourceTypeSchema,
     supportedVideoContentTypeSchema,
     type ExternalVideoSourceType,
     type SupportedVideoContentType,
 } from "../domain/video";
-import {
-    videoUrlExpirationSeconds,
-    type VideoStorage,
-} from "../storage/s3Client";
+import type { VideoStorageProvider } from "../storage";
 
 type CreateVideoRequest = {
     Body: {
@@ -131,75 +127,55 @@ async function createVideoHandler(
 async function createVideoUploadHandler(
     request: FastifyRequest<CreateVideoUploadRequest>,
     reply: FastifyReply,
-    videoStorage: VideoStorage
+    videoStorageProvider: VideoStorageProvider
 ) {
-    const uploadId = randomUUID();
-    const storageKey = createVideoStorageKey({
-        userId: request.userId,
-        uploadId,
-    });
-
-    const uploadUrl = await videoStorage.createVideoUploadUrl({
-        storageKey,
-        contentType: request.body.contentType,
-    });
-
-    const video = await createPendingUploadVideo({
+    const upload = await initializeVideoUpload({
         userId: request.userId,
         title: request.body.title,
-        storageKey,
-        originalFileName: request.body.fileName,
+        fileName: request.body.fileName,
+        contentType: request.body.contentType,
+        videoStorageProvider,
     });
 
     return reply.status(201).send({
-        video,
-        uploadUrl,
+        video: upload.video,
+        uploadUrl: upload.uploadUrl,
     });
 }
 
 async function completeVideoUploadHandler(
     request: FastifyRequest<VideoParams>,
     reply: FastifyReply,
-    videoStorage: VideoStorage
+    videoStorageProvider: VideoStorageProvider
 ) {
-    const video = await getVideoById({
+    const result = await completeVideoUpload({
         videoId: request.params.videoId,
         userId: request.userId,
+        videoStorageProvider,
     });
 
-    if (!video) {
+    if (result.kind === "not_found") {
         return sendApiError(reply, {
             statusCode: 404,
             code: ApiErrorCode.VideoNotFound,
         });
     }
 
-    if (video.sourceType !== "uploaded" || !video.storageKey) {
+    if (result.kind === "invalid_upload_state") {
         return sendApiError(reply, {
             statusCode: 409,
             code: ApiErrorCode.InvalidVideoUploadState,
         });
     }
 
-    if (video.status === "ready") {
-        return video;
-    }
-
-    const objectExists = await videoStorage.videoObjectExists(
-        video.storageKey
-    );
-
-    if (!objectExists) {
+    if (result.kind === "upload_object_missing") {
         return sendApiError(reply, {
             statusCode: 409,
             code: ApiErrorCode.VideoUploadNotFound,
         });
     }
 
-    return markVideoUploadReady({
-        videoId: video.id,
-        userId: request.userId,
-    });
+    return result.video;
 }
 
 async function getVideoHandler(
@@ -224,40 +200,38 @@ async function getVideoHandler(
 async function getVideoPlaybackUrlHandler(
     request: FastifyRequest<VideoParams>,
     reply: FastifyReply,
-    videoStorage: VideoStorage
+    videoStorageProvider: VideoStorageProvider
 ) {
-    const video = await getVideoById({
+    const result = await createUploadedVideoPlaybackUrl({
         videoId: request.params.videoId,
         userId: request.userId,
+        videoStorageProvider,
     });
 
-    if (!video) {
+    if (result.kind === "not_found") {
         return sendApiError(reply, {
             statusCode: 404,
             code: ApiErrorCode.VideoNotFound,
         });
     }
 
-    if (video.sourceType !== "uploaded" || !video.storageKey) {
+    if (result.kind === "invalid_upload_state") {
         return sendApiError(reply, {
             statusCode: 409,
             code: ApiErrorCode.InvalidVideoUploadState,
         });
     }
 
-    if (video.status !== "ready") {
+    if (result.kind === "not_ready") {
         return sendApiError(reply, {
             statusCode: 409,
             code: ApiErrorCode.VideoNotReady,
         });
     }
 
-    const playbackUrl =
-        await videoStorage.createVideoPlaybackUrl(video.storageKey);
-
     return {
-        playbackUrl,
-        expiresInSeconds: videoUrlExpirationSeconds,
+        playbackUrl: result.playbackUrl,
+        expiresInSeconds: result.expiresInSeconds,
     };
 }
 
@@ -326,38 +300,34 @@ async function updateVideoHandler(
 async function deleteVideoHandler(
     request: FastifyRequest<VideoParams>,
     reply: FastifyReply,
-    videoStorage: VideoStorage
+    videoStorageProvider: VideoStorageProvider
 ) {
-    const existingVideo = await getVideoById({
+    const result = await deleteVideoWithStorage({
         videoId: request.params.videoId,
         userId: request.userId,
+        videoStorageProvider,
     });
 
-    if (!existingVideo) {
+    if (result.kind === "not_found") {
         return sendApiError(reply, {
             statusCode: 404,
             code: ApiErrorCode.VideoNotFound,
         });
     }
 
-    if (
-        existingVideo.sourceType === "uploaded" &&
-        existingVideo.storageKey
-    ) {
-        await videoStorage.deleteVideoObject(existingVideo.storageKey);
+    if (result.kind === "invalid_upload_state") {
+        return sendApiError(reply, {
+            statusCode: 409,
+            code: ApiErrorCode.InvalidVideoUploadState,
+        });
     }
-
-    await deleteVideo({
-        videoId: request.params.videoId,
-        userId: request.userId,
-    });
 
     return reply.status(204).send();
 }
 
 export function registerVideoRoutes(
     app: FastifyInstance,
-    videoStorage: VideoStorage
+    videoStorageProvider: VideoStorageProvider
 ) {
     app.post<CreateVideoRequest>(
         "/videos",
@@ -368,18 +338,26 @@ export function registerVideoRoutes(
         "/video-uploads",
         createVideoUploadRouteOptions,
         (request, reply) =>
-            createVideoUploadHandler(request, reply, videoStorage)
+            createVideoUploadHandler(request, reply, videoStorageProvider)
     );
     app.post<VideoParams>(
         "/video-uploads/:videoId/complete",
         (request, reply) =>
-            completeVideoUploadHandler(request, reply, videoStorage)
+            completeVideoUploadHandler(
+                request,
+                reply,
+                videoStorageProvider
+            )
     );
     app.get<VideoParams>("/videos/:videoId", getVideoHandler);
     app.get<VideoParams>(
         "/videos/:videoId/playback-url",
         (request, reply) =>
-            getVideoPlaybackUrlHandler(request, reply, videoStorage)
+            getVideoPlaybackUrlHandler(
+                request,
+                reply,
+                videoStorageProvider
+            )
     );
     app.get("/videos", listVideosHandler);
     app.get<VideoParams>("/videos/:videoId/segments", getVideoSegmentsHandler);
@@ -391,6 +369,6 @@ export function registerVideoRoutes(
     app.delete<VideoParams>(
         "/videos/:videoId",
         (request, reply) =>
-            deleteVideoHandler(request, reply, videoStorage)
+            deleteVideoHandler(request, reply, videoStorageProvider)
     );
 }

@@ -10,11 +10,13 @@ import {
     OTHER_TEST_SEGMENT_ID,
     OTHER_TEST_VIDEO_ID,
 } from "../test/testDatabase";
+import { resetRuntimeForTest, setRuntimeForTest } from "../runtime";
 
 const app = buildApp();
 registerTestAuthentication(app);
 
 beforeEach(async () => {
+    resetRuntimeForTest();
     await resetTestDatabase();
 });
 
@@ -213,6 +215,39 @@ describe("POST /videos/:videoId/segments", () => {
 
         expect(response.statusCode).toBe(400);
     });
+
+    it("does not create a segment inside a video from another app environment", async () => {
+        await prisma.video.create({
+            data: {
+                id: "dev-video",
+                userId: TEST_USER_ID,
+                environment: "dev",
+                title: "Dev-only lesson",
+                sourceType: "youtube",
+                sourceUrl: "https://youtube.com/watch?v=dev-video",
+            },
+        });
+
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/dev-video/segments",
+            payload: {
+                name: "Wrong environment segment",
+                startMilliseconds: 10000,
+                endMilliseconds: 20000,
+            },
+        });
+
+        expect(response.statusCode).toBe(404);
+
+        const storedSegment = await prisma.segment.findFirst({
+            where: {
+                name: "Wrong environment segment",
+            },
+        });
+
+        expect(storedSegment).toBeNull();
+    });
 });
 
 describe("GET /segments", () => {
@@ -337,6 +372,50 @@ describe("GET /segments", () => {
         });
 
         expect(response.statusCode).toBe(400);
+    });
+
+    it("does not list segments from another app environment", async () => {
+        await prisma.video.create({
+            data: {
+                id: "dev-video",
+                userId: TEST_USER_ID,
+                environment: "dev",
+                title: "Dev-only lesson",
+                sourceType: "youtube",
+                sourceUrl: "https://youtube.com/watch?v=dev-video",
+                segments: {
+                    create: {
+                        id: "dev-segment",
+                        name: "Dev-only wave",
+                        startMilliseconds: 10000,
+                        endMilliseconds: 20000,
+                        tags: ["dev-only"],
+                    },
+                },
+            },
+        });
+
+        const localResponse = await app.inject({
+            method: "GET",
+            url: "/segments?tag=dev-only",
+        });
+
+        expect(localResponse.statusCode).toBe(200);
+        expect(localResponse.json().segments).toEqual([]);
+
+        setRuntimeForTest({ environment: "dev" });
+
+        const devResponse = await app.inject({
+            method: "GET",
+            url: "/segments?tag=dev-only",
+        });
+
+        expect(devResponse.statusCode).toBe(200);
+        expect(devResponse.json().segments).toEqual([
+            expect.objectContaining({
+                id: "dev-segment",
+            }),
+        ]);
     });
 });
 

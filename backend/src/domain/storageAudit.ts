@@ -1,4 +1,4 @@
-export type StorageProvider = "minio" | "aws";
+import type { VideoStorageProviderName } from "./video";
 
 export type AuditedVideo = {
     id: string;
@@ -28,7 +28,7 @@ export type StorageAuditIssue =
     }
     | {
         kind: "orphan_object";
-        provider: StorageProvider;
+        providerName: VideoStorageProviderName;
         storageKey: string;
     }
     | {
@@ -42,14 +42,14 @@ export type StorageAuditIssue =
         videoId: string;
         title: string;
         storageKey: string;
-        provider: StorageProvider;
+        providerName: VideoStorageProviderName;
     };
 
 export type HealthyStorageReference = {
     videoId: string;
     title: string;
     storageKey: string;
-    provider: StorageProvider;
+    providerName: VideoStorageProviderName;
 };
 
 export type StorageAuditReport = {
@@ -60,7 +60,7 @@ export type StorageAuditReport = {
 export type AuditStorageStateInput = {
     videos: AuditedVideo[];
     storageKeys: Record<
-        StorageProvider,
+        VideoStorageProviderName,
         ReadonlySet<string>
     >;
     now: Date;
@@ -100,9 +100,9 @@ export function auditStorageState({
         }
 
         const existsInMinio = storageKeys.minio.has(storageKey);
-        const existsInAws = storageKeys.aws.has(storageKey);
+        const existsInAwsS3 = storageKeys.awsS3.has(storageKey);
 
-        if (existsInMinio && existsInAws) {
+        if (existsInMinio && existsInAwsS3) {
             issues.push({
                 kind: "duplicate_object",
                 videoId: video.id,
@@ -111,27 +111,27 @@ export function auditStorageState({
             });
         }
 
-        const provider: StorageProvider | null =
-            existsInMinio && !existsInAws
+        const providerName: VideoStorageProviderName | null =
+            existsInMinio && !existsInAwsS3
                 ? "minio"
-                : existsInAws && !existsInMinio
-                  ? "aws"
+                : existsInAwsS3 && !existsInMinio
+                  ? "awsS3"
                   : null;
 
         if (video.status === "ready") {
-            if (!existsInMinio && !existsInAws) {
+            if (!existsInMinio && !existsInAwsS3) {
                 issues.push({
                     kind: "missing_object",
                     videoId: video.id,
                     title: video.title,
                     storageKey,
                 });
-            } else if (provider) {
+            } else if (providerName) {
                 healthy.push({
                     videoId: video.id,
                     title: video.title,
                     storageKey,
-                    provider,
+                    providerName,
                 });
             }
         }
@@ -151,27 +151,27 @@ export function auditStorageState({
             });
         }
 
-        if (video.status === "upload_failed" && provider) {
+        if (video.status === "upload_failed" && providerName) {
             issues.push({
                 kind: "failed_upload_has_object",
                 videoId: video.id,
                 title: video.title,
                 storageKey,
-                provider,
+                providerName,
             });
         }
     }
 
-    const providers: StorageProvider[] = ["minio", "aws"];
+    const providerNames: VideoStorageProviderName[] = ["minio", "awsS3"];
 
-    for (const provider of providers) {
-        const sortedStorageKeys = [...storageKeys[provider]].sort();
+    for (const providerName of providerNames) {
+        const sortedStorageKeys = [...storageKeys[providerName]].sort();
 
         for (const storageKey of sortedStorageKeys) {
             if (!referencedStorageKeys.has(storageKey)) {
                 issues.push({
                     kind: "orphan_object",
-                    provider,
+                    providerName,
                     storageKey,
                 });
             }

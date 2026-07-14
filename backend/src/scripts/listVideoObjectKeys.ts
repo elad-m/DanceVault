@@ -1,32 +1,35 @@
 import {
-    listVideoObjectKeys,
-    readStorageProvider,
-    s3Client,
-    videoBucketName,
-} from "../storage/s3Client";
+    createVideoStorageProvider,
+    getActiveVideoStorageProviderName,
+} from "../storage";
 
 async function main() {
-    const storageKeys = await listVideoObjectKeys();
-
-    console.log(
-        JSON.stringify(
-            {
-                provider: readStorageProvider(),
-                bucket: videoBucketName,
-                count: storageKeys.length,
-                storageKeys,
-            },
-            null,
-            2
-        )
+    const provider = createVideoStorageProvider(
+        getActiveVideoStorageProviderName()
     );
+
+    try {
+        const storageKeys = await provider.listVideoObjectKeys();
+
+        console.log(
+            JSON.stringify(
+                {
+                    providerName: provider.name,
+                    bucket: provider.bucketName,
+                    count: storageKeys.length,
+                    storageKeys,
+                },
+                null,
+                2
+            )
+        );
+    } finally {
+        provider.close();
+    }
 }
 
 main()
     .catch((error: unknown) => {
         console.error(error);
         process.exitCode = 1;
-    })
-    .finally(() => {
-        s3Client.destroy();
     });

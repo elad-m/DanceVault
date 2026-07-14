@@ -1,74 +1,75 @@
 import { auditStorageState } from "../domain/storageAudit";
 import { prisma } from "../db";
-import {
-    createStorageTarget,
-    listVideoObjectKeys,
-    s3Client,
-} from "../storage/s3Client";
+import { createVideoStorageProvider } from "../storage";
+import { runtime } from "../runtime";
 
 const stalePendingUploadHours = 24;
 const stalePendingUploadMilliseconds =
     stalePendingUploadHours * 60 * 60 * 1000;
 
 async function main() {
-    const minioTarget = createStorageTarget("minio");
-    const awsTarget = createStorageTarget("aws");
+    const minioProvider = createVideoStorageProvider("minio");
+    const awsProvider = createVideoStorageProvider("awsS3");
 
-    const minioObjectKeys = await listVideoObjectKeys(minioTarget);
-    const awsObjectKeys = await listVideoObjectKeys(awsTarget);
+    try {
+        const minioObjectKeys = await minioProvider.listVideoObjectKeys();
+        const awsObjectKeys = await awsProvider.listVideoObjectKeys();
 
-    const videos = await prisma.video.findMany({
-        where: {
-            sourceType: "uploaded",
-        },
-        select: {
-            id: true,
-            title: true,
-            storageKey: true,
-            status: true,
-            createdAt: true,
-        },
-        orderBy: {
-            createdAt: "asc",
-        },
-    });
-
-    const report = auditStorageState({
-        videos,
-        storageKeys: {
-            minio: new Set(minioObjectKeys),
-            aws: new Set(awsObjectKeys),
-        },
-        now: new Date(),
-        pendingUploadMaxAgeMilliseconds:
-            stalePendingUploadMilliseconds,
-    });
-
-    console.log(
-        JSON.stringify(
-            {
-                buckets: {
-                    minio: minioTarget.bucketName,
-                    aws: awsTarget.bucketName,
-                },
-                uploadedVideoRows: videos.length,
-                minioObjectCount: minioObjectKeys.length,
-                awsObjectCount: awsObjectKeys.length,
-                stalePendingUploadHours,
-                ...report,
+        const videos = await prisma.video.findMany({
+            where: {
+                sourceType: "uploaded",
+                environment: runtime.environment,
             },
-            null,
-            2
-        )
-    );
+            select: {
+                id: true,
+                title: true,
+                storageKey: true,
+                status: true,
+                createdAt: true,
+            },
+            orderBy: {
+                createdAt: "asc",
+            },
+        });
+
+        const report = auditStorageState({
+            videos,
+            storageKeys: {
+                minio: new Set(minioObjectKeys),
+                awsS3: new Set(awsObjectKeys),
+            },
+            now: new Date(),
+            pendingUploadMaxAgeMilliseconds:
+                stalePendingUploadMilliseconds,
+        });
+
+        console.log(
+            JSON.stringify(
+                {
+                    buckets: {
+                        minio: minioProvider.bucketName,
+                        awsS3: awsProvider.bucketName,
+                    },
+                    uploadedVideoRows: videos.length,
+                    environment: runtime.environment,
+                    minioObjectCount: minioObjectKeys.length,
+                    awsS3ObjectCount: awsObjectKeys.length,
+                    stalePendingUploadHours,
+                    ...report,
+                },
+                null,
+                2
+            )
+        );
+    } finally {
+        minioProvider.close();
+        awsProvider.close();
+        await prisma.$disconnect();
+    }
 }
 
 main()
     .catch((error: unknown) => {
         console.error(error);
         process.exitCode = 1;
-    })
-    .finally(async () => {
-        await prisma.$disconnect();
-        s3Client.destroy();
     });
