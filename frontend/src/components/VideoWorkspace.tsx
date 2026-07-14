@@ -6,6 +6,7 @@ import {
     Pause,
     Play,
     RotateCw,
+    Trash2,
     Volume2,
     VolumeX,
 } from "lucide-react";
@@ -22,10 +23,11 @@ type VideoWorkspaceProps = {
         milliseconds: number;
     } | null;
     onBackToPractice?: () => void;
+    onDelete: (video: Video) => void;
     onError: (message: string) => void;
 };
 
-export function VideoWorkspace({ video, seekRequest, onBackToPractice, onError }: VideoWorkspaceProps) {
+export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete, onError }: VideoWorkspaceProps) {
     const playerShellRef = useRef<HTMLDivElement>(null);
     const playerRef = useRef<HTMLVideoElement>(null);
     const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
@@ -160,6 +162,12 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onError }
                             <ArrowLeft size={16} /> Back to practice queue
                         </button>
                     )}
+                    <button
+                        className="danger-button subtle-danger-button"
+                        onClick={() => onDelete(video)}
+                    >
+                        <Trash2 size={16} /> Delete video
+                    </button>
                     <span className={`status-badge ${video.status}`}>{video.status.replace("_", " ")}</span>
                 </div>
             </header>

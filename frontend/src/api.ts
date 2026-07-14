@@ -34,12 +34,22 @@ async function requestJson<T>(
         throw new Error(body.error?.message ?? `Request failed (${response.status})`);
     }
 
+    if (response.status === 204) {
+        return undefined as T;
+    }
+
     return response.json() as Promise<T>;
 }
 
 export async function listVideos(): Promise<Video[]> {
     const response = await requestJson<{ videos: Video[] }>("/videos");
     return response.videos;
+}
+
+export async function deleteVideo(videoId: string): Promise<void> {
+    return requestJson<void>(`/videos/${videoId}`, {
+        method: "DELETE",
+    });
 }
 
 export async function getVideoSegments(videoId: string): Promise<Segment[]> {

@@ -1,6 +1,7 @@
 import { AlertCircle, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { listVideos, uploadVideo } from "./api";
+import { deleteVideo, listVideos, uploadVideo } from "./api";
+import { DeleteVideoDialog } from "./components/DeleteVideoDialog";
 import { UploadDialog } from "./components/UploadDialog";
 import { PracticeQueue } from "./components/PracticeQueue";
 import { VideoSidebar, type AppView } from "./components/VideoSidebar";
@@ -13,6 +14,8 @@ export default function App() {
     const [loading, setLoading] = useState(true);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [videoPendingDeletion, setVideoPendingDeletion] = useState<Video | null>(null);
+    const [deletingVideo, setDeletingVideo] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [activeView, setActiveView] = useState<AppView>(() =>
         window.location.pathname.startsWith("/videos") ? "library" : "practice"
@@ -85,6 +88,39 @@ export default function App() {
         }
     }
 
+    async function handleDeleteVideo(video: Video) {
+        setDeletingVideo(true);
+        setError(null);
+
+        try {
+            await deleteVideo(video.id);
+
+            const remainingVideos = videos.filter(
+                (candidate) => candidate.id !== video.id
+            );
+            const nextVideo = remainingVideos[0] ?? null;
+
+            setVideos(remainingVideos);
+            setSelectedVideo(nextVideo);
+            setSeekRequest(null);
+            setCanReturnToPractice(false);
+            setVideoPendingDeletion(null);
+            window.history.pushState(
+                {},
+                "",
+                nextVideo ? `/videos/${nextVideo.id}` : "/videos"
+            );
+        } catch (caught) {
+            showError(
+                caught instanceof Error
+                    ? caught.message
+                    : "Could not delete video"
+            );
+        } finally {
+            setDeletingVideo(false);
+        }
+    }
+
     function handleOpenFullVideo(segment: Segment) {
         const video = videos.find((candidate) => candidate.id === segment.videoId);
         if (!video) {
@@ -131,6 +167,7 @@ export default function App() {
                     video={selectedVideo}
                     seekRequest={seekRequest}
                     onBackToPractice={canReturnToPractice ? () => window.history.back() : undefined}
+                    onDelete={setVideoPendingDeletion}
                     onError={showError}
                 />
             ) : (
@@ -143,6 +180,12 @@ export default function App() {
                 />
             )}
             <UploadDialog open={uploadOpen} uploading={uploading} onClose={() => setUploadOpen(false)} onUpload={handleUpload} />
+            <DeleteVideoDialog
+                video={videoPendingDeletion}
+                deleting={deletingVideo}
+                onCancel={() => setVideoPendingDeletion(null)}
+                onConfirm={handleDeleteVideo}
+            />
             {error && (
                 <div className="error-toast" role="alert">
                     <AlertCircle size={18} /><span>{error}</span>
