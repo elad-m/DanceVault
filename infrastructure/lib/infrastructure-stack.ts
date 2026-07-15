@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 
 export class InfrastructureStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -9,6 +10,66 @@ export class InfrastructureStack extends cdk.Stack {
 
     cdk.Tags.of(this).add('Project', 'DanceVault');
     cdk.Tags.of(this).add('Environment', 'Development');
+
+    const userPool = new cognito.UserPool(this, 'UserPool', {
+      userPoolName: 'DanceVaultDevelopmentUsers',
+      featurePlan: cognito.FeaturePlan.ESSENTIALS,
+      selfSignUpEnabled: false,
+      signInAliases: {
+        email: true,
+      },
+      autoVerify: {
+        email: true,
+      },
+      accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+      mfa: cognito.Mfa.OPTIONAL,
+      mfaSecondFactor: {
+        sms: false,
+        otp: true,
+      },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const userPoolClient = userPool.addClient('WebClient', {
+      userPoolClientName: 'DanceVaultDevelopmentWeb',
+      generateSecret: false,
+      preventUserExistenceErrors: true,
+      oAuth: {
+        flows: {
+          authorizationCodeGrant: true,
+        },
+        scopes: [
+          cognito.OAuthScope.OPENID,
+          cognito.OAuthScope.EMAIL,
+        ],
+        callbackUrls: [
+          'http://localhost:5173/auth/callback',
+        ],
+        logoutUrls: [
+          'http://localhost:5173/',
+        ],
+      },
+    });
+
+    const userPoolDomain = userPool.addDomain('Domain', {
+      cognitoDomain: {
+        domainPrefix: 'dancevault-dev',
+      },
+      managedLoginVersion:
+        cognito.ManagedLoginVersion.NEWER_MANAGED_LOGIN,
+    });
+
+    new cdk.CfnOutput(this, 'UserPoolId', {
+      value: userPool.userPoolId,
+    });
+
+    new cdk.CfnOutput(this, 'UserPoolClientId', {
+      value: userPoolClient.userPoolClientId,
+    });
+
+    new cdk.CfnOutput(this, 'CognitoDomain', {
+      value: userPoolDomain.baseUrl(),
+    });
 
     const videoBucket = new s3.Bucket(this, 'VideoBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,

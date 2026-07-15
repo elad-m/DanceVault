@@ -78,3 +78,37 @@ test('creates a least-privilege role for the local backend', () => {
     }),
   ]));
 });
+
+test('creates Cognito authentication for the development web app', () => {
+  const app = new cdk.App();
+  const stack = new InfrastructureStack(app, 'TestStack');
+  const template = Template.fromStack(stack);
+
+  template.resourceCountIs('AWS::Cognito::UserPool', 1);
+  template.hasResourceProperties('AWS::Cognito::UserPool', {
+    AdminCreateUserConfig: {
+      AllowAdminCreateUserOnly: true,
+    },
+    AutoVerifiedAttributes: ['email'],
+    MfaConfiguration: 'OPTIONAL',
+    UsernameAttributes: ['email'],
+    UserPoolTier: 'ESSENTIALS',
+  });
+
+  template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
+  template.hasResourceProperties('AWS::Cognito::UserPoolClient', {
+    AllowedOAuthFlows: ['code'],
+    AllowedOAuthFlowsUserPoolClient: true,
+    AllowedOAuthScopes: ['openid', 'email'],
+    CallbackURLs: ['http://localhost:5173/auth/callback'],
+    GenerateSecret: false,
+    LogoutURLs: ['http://localhost:5173/'],
+    PreventUserExistenceErrors: 'ENABLED',
+  });
+
+  template.resourceCountIs('AWS::Cognito::UserPoolDomain', 1);
+  template.hasResourceProperties('AWS::Cognito::UserPoolDomain', {
+    Domain: 'dancevault-dev',
+    ManagedLoginVersion: 2,
+  });
+});
