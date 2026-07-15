@@ -298,12 +298,17 @@ async function updateSegmentHandler(
         });
     }
 
-    const nextStartSeconds =
+    const nextStartMilliseconds =
         request.body.startMilliseconds ?? existingSegment.startMilliseconds;
-    const nextEndSeconds =
+    const nextEndMilliseconds =
         request.body.endMilliseconds ?? existingSegment.endMilliseconds;
 
-    if (!areSegmentTimestampsValid(nextStartSeconds, nextEndSeconds)) {
+    if (
+        !areSegmentTimestampsValid(
+            nextStartMilliseconds,
+            nextEndMilliseconds
+        )
+    ) {
         return sendApiError(reply, {
             statusCode: 400,
             code: ApiErrorCode.InvalidSegmentTimestamps,

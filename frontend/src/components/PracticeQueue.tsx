@@ -1,6 +1,6 @@
-import { ListChecks, LoaderCircle } from "lucide-react";
+import { ListChecks, LoaderCircle, Pencil } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { getPracticeQueue, updateSegmentPracticeFields } from "../api";
+import { getPracticeQueue, updateSegment } from "../api";
 import { formatDuration } from "../format";
 import {
     getSegmentThumbnail,
@@ -10,10 +10,11 @@ import type {
     Confidence,
     PracticePriority,
     Segment,
-    UpdatePracticeFieldsInput,
+    UpdateSegmentInput,
     Video,
 } from "../types";
 import { PracticePlayer } from "./PracticePlayer";
+import { EditSegmentDialog } from "./EditSegmentDialog";
 
 type PracticeQueueProps = {
     videos: Video[];
@@ -57,6 +58,8 @@ export function PracticeQueue({
     const [segments, setSegments] = useState<Segment[]>([]);
     const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
     const [updatingSegmentId, setUpdatingSegmentId] = useState<string | null>(null);
+    const [segmentBeingEdited, setSegmentBeingEdited] =
+        useState<Segment | null>(null);
     const [nextCursor, setNextCursor] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
@@ -135,11 +138,11 @@ export function PracticeQueue({
 
     async function updatePracticeFields(
         segment: Segment,
-        input: UpdatePracticeFieldsInput
+        input: UpdateSegmentInput
     ) {
         setUpdatingSegmentId(segment.id);
         try {
-            const updatedSegment = await updateSegmentPracticeFields(segment.id, input);
+            const updatedSegment = await updateSegment(segment.id, input);
             const updatedSegments = sortPracticeSegments(belongsInPracticeQueue(updatedSegment)
                 ? segments.map((current) => current.id === updatedSegment.id ? updatedSegment : current)
                 : segments.filter((current) => current.id !== updatedSegment.id));
@@ -150,11 +153,21 @@ export function PracticeQueue({
                 const removedIndex = segments.findIndex((current) => current.id === segment.id);
                 selectSegment(updatedSegments[Math.min(removedIndex, updatedSegments.length - 1)]?.id ?? null);
             }
+            return true;
         } catch (error) {
             onError(error instanceof Error ? error.message : "Could not update segment");
+            return false;
         } finally {
             setUpdatingSegmentId(null);
         }
+    }
+
+    async function saveSegmentEdit(
+        segment: Segment,
+        input: UpdateSegmentInput
+    ) {
+        const saved = await updatePracticeFields(segment, input);
+        if (saved) setSegmentBeingEdited(null);
     }
 
     const selectedIndex = segments.findIndex((segment) => segment.id === selectedSegmentId);
@@ -243,6 +256,15 @@ export function PracticeQueue({
                                             <option value="high">High</option>
                                         </select>
                                     </label>
+                                    <button
+                                        className="practice-edit-button"
+                                        onClick={() => setSegmentBeingEdited(segment)}
+                                        disabled={updatingSegmentId === segment.id}
+                                        aria-label={`Edit ${segment.name}`}
+                                        title="Edit segment"
+                                    >
+                                        <Pencil size={15} />
+                                    </button>
                                 </div>
                             </article>
                         ))}
@@ -262,6 +284,15 @@ export function PracticeQueue({
                     )}
                 </section>
             </div>
+            <EditSegmentDialog
+                segment={segmentBeingEdited}
+                saving={
+                    segmentBeingEdited !== null &&
+                    updatingSegmentId === segmentBeingEdited.id
+                }
+                onCancel={() => setSegmentBeingEdited(null)}
+                onSave={saveSegmentEdit}
+            />
         </main>
     );
 }

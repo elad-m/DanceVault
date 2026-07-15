@@ -4,6 +4,7 @@ import {
     LoaderCircle,
     Maximize2,
     Pause,
+    Pencil,
     Play,
     RotateCw,
     Trash2,
@@ -11,9 +12,20 @@ import {
     VolumeX,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { createSegment, getPlaybackUrl, getVideoSegments } from "../api";
+import {
+    createSegment,
+    getPlaybackUrl,
+    getVideoSegments,
+    updateSegment,
+} from "../api";
 import { formatDuration } from "../format";
-import type { CreateSegmentInput, Segment, Video } from "../types";
+import type {
+    CreateSegmentInput,
+    Segment,
+    UpdateSegmentInput,
+    Video,
+} from "../types";
+import { EditSegmentDialog } from "./EditSegmentDialog";
 import { SegmentEditor } from "./SegmentEditor";
 
 type VideoWorkspaceProps = {
@@ -39,6 +51,9 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
     const [volume, setVolume] = useState(1);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [segmentBeingEdited, setSegmentBeingEdited] =
+        useState<Segment | null>(null);
+    const [savingSegmentEdit, setSavingSegmentEdit] = useState(false);
 
     useEffect(() => {
         setPlaybackUrl(null);
@@ -47,6 +62,7 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
         setDurationMilliseconds(0);
         setVideoAspectRatio("16 / 9");
         setIsPlaying(false);
+        setSegmentBeingEdited(null);
 
         if (!video) return;
 
@@ -94,6 +110,38 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
             onError(error instanceof Error ? error.message : "Could not save segment");
         } finally {
             setSaving(false);
+        }
+    }
+
+    async function saveSegmentEdit(
+        segment: Segment,
+        input: UpdateSegmentInput
+    ) {
+        setSavingSegmentEdit(true);
+
+        try {
+            const updatedSegment = await updateSegment(segment.id, input);
+            setSegments((current) =>
+                current
+                    .map((candidate) =>
+                        candidate.id === updatedSegment.id
+                            ? updatedSegment
+                            : candidate
+                    )
+                    .sort(
+                        (left, right) =>
+                            left.startMilliseconds - right.startMilliseconds
+                    )
+            );
+            setSegmentBeingEdited(null);
+        } catch (error) {
+            onError(
+                error instanceof Error
+                    ? error.message
+                    : "Could not update segment"
+            );
+        } finally {
+            setSavingSegmentEdit(false);
         }
     }
 
@@ -255,19 +303,39 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
                     </div>
                     <div className="segment-list">
                         {segments.map((segment) => (
-                            <button key={segment.id} className="segment-row" onClick={() => playSegment(segment)} disabled={!playbackUrl}>
-                                <span className="segment-time">{formatDuration(segment.startMilliseconds)}</span>
-                                <span className="segment-copy">
-                                    <strong>{segment.name}</strong>
-                                    <span>{segment.tags.length > 0 ? segment.tags.join(" / ") : "No tags"}</span>
-                                </span>
-                                <Play size={15} />
-                            </button>
+                            <article key={segment.id} className="segment-row">
+                                <button
+                                    className="segment-play-button"
+                                    onClick={() => playSegment(segment)}
+                                    disabled={!playbackUrl}
+                                >
+                                    <span className="segment-time">{formatDuration(segment.startMilliseconds)}</span>
+                                    <span className="segment-copy">
+                                        <strong>{segment.name}</strong>
+                                        <span>{segment.tags.length > 0 ? segment.tags.join(" / ") : "No tags"}</span>
+                                    </span>
+                                    <Play size={15} />
+                                </button>
+                                <button
+                                    className="segment-edit-button"
+                                    onClick={() => setSegmentBeingEdited(segment)}
+                                    aria-label={`Edit ${segment.name}`}
+                                    title="Edit segment"
+                                >
+                                    <Pencil size={15} />
+                                </button>
+                            </article>
                         ))}
                         {!loading && segments.length === 0 && <p className="empty-copy">No segments indexed yet.</p>}
                     </div>
                 </aside>
             </div>
+            <EditSegmentDialog
+                segment={segmentBeingEdited}
+                saving={savingSegmentEdit}
+                onCancel={() => setSegmentBeingEdited(null)}
+                onSave={saveSegmentEdit}
+            />
         </main>
     );
 }

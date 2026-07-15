@@ -70,8 +70,11 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .segments-panel .panel-heading { padding: 17px 17px 14px; border-bottom: 1px solid #e7e9e5; }
 .panel-heading h2 { margin: 2px 0 0; font-size: 16px; }
 .segment-list { max-height: calc(100vh - 170px); overflow: auto; }
-.segment-row { width: 100%; border: 0; border-bottom: 1px solid #eceeeb; background: white; padding: 12px 14px; display: grid; grid-template-columns: 62px minmax(0, 1fr) 16px; align-items: center; gap: 10px; text-align: left; color: #242724; }
+.segment-row { width: 100%; border-bottom: 1px solid #eceeeb; background: white; display: grid; grid-template-columns: minmax(0, 1fr) 40px; align-items: stretch; color: #242724; }
 .segment-row:hover { background: #f6f7f4; }
+.segment-play-button { min-width: 0; border: 0; background: transparent; padding: 12px 8px 12px 14px; display: grid; grid-template-columns: 62px minmax(0, 1fr) 16px; align-items: center; gap: 10px; text-align: left; color: inherit; }
+.segment-edit-button, .practice-edit-button { border: 0; background: transparent; color: #747b76; display: grid; place-items: center; }
+.segment-edit-button:hover, .practice-edit-button:hover { background: #e7ece9; color: #087f71; }
 .segment-time { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; color: #078c7b; font-size: 11px; font-weight: 700; }
 .segment-copy { min-width: 0; display: grid; gap: 3px; }
 .segment-copy strong, .segment-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -115,6 +118,8 @@ textarea { resize: vertical; }
 .delete-video-dialog { width: min(460px, 100%); }
 .delete-video-copy { margin: 0; color: #5f656d; font-size: 13px; line-height: 1.55; }
 .delete-video-copy strong { color: #20242a; }
+.edit-segment-dialog { width: min(620px, 100%); max-height: calc(100vh - 40px); overflow-y: auto; }
+.edit-time-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .error-toast { position: fixed; right: 20px; bottom: 20px; z-index: 30; max-width: 440px; display: grid; grid-template-columns: 20px 1fr 28px; align-items: center; gap: 10px; background: #302321; color: #fff; border-left: 4px solid #e34f3f; border-radius: 6px; padding: 12px 10px 12px 13px; box-shadow: 0 12px 40px #0004; font-size: 13px; }
 .error-toast button { border: 0; background: transparent; color: white; display: grid; place-items: center; }
 .spin { animation: spin .8s linear infinite; }
@@ -156,9 +161,10 @@ textarea { resize: vertical; }
 .queue-movement strong { font-size: 13px; }
 .queue-movement span { color: #7a807b; font-size: 11px; }
 .queue-time { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; color: #555b56; }
-.practice-field-controls { padding: 0 12px 11px 146px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.practice-field-controls { padding: 0 12px 11px 146px; display: grid; grid-template-columns: 1fr 1fr 34px; align-items: end; gap: 8px; }
 .practice-field-controls label { font-size: 9px; text-transform: uppercase; }
 .practice-field-controls select { padding: 6px 7px; font-size: 11px; text-transform: capitalize; }
+.practice-edit-button { width: 34px; height: 32px; border-radius: 5px; }
 .queue-state { min-height: 180px; display: flex; align-items: center; justify-content: center; gap: 9px; color: #7a807b; font-size: 13px; }
 .load-more { width: calc(100% - 24px); margin: 12px; }
 
@@ -232,7 +238,10 @@ textarea { resize: vertical; }
     .player-control-button { width: 40px; height: 40px; }
     .player-control-time:first-of-type, .player-controls > svg, .volume-control { display: none; }
     .segment-list { max-height: none; }
-    .segment-row { min-height: 56px; grid-template-columns: 58px minmax(0, 1fr) 16px; }
+    .segment-row { min-height: 56px; }
+    .segment-play-button { grid-template-columns: 58px minmax(0, 1fr) 16px; }
+    .segment-edit-button { width: 44px; }
+    .edit-time-grid { grid-template-columns: 1fr; }
     .practice-player-heading { min-height: 0; align-items: flex-start; flex-direction: column; padding: 14px; }
     .practice-player-heading .secondary-button { width: 100%; }
     .practice-player-controls { min-height: 54px; grid-template-columns: 40px minmax(70px, 1fr) auto 40px; gap: 6px; padding: 7px 8px; }

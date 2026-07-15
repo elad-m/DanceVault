@@ -43,7 +43,13 @@ export type CreateSegmentInput = {
     practicePriority?: PracticePriority;
 };
 
-export type UpdatePracticeFieldsInput = {
+export type UpdateSegmentInput = {
+    name?: string;
+    description?: string;
+    startMilliseconds?: number;
+    endMilliseconds?: number;
+    tags?: string[];
+    difficulty?: Difficulty;
     confidence?: Confidence;
     practicePriority?: PracticePriority;
 };

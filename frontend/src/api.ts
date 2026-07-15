@@ -1,7 +1,7 @@
 import type {
     CreateSegmentInput,
     Segment,
-    UpdatePracticeFieldsInput,
+    UpdateSegmentInput,
     Video,
 } from "./types";
 
@@ -90,9 +90,9 @@ export async function createSegment(
     });
 }
 
-export async function updateSegmentPracticeFields(
+export async function updateSegment(
     segmentId: string,
-    input: UpdatePracticeFieldsInput
+    input: UpdateSegmentInput
 ): Promise<Segment> {
     return requestJson<Segment>(`/segments/${segmentId}`, {
         method: "PATCH",
