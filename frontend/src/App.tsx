@@ -1,11 +1,13 @@
 import { AlertCircle, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { deleteVideo, listVideos, uploadVideo } from "./api";
+import { signOutUser } from "./auth/authentication";
 import { DeleteVideoDialog } from "./components/DeleteVideoDialog";
 import { UploadDialog } from "./components/UploadDialog";
 import { PracticeQueue } from "./components/PracticeQueue";
 import { VideoSidebar, type AppView } from "./components/VideoSidebar";
 import { VideoWorkspace } from "./components/VideoWorkspace";
+import { runtime } from "./runtime";
 import type { Segment, Video } from "./types";
 
 export default function App() {
@@ -121,6 +123,14 @@ export default function App() {
         }
     }
 
+    async function handleSignOut() {
+        try {
+            await signOutUser();
+        } catch {
+            showError("Could not sign out");
+        }
+    }
+
     function handleOpenFullVideo(segment: Segment) {
         const video = videos.find((candidate) => candidate.id === segment.videoId);
         if (!video) {
@@ -161,6 +171,11 @@ export default function App() {
                 }}
                 onRefresh={() => void refreshVideos()}
                 onUpload={() => setUploadOpen(true)}
+                onSignOut={
+                    runtime.environment === "dev"
+                        ? () => void handleSignOut()
+                        : undefined
+                }
             />
             {activeView === "library" ? (
                 <VideoWorkspace

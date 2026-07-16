@@ -1,4 +1,11 @@
-import { Film, ListChecks, Plus, RefreshCw, Upload } from "lucide-react";
+import {
+    Film,
+    ListChecks,
+    LogOut,
+    Plus,
+    RefreshCw,
+    Upload,
+} from "lucide-react";
 import type { Video } from "../types";
 
 export type AppView = "library" | "practice";
@@ -12,6 +19,7 @@ type VideoSidebarProps = {
     onSelect: (video: Video) => void;
     onRefresh: () => void;
     onUpload: () => void;
+    onSignOut?: () => void;
 };
 
 export function VideoSidebar({
@@ -23,6 +31,7 @@ export function VideoSidebar({
     onSelect,
     onRefresh,
     onUpload,
+    onSignOut,
 }: VideoSidebarProps) {
     return (
         <aside className="sidebar">
@@ -32,6 +41,16 @@ export function VideoSidebar({
                     <strong>DanceVault</strong>
                     <span>Movement library</span>
                 </div>
+                {onSignOut && (
+                    <button
+                        className="icon-button"
+                        onClick={onSignOut}
+                        title="Sign out"
+                        aria-label="Sign out"
+                    >
+                        <LogOut size={17} />
+                    </button>
+                )}
             </div>
 
             <div className="sidebar-actions">

@@ -4,8 +4,7 @@ import type {
     UpdateSegmentInput,
     Video,
 } from "./types";
-
-const developmentUserId = "initial-user";
+import { addAuthenticationHeaders } from "./auth/authentication";
 
 type ApiErrorBody = {
     error?: {
@@ -18,7 +17,7 @@ async function requestJson<T>(
     options: RequestInit = {}
 ): Promise<T> {
     const headers = new Headers(options.headers);
-    headers.set("x-user-id", developmentUserId);
+    await addAuthenticationHeaders(headers);
 
     if (options.body) {
         headers.set("content-type", "application/json");
