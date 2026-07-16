@@ -104,6 +104,7 @@ test('creates Cognito authentication for the development web app', () => {
     GenerateSecret: false,
     LogoutURLs: ['http://localhost:5173/'],
     PreventUserExistenceErrors: 'ENABLED',
+    AuthSessionValidity: 15,
   });
 
   template.resourceCountIs('AWS::Cognito::UserPoolDomain', 1);
@@ -111,4 +112,14 @@ test('creates Cognito authentication for the development web app', () => {
     Domain: 'dancevault-dev',
     ManagedLoginVersion: 2,
   });
+  template.resourceCountIs(
+    'AWS::Cognito::ManagedLoginBranding',
+    1,
+  );
+  template.hasResourceProperties(
+    'AWS::Cognito::ManagedLoginBranding',
+    {
+      UseCognitoProvidedValues: true,
+    },
+  );
 });

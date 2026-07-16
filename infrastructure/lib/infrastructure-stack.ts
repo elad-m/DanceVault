@@ -34,6 +34,7 @@ export class InfrastructureStack extends cdk.Stack {
       userPoolClientName: 'DanceVaultDevelopmentWeb',
       generateSecret: false,
       preventUserExistenceErrors: true,
+      authSessionValidity: cdk.Duration.minutes(15),
       oAuth: {
         flows: {
           authorizationCodeGrant: true,
@@ -58,6 +59,16 @@ export class InfrastructureStack extends cdk.Stack {
       managedLoginVersion:
         cognito.ManagedLoginVersion.NEWER_MANAGED_LOGIN,
     });
+
+    new cognito.CfnManagedLoginBranding(
+      this,
+      'ManagedLoginBranding',
+      {
+        userPoolId: userPool.userPoolId,
+        clientId: userPoolClient.userPoolClientId,
+        useCognitoProvidedValues: true,
+      },
+    );
 
     new cdk.CfnOutput(this, 'UserPoolId', {
       value: userPool.userPoolId,
