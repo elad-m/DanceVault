@@ -1,14 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { ApiErrorCode, sendApiError } from "../httpErrors";
 
-declare module "fastify" {
-    interface FastifyRequest {
-        userId: string;
-    }
-}
-
-export function registerDevelopmentAuthentication(app: FastifyInstance) {
-    app.decorateRequest("userId", "");
+export function registerLocalAuthentication(app: FastifyInstance) {
 
     app.addHook("preHandler", async (request, reply) => {
         if (request.url === "/health") {
