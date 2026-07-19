@@ -1,7 +1,7 @@
 import { expect, test } from '@jest/globals';
 import * as cdk from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
 import { InfrastructureStack } from '../lib/infrastructure-stack';
+import { Match, Template } from 'aws-cdk-lib/assertions';
 
 test('creates a private encrypted development video bucket', () => {
   const app = new cdk.App();
@@ -76,6 +76,18 @@ test('creates a least-privilege role for the local backend', () => {
       Action: 's3:ListBucket',
       Effect: 'Allow',
     }),
+    expect.objectContaining({
+      Action: [
+        'dynamodb:GetItem',
+        'dynamodb:PutItem',
+        'dynamodb:UpdateItem',
+        'dynamodb:DeleteItem',
+        'dynamodb:Query',
+        'dynamodb:BatchWriteItem',
+        'dynamodb:TransactWriteItems',
+      ],
+      Effect: 'Allow',
+    }),
   ]));
 });
 
@@ -122,4 +134,88 @@ test('creates Cognito authentication for the development web app', () => {
       UseCognitoProvidedValues: true,
     },
   );
+});
+
+test('creates an encrypted on-demand DanceVault data table', () => {
+  const app = new cdk.App();
+  const stack = new InfrastructureStack(app, 'TestStack');
+  const template = Template.fromStack(stack);
+
+  template.resourceCountIs('AWS::DynamoDB::Table', 1);
+
+  template.hasResourceProperties('AWS::DynamoDB::Table', {
+    TableName: 'DanceVaultDevelopmentData',
+    BillingMode: 'PAY_PER_REQUEST',
+    AttributeDefinitions: Match.arrayWith([
+      {
+        AttributeName: 'PK',
+        AttributeType: 'S',
+      },
+      {
+        AttributeName: 'SK',
+        AttributeType: 'S',
+      },
+    ]),
+    KeySchema: [
+      {
+        AttributeName: 'PK',
+        KeyType: 'HASH',
+      },
+      {
+        AttributeName: 'SK',
+        KeyType: 'RANGE',
+      },
+    ],
+    SSESpecification: {
+      SSEEnabled: true,
+    },
+  });
+
+  template.hasResource('AWS::DynamoDB::Table', {
+    DeletionPolicy: 'Delete',
+    UpdateReplacePolicy: 'Delete',
+  });
+});
+
+test('indexes segments by video and user content by creation time', () => {
+  const app = new cdk.App();
+  const stack = new InfrastructureStack(app, 'TestStack');
+  const template = Template.fromStack(stack);
+
+  template.hasResourceProperties('AWS::DynamoDB::Table', {
+    GlobalSecondaryIndexes: Match.arrayWith([
+      Match.objectLike({
+        IndexName: 'SegmentsByVideo',
+        KeySchema: [
+          {
+            AttributeName: 'VideoPK',
+            KeyType: 'HASH',
+          },
+          {
+            AttributeName: 'VideoSK',
+            KeyType: 'RANGE',
+          },
+        ],
+        Projection: {
+          ProjectionType: 'ALL',
+        },
+      }),
+      Match.objectLike({
+        IndexName: 'UserContentByCreationTime',
+        KeySchema: [
+          {
+            AttributeName: 'UserContentPK',
+            KeyType: 'HASH',
+          },
+          {
+            AttributeName: 'UserContentSK',
+            KeyType: 'RANGE',
+          },
+        ],
+        Projection: {
+          ProjectionType: 'ALL',
+        },
+      }),
+    ]),
+  });
 });

@@ -3,6 +3,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 
 export class InfrastructureStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -10,6 +11,56 @@ export class InfrastructureStack extends cdk.Stack {
 
     cdk.Tags.of(this).add('Project', 'DanceVault');
     cdk.Tags.of(this).add('Environment', 'Development');
+
+    const dataTable = new dynamodb.Table(
+      this,
+      'DataTable',
+      {
+        tableName: 'DanceVaultDevelopmentData',
+        partitionKey: {
+          name: 'PK',
+          type: dynamodb.AttributeType.STRING,
+        },
+        sortKey: {
+          name: 'SK',
+          type: dynamodb.AttributeType.STRING,
+        },
+        billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+        encryption: dynamodb.TableEncryption.AWS_MANAGED,
+        deletionProtection: false,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
+
+    dataTable.addGlobalSecondaryIndex({
+      indexName: 'SegmentsByVideo',
+      partitionKey: {
+        name: 'VideoPK',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'VideoSK',
+        type: dynamodb.AttributeType.STRING,
+      },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    dataTable.addGlobalSecondaryIndex({
+      indexName: 'UserContentByCreationTime',
+      partitionKey: {
+        name: 'UserContentPK',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'UserContentSK',
+        type: dynamodb.AttributeType.STRING,
+      },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    new cdk.CfnOutput(this, 'DataTableName', {
+      value: dataTable.tableName,
+    });
 
     const userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: 'DanceVaultDevelopmentUsers',
@@ -141,6 +192,24 @@ export class InfrastructureStack extends cdk.Stack {
       new iam.PolicyStatement({
         actions: ['s3:ListBucket'],
         resources: [videoBucket.bucketArn],
+      }),
+    );
+
+    localBackendRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'dynamodb:GetItem',
+          'dynamodb:PutItem',
+          'dynamodb:UpdateItem',
+          'dynamodb:DeleteItem',
+          'dynamodb:Query',
+          'dynamodb:BatchWriteItem',
+          'dynamodb:TransactWriteItems',
+        ],
+        resources: [
+          dataTable.tableArn,
+          `${dataTable.tableArn}/index/*`,
+        ],
       }),
     );
 
