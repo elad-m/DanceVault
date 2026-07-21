@@ -6,6 +6,11 @@ export type VideoSourceType =
     | ExternalVideoSourceType
     | "uploaded";
 
+export type VideoStatus =
+    | "pending_upload"
+    | "ready"
+    | "upload_failed";
+
 export type VideoStorageProviderName = "minio" | "awsS3";
 
 export const externalVideoSourceTypeSchema = {
