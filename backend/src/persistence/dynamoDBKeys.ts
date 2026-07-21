@@ -1,6 +1,24 @@
-export type VideoItemKeys = {
+export type VideoPrimaryKey = {
     PK: string;
     SK: string;
+};
+
+type CreateVideoPrimaryKeyInput = {
+    userID: string;
+    videoID: string;
+};
+
+export function createVideoPrimaryKey({
+    userID,
+    videoID,
+}: CreateVideoPrimaryKeyInput): VideoPrimaryKey {
+    return {
+        PK: `USER#${userID}`,
+        SK: `VIDEO#${videoID}`,
+    };
+}
+
+export type VideoItemKeys = VideoPrimaryKey & {
     UserContentPK: string;
     UserContentSK: string;
 };
@@ -16,12 +34,14 @@ export function createVideoItemKeys({
     videoID,
     createdAt,
 }: CreateVideoItemKeysInput): VideoItemKeys {
-    const userPK = `USER#${userID}`;
+    const primaryKey = createVideoPrimaryKey({
+        userID,
+        videoID,
+    });
 
     return {
-        PK: userPK,
-        SK: `VIDEO#${videoID}`,
-        UserContentPK: userPK,
+        ...primaryKey,
+        UserContentPK: primaryKey.PK,
         UserContentSK:
             `VIDEO#${createdAt.toISOString()}#${videoID}`,
     };

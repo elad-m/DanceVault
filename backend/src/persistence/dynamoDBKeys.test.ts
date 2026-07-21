@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
     createSegmentItemKeys,
     createVideoItemKeys,
+    createVideoPrimaryKey,
 } from "./dynamoDBKeys";
 
 describe("createVideoItemKeys", () => {
@@ -45,6 +46,20 @@ describe("createSegmentItemKeys", () => {
             UserContentPK: "USER#user-1",
             UserContentSK:
                 "SEGMENT#2026-07-20T12:35:00.000Z#segment-1",
+        });
+    });
+});
+
+describe("createVideoPrimaryKey", () => {
+    it("creates the key used to identify one user's video", () => {
+        expect(
+            createVideoPrimaryKey({
+                userID: "user-1",
+                videoID: "video-1",
+            })
+        ).toEqual({
+            PK: "USER#user-1",
+            SK: "VIDEO#video-1",
         });
     });
 });

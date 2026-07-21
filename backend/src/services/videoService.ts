@@ -1,3 +1,4 @@
+// Contains business rules and application workflows for videos.
 import { prisma } from "../db";
 import {
     createVideoStorageKey,

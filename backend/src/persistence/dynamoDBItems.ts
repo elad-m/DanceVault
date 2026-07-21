@@ -15,9 +15,12 @@ import {
     type VideoItemKeys,
 } from "./dynamoDBKeys";
 
+export const CURRENT_VIDEO_SCHEMA_VERSION = 1;
+export const CURRENT_SEGMENT_SCHEMA_VERSION = 1;
+
 export type VideoItem = VideoItemKeys & {
     entityType: "video";
-    schemaVersion: 1;
+    schemaVersion: typeof CURRENT_VIDEO_SCHEMA_VERSION;
     videoID: string;
     userID: string;
     title: string;
@@ -30,7 +33,7 @@ export type VideoItem = VideoItemKeys & {
     createdAt: string;
 };
 
-type CreateVideoItemInput = {
+export type CreateVideoItemInput = {
     videoID: string;
     userID: string;
     title: string;
@@ -53,7 +56,7 @@ export function createVideoItem(
             createdAt: input.createdAt,
         }),
         entityType: "video",
-        schemaVersion: 1,
+        schemaVersion: CURRENT_VIDEO_SCHEMA_VERSION,
         videoID: input.videoID,
         userID: input.userID,
         title: input.title,
@@ -70,7 +73,7 @@ export function createVideoItem(
 
 export type SegmentItem = SegmentItemKeys & {
     entityType: "segment";
-    schemaVersion: 1;
+    schemaVersion: typeof CURRENT_SEGMENT_SCHEMA_VERSION;
     segmentID: string;
     videoID: string;
     userID: string;
@@ -117,7 +120,7 @@ export function createSegmentItem(
             createdAt: input.createdAt,
         }),
         entityType: "segment",
-        schemaVersion: 1,
+        schemaVersion: CURRENT_SEGMENT_SCHEMA_VERSION,
         segmentID: input.segmentID,
         videoID: input.videoID,
         userID: input.userID,
