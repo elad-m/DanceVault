@@ -3,6 +3,7 @@
 import {
     GetCommand,
     PutCommand,
+    QueryCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBConnection } from "./dynamoDBConnection";
 import {
@@ -11,7 +12,38 @@ import {
     type CreateVideoItemInput,
     type VideoItem,
 } from "./dynamoDBItems";
-import { createVideoPrimaryKey } from "./dynamoDBKeys";
+import {
+    createUserPartitionKey,
+    createVideoPrimaryKey,
+    VIDEO_ITEM_KEY_PREFIX,
+} from "./dynamoDBKeys";
+
+
+const USER_CONTENT_BY_CREATION_TIME_INDEX_NAME =
+    "UserContentByCreationTime";
+
+function requireSupportedVideoItem(
+    item: Record<string, unknown>
+): VideoItem {
+    if (item.entityType !== "video") {
+        throw new Error(
+            "Expected the DynamoDB item to be a video"
+        );
+    }
+
+    if (
+        item.schemaVersion !==
+        CURRENT_VIDEO_SCHEMA_VERSION
+    ) {
+        throw new Error(
+            `Unsupported video schema version: ${String(
+                item.schemaVersion
+            )}`
+        );
+    }
+
+    return item as VideoItem;
+}
 
 export async function createVideo(
     connection: DynamoDBConnection,
@@ -52,19 +84,36 @@ export async function getVideoByID(
         return null;
     }
 
-    if (result.Item.entityType !== "video") {
-        throw new Error(
-            "Expected the DynamoDB item to be a video"
-        );
-    }
+    return requireSupportedVideoItem(result.Item);
+}
 
-    if (result.Item.schemaVersion !== CURRENT_VIDEO_SCHEMA_VERSION) {
-        throw new Error(
-            `Unsupported video schema version: ${String(
-                result.Item.schemaVersion
-            )}`
-        );
-    }
+type ListVideosInput = {
+    userID: string;
+};
 
-    return result.Item as VideoItem;
+export async function listVideos(
+    connection: DynamoDBConnection,
+    input: ListVideosInput
+): Promise<VideoItem[]> {
+    const result = await connection.documentClient.send(
+        new QueryCommand({
+            TableName: connection.tableName,
+            IndexName:
+                USER_CONTENT_BY_CREATION_TIME_INDEX_NAME,
+            KeyConditionExpression:
+                "UserContentPK = :userPK " +
+                "AND begins_with(UserContentSK, :videoPrefix)",
+            ExpressionAttributeValues: {
+                ":userPK": createUserPartitionKey(
+                    input.userID
+                ),
+                ":videoPrefix": VIDEO_ITEM_KEY_PREFIX,
+            },
+            ScanIndexForward: true,
+        })
+    );
+
+    return (result.Items ?? []).map(
+        requireSupportedVideoItem
+    );
 }

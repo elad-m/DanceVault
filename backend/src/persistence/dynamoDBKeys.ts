@@ -1,3 +1,12 @@
+export const VIDEO_ITEM_KEY_PREFIX = "VIDEO#";
+export const SEGMENT_ITEM_KEY_PREFIX = "SEGMENT#";
+
+export function createUserPartitionKey(
+    userID: string
+): string {
+    return `USER#${userID}`;
+}
+
 export type VideoPrimaryKey = {
     PK: string;
     SK: string;
@@ -13,8 +22,8 @@ export function createVideoPrimaryKey({
     videoID,
 }: CreateVideoPrimaryKeyInput): VideoPrimaryKey {
     return {
-        PK: `USER#${userID}`,
-        SK: `VIDEO#${videoID}`,
+        PK: createUserPartitionKey(userID),
+        SK: `${VIDEO_ITEM_KEY_PREFIX}${videoID}`,
     };
 }
 
@@ -42,8 +51,7 @@ export function createVideoItemKeys({
     return {
         ...primaryKey,
         UserContentPK: primaryKey.PK,
-        UserContentSK:
-            `VIDEO#${createdAt.toISOString()}#${videoID}`,
+        UserContentSK: `${VIDEO_ITEM_KEY_PREFIX}${createdAt.toISOString()}#${videoID}`,
     };
 }
 
@@ -71,18 +79,18 @@ export function createSegmentItemKeys({
     startMilliseconds,
     createdAt,
 }: CreateSegmentItemKeysInput): SegmentItemKeys {
-    const userPK = `USER#${userID}`;
+    const userPK = createUserPartitionKey(userID);
     const paddedStartMilliseconds =
         startMilliseconds.toString().padStart(12, "0");
 
     return {
         PK: userPK,
-        SK: `SEGMENT#${segmentID}`,
-        VideoPK: `VIDEO#${videoID}`,
+        SK: `${SEGMENT_ITEM_KEY_PREFIX}${segmentID}`,
+        VideoPK: `${VIDEO_ITEM_KEY_PREFIX}${videoID}`,
         VideoSK:
-            `SEGMENT#${paddedStartMilliseconds}#${segmentID}`,
+            `${SEGMENT_ITEM_KEY_PREFIX}${paddedStartMilliseconds}#${segmentID}`,
         UserContentPK: userPK,
         UserContentSK:
-            `SEGMENT#${createdAt.toISOString()}#${segmentID}`,
+            `${SEGMENT_ITEM_KEY_PREFIX}${createdAt.toISOString()}#${segmentID}`,
     };
 }

@@ -8,10 +8,41 @@ import { createDynamoDBConnection } from "./dynamoDBConnection";
 import {
     createVideo,
     getVideoByID,
+    listVideos,
 } from "./dynamoDBVideoDataAccess";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
+import type { VideoItem } from "./dynamoDBItems";
+import { createVideoPrimaryKey } from "./dynamoDBKeys";
 
 const connection = createDynamoDBConnection();
+
+type WaitForVideoCountInput = {
+    userID: string;
+    expectedCount: number;
+};
+
+async function waitForVideoCount({
+    userID,
+    expectedCount,
+}: WaitForVideoCountInput): Promise<VideoItem[]> {
+    for (let attempt = 0; attempt < 10; attempt++) {
+        const videos = await listVideos(connection, {
+            userID,
+        });
+
+        if (videos.length === expectedCount) {
+            return videos;
+        }
+
+        await new Promise<void>((resolve) => {
+            setTimeout(resolve, 200);
+        });
+    }
+
+    throw new Error(
+        `Expected ${expectedCount} videos to appear in the index`
+    );
+}
 
 describe("DynamoDB video data access integration", () => {
     afterAll(() => {
@@ -151,6 +182,110 @@ describe("DynamoDB video data access integration", () => {
                     TableName: connection.tableName,
                     Key: itemKey,
                 })
+            );
+        }
+    });
+
+    it("returns an empty list when the user has no videos", async () => {
+        const videos = await listVideos(connection, {
+            userID: `user-without-videos-${randomUUID()}`,
+        });
+
+        expect(videos).toEqual([]);
+    });
+
+    it("lists only the user's videos in chronological order", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const otherUserID =
+            `integration-other-user-${randomUUID()}`;
+
+        const earlierVideoID = randomUUID();
+        const laterVideoID = randomUUID();
+        const otherVideoID = randomUUID();
+
+        const videosToDelete = [
+            { userID, videoID: earlierVideoID },
+            { userID, videoID: laterVideoID },
+            {
+                userID: otherUserID,
+                videoID: otherVideoID,
+            },
+        ];
+
+        try {
+            // Create these out of order to prove the index sorts by date.
+            await createVideo(connection, {
+                videoID: laterVideoID,
+                userID,
+                title: "Later video",
+                sourceType: "youtube",
+                sourceURL: "https://youtube.com/watch?v=later",
+                storageKey: null,
+                storageProviderName: null,
+                originalFileName: null,
+                status: "ready",
+                createdAt: new Date(
+                    "2026-07-21T11:00:00.000Z"
+                ),
+            });
+
+            await createVideo(connection, {
+                videoID: earlierVideoID,
+                userID,
+                title: "Earlier video",
+                sourceType: "youtube",
+                sourceURL: "https://youtube.com/watch?v=earlier",
+                storageKey: null,
+                storageProviderName: null,
+                originalFileName: null,
+                status: "ready",
+                createdAt: new Date(
+                    "2026-07-21T10:00:00.000Z"
+                ),
+            });
+
+            await createVideo(connection, {
+                videoID: otherVideoID,
+                userID: otherUserID,
+                title: "Another user's video",
+                sourceType: "youtube",
+                sourceURL: "https://youtube.com/watch?v=other",
+                storageKey: null,
+                storageProviderName: null,
+                originalFileName: null,
+                status: "ready",
+                createdAt: new Date(
+                    "2026-07-21T09:00:00.000Z"
+                ),
+            });
+
+            const videos = await waitForVideoCount({
+                userID,
+                expectedCount: 2,
+            });
+
+            await waitForVideoCount({
+                userID: otherUserID,
+                expectedCount: 1,
+            });
+
+            expect(videos.map((video) => video.videoID)).toEqual([
+                earlierVideoID,
+                laterVideoID,
+            ]);
+        } finally {
+            await Promise.all(
+                videosToDelete.map(({ userID, videoID }) =>
+                    connection.documentClient.send(
+                        new DeleteCommand({
+                            TableName: connection.tableName,
+                            Key: createVideoPrimaryKey({
+                                userID,
+                                videoID,
+                            }),
+                        })
+                    )
+                )
             );
         }
     });

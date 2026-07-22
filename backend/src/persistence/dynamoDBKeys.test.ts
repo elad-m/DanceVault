@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     createSegmentItemKeys,
+    createUserPartitionKey,
     createVideoItemKeys,
     createVideoPrimaryKey,
 } from "./dynamoDBKeys";
@@ -61,5 +62,13 @@ describe("createVideoPrimaryKey", () => {
             PK: "USER#user-1",
             SK: "VIDEO#video-1",
         });
+    });
+});
+
+describe("createUserPartitionKey", () => {
+    it("creates the partition key for one user's content", () => {
+        expect(createUserPartitionKey("user-1")).toBe(
+            "USER#user-1"
+        );
     });
 });
