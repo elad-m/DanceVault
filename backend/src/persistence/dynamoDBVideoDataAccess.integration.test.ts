@@ -26,9 +26,12 @@ async function waitForVideoCount({
     expectedCount,
 }: WaitForVideoCountInput): Promise<VideoItem[]> {
     for (let attempt = 0; attempt < 10; attempt++) {
-        const videos = await listVideos(connection, {
+        const page = await listVideos(connection, {
             userID,
+            limit: expectedCount,
         });
+
+        const videos = page.videos;
 
         if (videos.length === expectedCount) {
             return videos;
@@ -187,11 +190,15 @@ describe("DynamoDB video data access integration", () => {
     });
 
     it("returns an empty list when the user has no videos", async () => {
-        const videos = await listVideos(connection, {
+        const page = await listVideos(connection, {
             userID: `user-without-videos-${randomUUID()}`,
+            limit: 10,
         });
 
-        expect(videos).toEqual([]);
+        expect(page).toEqual({
+            videos: [],
+            nextCursor: null,
+        });
     });
 
     it("lists only the user's videos in chronological order", async () => {
@@ -259,7 +266,8 @@ describe("DynamoDB video data access integration", () => {
                 ),
             });
 
-            const videos = await waitForVideoCount({
+            // Wait until the eventually consistent index contains all test data.
+            await waitForVideoCount({
                 userID,
                 expectedCount: 2,
             });
@@ -269,10 +277,42 @@ describe("DynamoDB video data access integration", () => {
                 expectedCount: 1,
             });
 
-            expect(videos.map((video) => video.videoID)).toEqual([
-                earlierVideoID,
-                laterVideoID,
-            ]);
+            const firstPage = await listVideos(connection, {
+                userID,
+                limit: 1,
+            });
+
+            expect(
+                firstPage.videos.map((video) => video.videoID)
+            ).toEqual([earlierVideoID]);
+
+            expect(firstPage.nextCursor).not.toBeNull();
+
+            if (!firstPage.nextCursor) {
+                throw new Error(
+                    "Expected the first page to have a continuation cursor"
+                );
+            }
+            await expect(
+                listVideos(connection, {
+                    userID: otherUserID,
+                    limit: 1,
+                    cursor: firstPage.nextCursor,
+                })
+            ).rejects.toThrow("Invalid video list cursor");
+
+            const secondPage = await listVideos(connection, {
+                userID,
+                limit: 1,
+                cursor: firstPage.nextCursor,
+            });
+
+            expect(
+                [
+                    ...firstPage.videos,
+                    ...secondPage.videos,
+                ].map((video) => video.videoID)
+            ).toEqual([earlierVideoID, laterVideoID]);
         } finally {
             await Promise.all(
                 videosToDelete.map(({ userID, videoID }) =>
@@ -288,5 +328,37 @@ describe("DynamoDB video data access integration", () => {
                 )
             );
         }
+    });
+
+    it("rejects video-list limits outside the supported range", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+
+        await expect(
+            listVideos(connection, {
+                userID,
+                limit: 0,
+            })
+        ).rejects.toThrow(
+            "Video list limit must be between 1 and 50"
+        );
+
+        await expect(
+            listVideos(connection, {
+                userID,
+                limit: 51,
+            })
+        ).rejects.toThrow(
+            "Video list limit must be between 1 and 50"
+        );
+    });
+
+    it("rejects a malformed video-list cursor", async () => {
+        await expect(
+            listVideos(connection, {
+                userID: `integration-user-${randomUUID()}`,
+                limit: 10,
+                cursor: "not-a-valid-cursor",
+            })
+        ).rejects.toThrow("Invalid video list cursor");
     });
 });
