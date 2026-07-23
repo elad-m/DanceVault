@@ -9,6 +9,7 @@ import {
     createVideo,
     getVideoByID,
     listVideos,
+    MAX_VIDEO_LIST_PAGE_SIZE,
     updateVideoStatus,
     updateVideoTitle,
 } from "./dynamoDBVideoDataAccess";
@@ -30,7 +31,7 @@ async function waitForVideoCount({
     for (let attempt = 0; attempt < 10; attempt++) {
         const page = await listVideos(connection, {
             userID,
-            limit: expectedCount,
+            limit: MAX_VIDEO_LIST_PAGE_SIZE,
         });
 
         const videos = page.videos;
@@ -203,7 +204,7 @@ describe("DynamoDB video data access integration", () => {
         });
     });
 
-    it("lists only the user's videos in chronological order", async () => {
+    it("lists a user's videos chronologically with ownership-scoped cursor pagination", async () => {
         const userID = `integration-user-${randomUUID()}`;
         const otherUserID =
             `integration-other-user-${randomUUID()}`;
@@ -295,6 +296,7 @@ describe("DynamoDB video data access integration", () => {
                     "Expected the first page to have a continuation cursor"
                 );
             }
+
             await expect(
                 listVideos(connection, {
                     userID: otherUserID,
@@ -315,6 +317,24 @@ describe("DynamoDB video data access integration", () => {
                     ...secondPage.videos,
                 ].map((video) => video.videoID)
             ).toEqual([earlierVideoID, laterVideoID]);
+
+            // DynamoDB may return a cursor when a page ends exactly at its limit,
+            // even if resuming from that cursor produces no additional items.
+            if (secondPage.nextCursor) {
+                const terminalPage = await listVideos(
+                    connection,
+                    {
+                        userID,
+                        limit: 1,
+                        cursor: secondPage.nextCursor,
+                    }
+                );
+
+                expect(terminalPage).toEqual({
+                    videos: [],
+                    nextCursor: null,
+                });
+            }
         } finally {
             await Promise.all(
                 videosToDelete.map(({ userID, videoID }) =>

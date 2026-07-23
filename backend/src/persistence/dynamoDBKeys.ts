@@ -27,6 +27,21 @@ export function createVideoPrimaryKey({
     };
 }
 
+type CreateSegmentsByVideoPartitionKeyInput = {
+    userID: string;
+    videoID: string;
+};
+
+export function createSegmentsByVideoPartitionKey({
+    userID,
+    videoID,
+}: CreateSegmentsByVideoPartitionKeyInput): string {
+    return (
+        `${createUserPartitionKey(userID)}#` +
+        `${VIDEO_ITEM_KEY_PREFIX}${videoID}`
+    );
+}
+
 export type VideoItemKeys = VideoPrimaryKey & {
     UserContentPK: string;
     UserContentSK: string;
@@ -55,9 +70,27 @@ export function createVideoItemKeys({
     };
 }
 
-export type SegmentItemKeys = {
+export type SegmentPrimaryKey = {
     PK: string;
     SK: string;
+};
+
+type CreateSegmentPrimaryKeyInput = {
+    userID: string;
+    segmentID: string;
+};
+
+export function createSegmentPrimaryKey({
+    userID,
+    segmentID,
+}: CreateSegmentPrimaryKeyInput): SegmentPrimaryKey {
+    return {
+        PK: createUserPartitionKey(userID),
+        SK: `${SEGMENT_ITEM_KEY_PREFIX}${segmentID}`,
+    };
+}
+
+export type SegmentItemKeys = SegmentPrimaryKey & {
     VideoPK: string;
     VideoSK: string;
     UserContentPK: string;
@@ -79,17 +112,22 @@ export function createSegmentItemKeys({
     startMilliseconds,
     createdAt,
 }: CreateSegmentItemKeysInput): SegmentItemKeys {
-    const userPK = createUserPartitionKey(userID);
+    const primaryKey = createSegmentPrimaryKey({
+        userID,
+        segmentID,
+    });
     const paddedStartMilliseconds =
         startMilliseconds.toString().padStart(12, "0");
 
     return {
-        PK: userPK,
-        SK: `${SEGMENT_ITEM_KEY_PREFIX}${segmentID}`,
-        VideoPK: `${VIDEO_ITEM_KEY_PREFIX}${videoID}`,
+        ...primaryKey,
+        VideoPK: createSegmentsByVideoPartitionKey({
+            userID,
+            videoID,
+        }),
         VideoSK:
             `${SEGMENT_ITEM_KEY_PREFIX}${paddedStartMilliseconds}#${segmentID}`,
-        UserContentPK: userPK,
+        UserContentPK: primaryKey.PK,
         UserContentSK:
             `${SEGMENT_ITEM_KEY_PREFIX}${createdAt.toISOString()}#${segmentID}`,
     };

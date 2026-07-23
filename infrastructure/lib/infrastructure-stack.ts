@@ -199,6 +199,7 @@ export class InfrastructureStack extends cdk.Stack {
       new iam.PolicyStatement({
         actions: [
           'dynamodb:GetItem',
+          'dynamodb:ConditionCheckItem',
           'dynamodb:PutItem',
           'dynamodb:UpdateItem',
           'dynamodb:DeleteItem',

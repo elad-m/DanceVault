@@ -79,6 +79,7 @@ test('creates a least-privilege role for the local backend', () => {
     expect.objectContaining({
       Action: [
         'dynamodb:GetItem',
+        'dynamodb:ConditionCheckItem',
         'dynamodb:PutItem',
         'dynamodb:UpdateItem',
         'dynamodb:DeleteItem',

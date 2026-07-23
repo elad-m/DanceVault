@@ -90,7 +90,7 @@ export type SegmentItem = SegmentItemKeys & {
     createdAt: string;
 };
 
-type CreateSegmentItemInput = {
+export type CreateSegmentItemInput = {
     segmentID: string;
     videoID: string;
     userID: string;

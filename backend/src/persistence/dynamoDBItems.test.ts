@@ -71,7 +71,7 @@ describe("createSegmentItem", () => {
         expect(item).toEqual({
             PK: "USER#user-1",
             SK: "SEGMENT#segment-1",
-            VideoPK: "VIDEO#video-1",
+            VideoPK: "USER#user-1#VIDEO#video-1",
             VideoSK:
                 "SEGMENT#000000015000#segment-1",
             UserContentPK: "USER#user-1",
