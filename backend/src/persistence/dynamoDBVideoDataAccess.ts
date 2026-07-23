@@ -4,6 +4,7 @@ import {
     GetCommand,
     PutCommand,
     QueryCommand,
+    UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBConnection } from "./dynamoDBConnection";
 import {
@@ -17,6 +18,7 @@ import {
     createVideoPrimaryKey,
     VIDEO_ITEM_KEY_PREFIX,
 } from "./dynamoDBKeys";
+import type { VideoStatus } from "../domain/video";
 
 
 const USER_CONTENT_BY_CREATION_TIME_INDEX_NAME =
@@ -181,7 +183,7 @@ export async function listVideos(
         exclusiveStartKey &&
         (exclusiveStartKey.PK !== userPartitionKey ||
             exclusiveStartKey.UserContentPK !==
-                userPartitionKey ||
+            userPartitionKey ||
             !exclusiveStartKey.SK.startsWith(
                 VIDEO_ITEM_KEY_PREFIX
             ) ||
@@ -234,4 +236,101 @@ export async function listVideos(
         ),
         nextCursor,
     };
+}
+
+type UpdateVideoItemInput = {
+    userID: string;
+    videoID: string;
+    updateExpression: string;
+    expressionAttributeNames: Record<string, string>;
+    expressionAttributeValues: Record<
+        string,
+        string | number
+    >;
+};
+
+async function updateVideoItem(
+    connection: DynamoDBConnection,
+    input: UpdateVideoItemInput
+): Promise<VideoItem> {
+    const result = await connection.documentClient.send(
+        new UpdateCommand({
+            TableName: connection.tableName,
+            Key: createVideoPrimaryKey(input),
+            UpdateExpression: input.updateExpression,
+            ConditionExpression:
+                "attribute_exists(PK) " +
+                "AND attribute_exists(SK) " +
+                "AND #entityType = :videoEntityType " +
+                "AND #schemaVersion = :schemaVersion",
+            ExpressionAttributeNames: {
+                ...input.expressionAttributeNames,
+                "#entityType": "entityType",
+                "#schemaVersion": "schemaVersion",
+            },
+            ExpressionAttributeValues: {
+                ...input.expressionAttributeValues,
+                ":videoEntityType": "video",
+                ":schemaVersion":
+                    CURRENT_VIDEO_SCHEMA_VERSION,
+            },
+            ReturnValues: "ALL_NEW",
+        })
+    );
+
+    if (!result.Attributes) {
+        throw new Error(
+            "DynamoDB did not return the updated video"
+        );
+    }
+
+    return requireSupportedVideoItem(
+        result.Attributes
+    );
+}
+
+type UpdateVideoTitleInput = {
+    userID: string;
+    videoID: string;
+    title: string;
+};
+
+export async function updateVideoTitle(
+    connection: DynamoDBConnection,
+    input: UpdateVideoTitleInput
+): Promise<VideoItem> {
+    return updateVideoItem(connection, {
+        userID: input.userID,
+        videoID: input.videoID,
+        updateExpression: "SET #title = :title",
+        expressionAttributeNames: {
+            "#title": "title",
+        },
+        expressionAttributeValues: {
+            ":title": input.title,
+        },
+    });
+}
+
+type UpdateVideoStatusInput = {
+    userID: string;
+    videoID: string;
+    status: VideoStatus;
+};
+
+export async function updateVideoStatus(
+    connection: DynamoDBConnection,
+    input: UpdateVideoStatusInput
+): Promise<VideoItem> {
+    return updateVideoItem(connection, {
+        userID: input.userID,
+        videoID: input.videoID,
+        updateExpression: "SET #status = :status",
+        expressionAttributeNames: {
+            "#status": "status",
+        },
+        expressionAttributeValues: {
+            ":status": input.status,
+        },
+    });
 }

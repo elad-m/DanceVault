@@ -9,6 +9,8 @@ import {
     createVideo,
     getVideoByID,
     listVideos,
+    updateVideoStatus,
+    updateVideoTitle,
 } from "./dynamoDBVideoDataAccess";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import type { VideoItem } from "./dynamoDBItems";
@@ -360,5 +362,163 @@ describe("DynamoDB video data access integration", () => {
                 cursor: "not-a-valid-cursor",
             })
         ).rejects.toThrow("Invalid video list cursor");
+    });
+
+    it("updates a video's title", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+
+        const itemKey = createVideoPrimaryKey({
+            userID,
+            videoID,
+        });
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Original title",
+                sourceType: "youtube",
+                sourceURL: "https://youtube.com/watch?v=update",
+                storageKey: null,
+                storageProviderName: null,
+                originalFileName: null,
+                status: "ready",
+                createdAt: new Date(),
+            });
+
+            const updatedVideo = await updateVideoTitle(
+                connection,
+                {
+                    userID,
+                    videoID,
+                    title: "Updated title",
+                }
+            );
+
+            expect(updatedVideo.title).toBe("Updated title");
+
+            const storedVideo = await getVideoByID(connection, {
+                userID,
+                videoID,
+            });
+
+            expect(storedVideo).toMatchObject({
+                title: "Updated title",
+            });
+        } finally {
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: itemKey,
+                })
+            );
+        }
+    });
+
+    it("does not let another user update a video's title", async () => {
+        const ownerUserID =
+            `integration-owner-${randomUUID()}`;
+        const otherUserID =
+            `integration-other-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+
+        const itemKey = createVideoPrimaryKey({
+            userID: ownerUserID,
+            videoID,
+        });
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID: ownerUserID,
+                title: "Owner's title",
+                sourceType: "youtube",
+                sourceURL: "https://youtube.com/watch?v=owned",
+                storageKey: null,
+                storageProviderName: null,
+                originalFileName: null,
+                status: "ready",
+                createdAt: new Date(),
+            });
+
+            await expect(
+                updateVideoTitle(connection, {
+                    userID: otherUserID,
+                    videoID,
+                    title: "Unauthorized title",
+                })
+            ).rejects.toBeInstanceOf(
+                ConditionalCheckFailedException
+            );
+
+            const storedVideo = await getVideoByID(connection, {
+                userID: ownerUserID,
+                videoID,
+            });
+
+            expect(storedVideo).toMatchObject({
+                title: "Owner's title",
+            });
+        } finally {
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: itemKey,
+                })
+            );
+        }
+    });
+
+    it("updates an uploaded video's status", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+
+        const itemKey = createVideoPrimaryKey({
+            userID,
+            videoID,
+        });
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Uploaded lesson",
+                sourceType: "uploaded",
+                sourceURL: null,
+                storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "lesson.mp4",
+                status: "pending_upload",
+                createdAt: new Date(),
+            });
+
+            const updatedVideo = await updateVideoStatus(
+                connection,
+                {
+                    userID,
+                    videoID,
+                    status: "ready",
+                }
+            );
+
+            expect(updatedVideo.status).toBe("ready");
+
+            const storedVideo = await getVideoByID(connection, {
+                userID,
+                videoID,
+            });
+
+            expect(storedVideo).toMatchObject({
+                status: "ready",
+            });
+        } finally {
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: itemKey,
+                })
+            );
+        }
     });
 });
