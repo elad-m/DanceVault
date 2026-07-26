@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { createDynamoDBConnection } from "./dynamoDBConnection";
 import {
     createSegment,
+    deleteSegment,
     getSegmentByID,
     listSegmentsByVideo,
     MAX_SEGMENTS_BY_VIDEO_PAGE_SIZE,
@@ -16,7 +17,10 @@ import {
     createSegmentPrimaryKey,
     createVideoPrimaryKey,
 } from "./dynamoDBKeys";
-import { TransactionCanceledException } from "@aws-sdk/client-dynamodb";
+import {
+    ConditionalCheckFailedException,
+    TransactionCanceledException,
+} from "@aws-sdk/client-dynamodb";
 import type {
     CreateSegmentItemInput,
     SegmentItem,
@@ -600,4 +604,184 @@ describe("DynamoDB segment data access integration", () => {
             "Invalid segments-by-video list cursor"
         );
     });
+
+    it("deletes a segment from the table and video index", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+        const segmentID = `integration-segment-${randomUUID()}`;
+
+        const videoKey = createVideoPrimaryKey({
+            userID,
+            videoID,
+        });
+        const segmentKey = createSegmentPrimaryKey({
+            userID,
+            segmentID,
+        });
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Segment deletion parent video",
+                sourceType: "youtube",
+                sourceURL: "https://youtube.com/watch?v=test",
+                storageKey: null,
+                storageProviderName: null,
+                originalFileName: null,
+                status: "ready",
+                createdAt: new Date(),
+            });
+
+            const createdSegment = await createSegment(connection, {
+                segmentID,
+                videoID,
+                userID,
+                name: "Segment to delete",
+                description: null,
+                startMilliseconds: 1_000,
+                endMilliseconds: 2_000,
+                tags: [],
+                difficulty: "easy",
+                confidence: "low",
+                practicePriority: "high",
+                videoSourceType: "youtube",
+                videoSourceURL: "https://youtube.com/watch?v=test",
+                createdAt: new Date(),
+            });
+
+            await waitForSegmentCount({
+                userID,
+                videoID,
+                expectedCount: 1,
+            });
+
+            const deletedSegment = await deleteSegment(connection, {
+                userID,
+                segmentID,
+            });
+
+            // The delete operation returns the item that was removed.
+            expect(deletedSegment).toEqual(createdSegment);
+
+            const storedSegment = await getSegmentByID(connection, {
+                userID,
+                segmentID,
+            });
+
+            // The strongly consistent primary-key read confirms the item is gone.
+            expect(storedSegment).toBeNull();
+
+            const indexedSegments = await waitForSegmentCount({
+                userID,
+                videoID,
+                expectedCount: 0,
+            });
+
+            // DynamoDB also removes the deleted item's eventually consistent GSI entry.
+            expect(indexedSegments).toEqual([]);
+        } finally {
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: segmentKey,
+                })
+            );
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: videoKey,
+                })
+            );
+        }
+    });
+
+    it("rejects deletion when the segment does not exist", async () => {
+        await expect(
+            deleteSegment(connection, {
+                userID: `integration-user-${randomUUID()}`,
+                segmentID: `missing-segment-${randomUUID()}`,
+            })
+        ).rejects.toBeInstanceOf(
+            ConditionalCheckFailedException
+        );
+    });
+    it("does not let another user delete a segment", async () => {
+    const ownerUserID = `integration-owner-${randomUUID()}`;
+    const otherUserID = `integration-other-${randomUUID()}`;
+    const videoID = `integration-video-${randomUUID()}`;
+    const segmentID = `integration-segment-${randomUUID()}`;
+
+    const videoKey = createVideoPrimaryKey({
+        userID: ownerUserID,
+        videoID,
+    });
+    const segmentKey = createSegmentPrimaryKey({
+        userID: ownerUserID,
+        segmentID,
+    });
+
+    try {
+        await createVideo(connection, {
+            videoID,
+            userID: ownerUserID,
+            title: "Owned video",
+            sourceType: "youtube",
+            sourceURL: "https://youtube.com/watch?v=test",
+            storageKey: null,
+            storageProviderName: null,
+            originalFileName: null,
+            status: "ready",
+            createdAt: new Date(),
+        });
+
+        const createdSegment = await createSegment(connection, {
+            segmentID,
+            videoID,
+            userID: ownerUserID,
+            name: "Owned segment",
+            description: null,
+            startMilliseconds: 1_000,
+            endMilliseconds: 2_000,
+            tags: [],
+            difficulty: "easy",
+            confidence: "low",
+            practicePriority: "high",
+            videoSourceType: "youtube",
+            videoSourceURL: "https://youtube.com/watch?v=test",
+            createdAt: new Date(),
+        });
+
+        // The other user's partition key cannot match the owner's segment.
+        await expect(
+            deleteSegment(connection, {
+                userID: otherUserID,
+                segmentID,
+            })
+        ).rejects.toBeInstanceOf(
+            ConditionalCheckFailedException
+        );
+
+        const storedSegment = await getSegmentByID(connection, {
+            userID: ownerUserID,
+            segmentID,
+        });
+
+        // The rejected delete leaves the owner's segment unchanged.
+        expect(storedSegment).toEqual(createdSegment);
+    } finally {
+        await connection.documentClient.send(
+            new DeleteCommand({
+                TableName: connection.tableName,
+                Key: segmentKey,
+            })
+        );
+        await connection.documentClient.send(
+            new DeleteCommand({
+                TableName: connection.tableName,
+                Key: videoKey,
+            })
+        );
+    }
+});
 });

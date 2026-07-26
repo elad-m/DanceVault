@@ -1,6 +1,7 @@
 // Performs segment database operations and hides DynamoDB-specific item mapping.
 
 import {
+    DeleteCommand,
     GetCommand,
     QueryCommand,
     TransactWriteCommand,
@@ -268,4 +269,44 @@ export async function listSegmentsByVideo(
         ),
         nextCursor,
     };
+}
+
+type DeleteSegmentInput = {
+    userID: string;
+    segmentID: string;
+};
+
+export async function deleteSegment(
+    connection: DynamoDBConnection,
+    input: DeleteSegmentInput
+): Promise<SegmentItem> {
+    const result = await connection.documentClient.send(
+        new DeleteCommand({
+            TableName: connection.tableName,
+            Key: createSegmentPrimaryKey(input),
+            ConditionExpression:
+                "attribute_exists(PK) " +
+                "AND attribute_exists(SK) " +
+                "AND #entityType = :segmentEntityType " +
+                "AND #schemaVersion = :schemaVersion",
+            ExpressionAttributeNames: {
+                "#entityType": "entityType",
+                "#schemaVersion": "schemaVersion",
+            },
+            ExpressionAttributeValues: {
+                ":segmentEntityType": "segment",
+                ":schemaVersion":
+                    CURRENT_SEGMENT_SCHEMA_VERSION,
+            },
+            ReturnValues: "ALL_OLD",
+        })
+    );
+
+    if (!result.Attributes) {
+        throw new Error(
+            "DynamoDB deleted a segment without returning its previous value"
+        );
+    }
+
+    return requireSupportedSegmentItem(result.Attributes);
 }
