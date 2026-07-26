@@ -30,7 +30,7 @@ describe("createVideoItem", () => {
                 "VIDEO#2026-07-20T12:34:56.789Z#video-1",
 
             entityType: "video",
-            schemaVersion: 1,
+            schemaVersion: 2,
             videoID: "video-1",
             userID: "user-1",
             title: "Salsa lesson",
@@ -41,6 +41,7 @@ describe("createVideoItem", () => {
             storageProviderName: null,
             originalFileName: null,
             status: "ready",
+            segmentCount: 0,
             createdAt: "2026-07-20T12:34:56.789Z",
         });
     });

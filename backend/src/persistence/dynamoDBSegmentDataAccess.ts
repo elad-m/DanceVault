@@ -1,7 +1,6 @@
 // Performs segment database operations and hides DynamoDB-specific item mapping.
 
 import {
-    DeleteCommand,
     GetCommand,
     QueryCommand,
     TransactWriteCommand,
@@ -107,6 +106,7 @@ export async function createSegment(
     input: CreateSegmentItemInput
 ): Promise<SegmentItem> {
     const segmentItem = createSegmentItem(input);
+
     const videoKey = createVideoPrimaryKey({
         userID: input.userID,
         videoID: input.videoID,
@@ -116,9 +116,11 @@ export async function createSegment(
         new TransactWriteCommand({
             TransactItems: [
                 {
-                    ConditionCheck: {
+                    Update: {
                         TableName: connection.tableName,
                         Key: videoKey,
+                        UpdateExpression:
+                            "ADD #segmentCount :segmentCountIncrement",
                         ConditionExpression:
                             "attribute_exists(PK) " +
                             "AND attribute_exists(SK) " +
@@ -127,11 +129,13 @@ export async function createSegment(
                         ExpressionAttributeNames: {
                             "#entityType": "entityType",
                             "#schemaVersion": "schemaVersion",
+                            "#segmentCount": "segmentCount",
                         },
                         ExpressionAttributeValues: {
                             ":videoEntityType": "video",
                             ":videoSchemaVersion":
                                 CURRENT_VIDEO_SCHEMA_VERSION,
+                            ":segmentCountIncrement": 1,
                         },
                     },
                 },
@@ -273,40 +277,70 @@ export async function listSegmentsByVideo(
 
 type DeleteSegmentInput = {
     userID: string;
+    videoID: string;
     segmentID: string;
 };
 
 export async function deleteSegment(
     connection: DynamoDBConnection,
     input: DeleteSegmentInput
-): Promise<SegmentItem> {
-    const result = await connection.documentClient.send(
-        new DeleteCommand({
-            TableName: connection.tableName,
-            Key: createSegmentPrimaryKey(input),
-            ConditionExpression:
-                "attribute_exists(PK) " +
-                "AND attribute_exists(SK) " +
-                "AND #entityType = :segmentEntityType " +
-                "AND #schemaVersion = :schemaVersion",
-            ExpressionAttributeNames: {
-                "#entityType": "entityType",
-                "#schemaVersion": "schemaVersion",
-            },
-            ExpressionAttributeValues: {
-                ":segmentEntityType": "segment",
-                ":schemaVersion":
-                    CURRENT_SEGMENT_SCHEMA_VERSION,
-            },
-            ReturnValues: "ALL_OLD",
+): Promise<void> {
+    await connection.documentClient.send(
+        new TransactWriteCommand({
+            TransactItems: [
+                {
+                    Delete: {
+                        TableName: connection.tableName,
+                        Key: createSegmentPrimaryKey(input),
+                        ConditionExpression:
+                            "attribute_exists(PK) " +
+                            "AND attribute_exists(SK) " +
+                            "AND #entityType = :segmentEntityType " +
+                            "AND #schemaVersion = :segmentSchemaVersion " +
+                            "AND #videoID = :videoID",
+                        ExpressionAttributeNames: {
+                            "#entityType": "entityType",
+                            "#schemaVersion": "schemaVersion",
+                            "#videoID": "videoID",
+                        },
+                        ExpressionAttributeValues: {
+                            ":segmentEntityType": "segment",
+                            ":segmentSchemaVersion":
+                                CURRENT_SEGMENT_SCHEMA_VERSION,
+                            ":videoID": input.videoID,
+                        },
+                    },
+                },
+                {
+                    Update: {
+                        TableName: connection.tableName,
+                        Key: createVideoPrimaryKey({
+                            userID: input.userID,
+                            videoID: input.videoID,
+                        }),
+                        UpdateExpression:
+                            "ADD #segmentCount :segmentCountDecrement",
+                        ConditionExpression:
+                            "attribute_exists(PK) " +
+                            "AND attribute_exists(SK) " +
+                            "AND #entityType = :videoEntityType " +
+                            "AND #schemaVersion = :videoSchemaVersion " +
+                            "AND #segmentCount > :zero",
+                        ExpressionAttributeNames: {
+                            "#entityType": "entityType",
+                            "#schemaVersion": "schemaVersion",
+                            "#segmentCount": "segmentCount",
+                        },
+                        ExpressionAttributeValues: {
+                            ":videoEntityType": "video",
+                            ":videoSchemaVersion":
+                                CURRENT_VIDEO_SCHEMA_VERSION,
+                            ":segmentCountDecrement": -1,
+                            ":zero": 0,
+                        },
+                    },
+                },
+            ],
         })
     );
-
-    if (!result.Attributes) {
-        throw new Error(
-            "DynamoDB deleted a segment without returning its previous value"
-        );
-    }
-
-    return requireSupportedSegmentItem(result.Attributes);
 }

@@ -7,15 +7,23 @@ import { afterAll, describe, expect, it } from "vitest";
 import { createDynamoDBConnection } from "./dynamoDBConnection";
 import {
     createVideo,
+    deleteVideo,
     getVideoByID,
     listVideos,
     MAX_VIDEO_LIST_PAGE_SIZE,
     updateVideoStatus,
     updateVideoTitle,
 } from "./dynamoDBVideoDataAccess";
+import {
+    createSegment,
+    getSegmentByID,
+} from "./dynamoDBSegmentDataAccess";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import type { VideoItem } from "./dynamoDBItems";
-import { createVideoPrimaryKey } from "./dynamoDBKeys";
+import {
+    createSegmentPrimaryKey,
+    createVideoPrimaryKey,
+} from "./dynamoDBKeys";
 
 const connection = createDynamoDBConnection();
 
@@ -537,6 +545,185 @@ describe("DynamoDB video data access integration", () => {
                 new DeleteCommand({
                     TableName: connection.tableName,
                     Key: itemKey,
+                })
+            );
+        }
+    });
+    it("deletes a video when it has no segments", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+
+        const videoKey = createVideoPrimaryKey({
+            userID,
+            videoID,
+        });
+
+        try {
+            const createdVideo = await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Video without segments",
+                sourceType: "youtube",
+                sourceURL: "https://youtube.com/watch?v=test",
+                storageKey: null,
+                storageProviderName: null,
+                originalFileName: null,
+                status: "ready",
+                createdAt: new Date(),
+            });
+
+            const deletedVideo = await deleteVideo(connection, {
+                userID,
+                videoID,
+            });
+
+            // The delete returns the complete video item removed from DynamoDB.
+            expect(deletedVideo).toEqual(createdVideo);
+
+            const storedVideo = await getVideoByID(connection, {
+                userID,
+                videoID,
+            });
+
+            // A strongly consistent read confirms the video item is gone.
+            expect(storedVideo).toBeNull();
+        } finally {
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: videoKey,
+                })
+            );
+        }
+    });
+
+    it("rejects deleting a video that still has a segment", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+        const segmentID = `integration-segment-${randomUUID()}`;
+
+        const videoKey = createVideoPrimaryKey({
+            userID,
+            videoID,
+        });
+        const segmentKey = createSegmentPrimaryKey({
+            userID,
+            segmentID,
+        });
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Video with a segment",
+                sourceType: "youtube",
+                sourceURL: "https://youtube.com/watch?v=test",
+                storageKey: null,
+                storageProviderName: null,
+                originalFileName: null,
+                status: "ready",
+                createdAt: new Date(),
+            });
+
+            await createSegment(connection, {
+                segmentID,
+                videoID,
+                userID,
+                name: "Existing segment",
+                description: null,
+                startMilliseconds: 1_000,
+                endMilliseconds: 2_000,
+                tags: [],
+                difficulty: "easy",
+                confidence: "low",
+                practicePriority: "high",
+                videoSourceType: "youtube",
+                videoSourceURL: "https://youtube.com/watch?v=test",
+                createdAt: new Date(),
+            });
+
+            await expect(
+                deleteVideo(connection, {
+                    userID,
+                    videoID,
+                })
+            ).rejects.toBeInstanceOf(
+                ConditionalCheckFailedException
+            );
+
+            // The rejected delete must leave both records unchanged.
+            const storedVideo = await getVideoByID(connection, {
+                userID,
+                videoID,
+            });
+            const storedSegment = await getSegmentByID(connection, {
+                userID,
+                segmentID,
+            });
+
+            expect(storedVideo?.segmentCount).toBe(1);
+            expect(storedSegment?.videoID).toBe(videoID);
+        } finally {
+            // Raw cleanup intentionally bypasses the application deletion rules.
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: segmentKey,
+                })
+            );
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: videoKey,
+                })
+            );
+        }
+    });
+    it("rejects deleting a video owned by another user", async () => {
+        const ownerUserID = `integration-owner-${randomUUID()}`;
+        const otherUserID = `integration-other-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+
+        const videoKey = createVideoPrimaryKey({
+            userID: ownerUserID,
+            videoID,
+        });
+
+        try {
+            const createdVideo = await createVideo(connection, {
+                videoID,
+                userID: ownerUserID,
+                title: "Another user's video",
+                sourceType: "youtube",
+                sourceURL: "https://youtube.com/watch?v=test",
+                storageKey: null,
+                storageProviderName: null,
+                originalFileName: null,
+                status: "ready",
+                createdAt: new Date(),
+            });
+
+            await expect(
+                deleteVideo(connection, {
+                    userID: otherUserID,
+                    videoID,
+                })
+            ).rejects.toBeInstanceOf(
+                ConditionalCheckFailedException
+            );
+
+            // The failed cross-user delete must leave the owner's video intact.
+            const storedVideo = await getVideoByID(connection, {
+                userID: ownerUserID,
+                videoID,
+            });
+
+            expect(storedVideo).toEqual(createdVideo);
+        } finally {
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: videoKey,
                 })
             );
         }

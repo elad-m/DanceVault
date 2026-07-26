@@ -1,6 +1,7 @@
 // Performs video database operations and hides DynamoDB-specific item mapping.
 
 import {
+    DeleteCommand,
     GetCommand,
     PutCommand,
     QueryCommand,
@@ -333,4 +334,47 @@ export async function updateVideoStatus(
             ":status": input.status,
         },
     });
+}
+
+type DeleteVideoInput = {
+    userID: string;
+    videoID: string;
+};
+
+export async function deleteVideo(
+    connection: DynamoDBConnection,
+    input: DeleteVideoInput
+): Promise<VideoItem> {
+    const result = await connection.documentClient.send(
+        new DeleteCommand({
+            TableName: connection.tableName,
+            Key: createVideoPrimaryKey(input),
+            ConditionExpression:
+                "attribute_exists(PK) " +
+                "AND attribute_exists(SK) " +
+                "AND #entityType = :videoEntityType " +
+                "AND #schemaVersion = :schemaVersion " +
+                "AND #segmentCount = :zero",
+            ExpressionAttributeNames: {
+                "#entityType": "entityType",
+                "#schemaVersion": "schemaVersion",
+                "#segmentCount": "segmentCount",
+            },
+            ExpressionAttributeValues: {
+                ":videoEntityType": "video",
+                ":schemaVersion":
+                    CURRENT_VIDEO_SCHEMA_VERSION,
+                ":zero": 0,
+            },
+            ReturnValues: "ALL_OLD",
+        })
+    );
+
+    if (!result.Attributes) {
+        throw new Error(
+            "DynamoDB deleted a video without returning its previous value"
+        );
+    }
+
+    return requireSupportedVideoItem(result.Attributes);
 }

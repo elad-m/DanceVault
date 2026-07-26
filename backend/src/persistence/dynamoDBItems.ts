@@ -15,7 +15,7 @@ import {
     type VideoItemKeys,
 } from "./dynamoDBKeys";
 
-export const CURRENT_VIDEO_SCHEMA_VERSION = 1;
+export const CURRENT_VIDEO_SCHEMA_VERSION = 2;
 export const CURRENT_SEGMENT_SCHEMA_VERSION = 1;
 
 export type VideoItem = VideoItemKeys & {
@@ -30,6 +30,7 @@ export type VideoItem = VideoItemKeys & {
     storageProviderName: VideoStorageProviderName | null;
     originalFileName: string | null;
     status: VideoStatus;
+    segmentCount: number;
     createdAt: string;
 };
 
@@ -67,6 +68,7 @@ export function createVideoItem(
             input.storageProviderName,
         originalFileName: input.originalFileName,
         status: input.status,
+        segmentCount: 0,
         createdAt: input.createdAt.toISOString(),
     };
 }
