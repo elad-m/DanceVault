@@ -11,6 +11,7 @@ import {
     getSegmentByID,
     listSegmentsByVideo,
     MAX_SEGMENTS_BY_VIDEO_PAGE_SIZE,
+    updateSegmentMetadata,
 } from "./dynamoDBSegmentDataAccess";
 import {
     createVideo,
@@ -20,7 +21,10 @@ import {
     createSegmentPrimaryKey,
     createVideoPrimaryKey,
 } from "./dynamoDBKeys";
-import { TransactionCanceledException } from "@aws-sdk/client-dynamodb";
+import {
+    ConditionalCheckFailedException,
+    TransactionCanceledException,
+} from "@aws-sdk/client-dynamodb";
 import type {
     CreateSegmentItemInput,
     SegmentItem,
@@ -618,6 +622,214 @@ describe("DynamoDB segment data access integration", () => {
             })
         ).rejects.toThrow(
             "Invalid segments-by-video list cursor"
+        );
+    });
+
+    it("updates only the supplied segment metadata", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+        const segmentID = `integration-segment-${randomUUID()}`;
+
+        const videoKey = createVideoPrimaryKey({
+            userID,
+            videoID,
+        });
+        const segmentKey = createSegmentPrimaryKey({
+            userID,
+            segmentID,
+        });
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Segment update parent video",
+                sourceType: "youtube",
+                sourceURL: "https://youtube.com/watch?v=test",
+                storageKey: null,
+                storageProviderName: null,
+                originalFileName: null,
+                status: "ready",
+                createdAt: new Date(),
+            });
+
+            const createdSegment = await createSegment(connection, {
+                segmentID,
+                videoID,
+                userID,
+                name: "Original segment",
+                description: "Keep this description",
+                startMilliseconds: 1_000,
+                endMilliseconds: 2_000,
+                tags: ["original-tag"],
+                difficulty: "easy",
+                confidence: "low",
+                practicePriority: "low",
+                videoSourceType: "youtube",
+                videoSourceURL: "https://youtube.com/watch?v=test",
+                createdAt: new Date(),
+            });
+
+            const updatedSegment = await updateSegmentMetadata(
+                connection,
+                {
+                    userID,
+                    segmentID,
+                    name: "Updated segment",
+                    practicePriority: "high",
+                }
+            );
+
+            // Only supplied metadata changes; omitted metadata and immutable fields remain unchanged.
+            expect(updatedSegment).toEqual({
+                ...createdSegment,
+                name: "Updated segment",
+                practicePriority: "high",
+            });
+
+            const storedSegment = await getSegmentByID(connection, {
+                userID,
+                segmentID,
+            });
+
+            // A strongly consistent read confirms the returned update was persisted.
+            expect(storedSegment).toEqual(updatedSegment);
+
+            const fullyUpdatedSegment = await updateSegmentMetadata(
+                connection,
+                {
+                    userID,
+                    segmentID,
+                    description: null,
+                    tags: ["updated-tag"],
+                    difficulty: "hard",
+                    confidence: "high",
+                }
+            );
+
+            // Null clears the description, while the remaining supplied metadata is updated.
+            expect(fullyUpdatedSegment).toEqual({
+                ...updatedSegment,
+                description: null,
+                tags: ["updated-tag"],
+                difficulty: "hard",
+                confidence: "high",
+            });
+        } finally {
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: segmentKey,
+                })
+            );
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: videoKey,
+                })
+            );
+        }
+    });
+
+    it("rejects an update without segment metadata", async () => {
+        await expect(
+            updateSegmentMetadata(connection, {
+                userID: `integration-user-${randomUUID()}`,
+                segmentID: `integration-segment-${randomUUID()}`,
+            })
+        ).rejects.toThrow(
+            "At least one segment metadata property must be supplied"
+        );
+    });
+
+    it("does not let another user update a segment", async () => {
+        const ownerUserID = `integration-owner-${randomUUID()}`;
+        const otherUserID = `integration-other-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+        const segmentID = `integration-segment-${randomUUID()}`;
+
+        const videoKey = createVideoPrimaryKey({
+            userID: ownerUserID,
+            videoID,
+        });
+        const segmentKey = createSegmentPrimaryKey({
+            userID: ownerUserID,
+            segmentID,
+        });
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID: ownerUserID,
+                title: "Owned segment parent video",
+                sourceType: "youtube",
+                sourceURL: "https://youtube.com/watch?v=test",
+                storageKey: null,
+                storageProviderName: null,
+                originalFileName: null,
+                status: "ready",
+                createdAt: new Date(),
+            });
+
+            const createdSegment = await createSegment(connection, {
+                segmentID,
+                videoID,
+                userID: ownerUserID,
+                name: "Owner's segment",
+                description: null,
+                startMilliseconds: 1_000,
+                endMilliseconds: 2_000,
+                tags: [],
+                difficulty: "easy",
+                confidence: "low",
+                practicePriority: "low",
+                videoSourceType: "youtube",
+                videoSourceURL: "https://youtube.com/watch?v=test",
+                createdAt: new Date(),
+            });
+
+            await expect(
+                updateSegmentMetadata(connection, {
+                    userID: otherUserID,
+                    segmentID,
+                    practicePriority: "high",
+                })
+            ).rejects.toBeInstanceOf(
+                ConditionalCheckFailedException
+            );
+
+            const storedSegment = await getSegmentByID(connection, {
+                userID: ownerUserID,
+                segmentID,
+            });
+
+            // The rejected cross-user update leaves the owner's segment unchanged.
+            expect(storedSegment).toEqual(createdSegment);
+        } finally {
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: segmentKey,
+                })
+            );
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: videoKey,
+                })
+            );
+        }
+    });
+
+    it("rejects updating a segment that does not exist", async () => {
+        await expect(
+            updateSegmentMetadata(connection, {
+                userID: `integration-user-${randomUUID()}`,
+                segmentID: `missing-segment-${randomUUID()}`,
+                practicePriority: "high",
+            })
+        ).rejects.toBeInstanceOf(
+            ConditionalCheckFailedException
         );
     });
 

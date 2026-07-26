@@ -4,6 +4,7 @@ import {
     GetCommand,
     QueryCommand,
     TransactWriteCommand,
+    UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBConnection } from "./dynamoDBConnection";
 import {
@@ -18,8 +19,13 @@ import {
     createSegmentsByVideoPartitionKey,
     createVideoPrimaryKey,
     SEGMENT_ITEM_KEY_PREFIX,
-    createUserPartitionKey
+    createUserPartitionKey,
 } from "./dynamoDBKeys";
+import type {
+    Confidence,
+    Difficulty,
+    PracticePriority,
+} from "../domain/segment";
 
 const SEGMENTS_BY_VIDEO_INDEX_NAME = "SegmentsByVideo";
 export const MAX_SEGMENTS_BY_VIDEO_PAGE_SIZE = 50;
@@ -273,6 +279,93 @@ export async function listSegmentsByVideo(
         ),
         nextCursor,
     };
+}
+
+type UpdateSegmentMetadataInput = {
+    userID: string;
+    segmentID: string;
+    name?: string;
+    description?: string | null;
+    tags?: string[];
+    difficulty?: Difficulty;
+    confidence?: Confidence;
+    practicePriority?: PracticePriority;
+};
+
+export async function updateSegmentMetadata(
+    connection: DynamoDBConnection,
+    input: UpdateSegmentMetadataInput
+): Promise<SegmentItem> {
+    const metadata = {
+        name: input.name,
+        description: input.description,
+        tags: input.tags,
+        difficulty: input.difficulty,
+        confidence: input.confidence,
+        practicePriority: input.practicePriority,
+    };
+
+    const suppliedMetadata = Object.entries(metadata).filter(
+        ([, value]) => value !== undefined
+    );
+
+    if (suppliedMetadata.length === 0) {
+        throw new Error(
+            "At least one segment metadata property must be supplied"
+        );
+    }
+
+    const updateExpressions = suppliedMetadata.map(
+        ([propertyName]) =>
+            `#${propertyName} = :${propertyName}`
+    );
+
+    const expressionAttributeNames = Object.fromEntries([
+        ["#entityType", "entityType"],
+        ["#schemaVersion", "schemaVersion"],
+        ...suppliedMetadata.map(([propertyName]) => [
+            `#${propertyName}`,
+            propertyName,
+        ]),
+    ]);
+
+    const expressionAttributeValues = Object.fromEntries([
+        [":segmentEntityType", "segment"],
+        [
+            ":segmentSchemaVersion",
+            CURRENT_SEGMENT_SCHEMA_VERSION,
+        ],
+        ...suppliedMetadata.map(([propertyName, value]) => [
+            `:${propertyName}`,
+            value,
+        ]),
+    ]);
+
+    const result = await connection.documentClient.send(
+        new UpdateCommand({
+            TableName: connection.tableName,
+            Key: createSegmentPrimaryKey(input),
+            UpdateExpression: `SET ${updateExpressions.join(", ")}`,
+            ConditionExpression:
+                "attribute_exists(PK) " +
+                "AND attribute_exists(SK) " +
+                "AND #entityType = :segmentEntityType " +
+                "AND #schemaVersion = :segmentSchemaVersion",
+            ExpressionAttributeNames:
+                expressionAttributeNames,
+            ExpressionAttributeValues:
+                expressionAttributeValues,
+            ReturnValues: "ALL_NEW",
+        })
+    );
+
+    if (!result.Attributes) {
+        throw new Error(
+            "DynamoDB updated a segment without returning its new value"
+        );
+    }
+
+    return requireSupportedSegmentItem(result.Attributes);
 }
 
 type DeleteSegmentInput = {
