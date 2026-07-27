@@ -42,22 +42,22 @@ export function createSegmentsByVideoPartitionKey({
     );
 }
 
-export type VideoItemKeys = VideoPrimaryKey & {
+export type DynamoDBVideoItemKeys = VideoPrimaryKey & {
     UserContentPK: string;
     UserContentSK: string;
 };
 
-type CreateVideoItemKeysInput = {
+type CreateDynamoDBVideoItemKeysInput = {
     userID: string;
     videoID: string;
     createdAt: Date;
 };
 
-export function createVideoItemKeys({
+export function createDynamoDBVideoItemKeys({
     userID,
     videoID,
     createdAt,
-}: CreateVideoItemKeysInput): VideoItemKeys {
+}: CreateDynamoDBVideoItemKeysInput): DynamoDBVideoItemKeys {
     const primaryKey = createVideoPrimaryKey({
         userID,
         videoID,

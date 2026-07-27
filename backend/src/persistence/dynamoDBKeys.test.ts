@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
     createSegmentItemKeys,
     createUserPartitionKey,
-    createVideoItemKeys,
+    createDynamoDBVideoItemKeys,
     createVideoPrimaryKey,
 } from "./dynamoDBKeys";
 
-describe("createVideoItemKeys", () => {
+describe("createDynamoDBVideoItemKeys", () => {
     it("creates ownership and chronological keys", () => {
-        const keys = createVideoItemKeys({
+        const keys = createDynamoDBVideoItemKeys({
             userID: "user-1",
             videoID: "video-1",
             createdAt: new Date(

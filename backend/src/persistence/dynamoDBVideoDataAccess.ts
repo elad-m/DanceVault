@@ -9,10 +9,10 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBConnection } from "./dynamoDBConnection";
 import {
-    createVideoItem,
+    createDynamoDBVideoItem,
     CURRENT_VIDEO_SCHEMA_VERSION,
-    type CreateVideoItemInput,
-    type VideoItem,
+    type CreateDynamoDBVideoItemInput,
+    type DynamoDBVideoItem,
 } from "./dynamoDBItems";
 import {
     createUserPartitionKey,
@@ -20,6 +20,10 @@ import {
     VIDEO_ITEM_KEY_PREFIX,
 } from "./dynamoDBKeys";
 import type { VideoStatus } from "../domain/video";
+import type {
+    VideoDataAccess,
+    VideoDataAccessItem,
+} from "./videoDataAccess";
 
 
 const USER_CONTENT_BY_CREATION_TIME_INDEX_NAME =
@@ -81,9 +85,9 @@ function decodeVideoListCursor(
     }
 }
 
-function requireSupportedVideoItem(
+function requireSupportedDynamoDBVideoItem(
     item: Record<string, unknown>
-): VideoItem {
+): DynamoDBVideoItem {
     if (item.entityType !== "video") {
         throw new Error(
             "Expected the DynamoDB item to be a video"
@@ -101,14 +105,32 @@ function requireSupportedVideoItem(
         );
     }
 
-    return item as VideoItem;
+    return item as DynamoDBVideoItem;
+}
+
+function toVideoDataAccessItem(
+    item: DynamoDBVideoItem
+): VideoDataAccessItem {
+    return {
+        id: item.videoID,
+        userId: item.userID,
+        environment: "dev",
+        title: item.title,
+        sourceType: item.sourceType,
+        sourceUrl: item.sourceURL,
+        storageKey: item.storageKey,
+        storageProvider: item.storageProviderName,
+        originalFileName: item.originalFileName,
+        status: item.status,
+        createdAt: new Date(item.createdAt),
+    };
 }
 
 export async function createVideo(
     connection: DynamoDBConnection,
-    input: CreateVideoItemInput
-): Promise<VideoItem> {
-    const item = createVideoItem(input);
+    input: CreateDynamoDBVideoItemInput
+): Promise<DynamoDBVideoItem> {
+    const item = createDynamoDBVideoItem(input);
 
     await connection.documentClient.send(
         new PutCommand({
@@ -130,7 +152,7 @@ type GetVideoByIDInput = {
 export async function getVideoByID(
     connection: DynamoDBConnection,
     input: GetVideoByIDInput
-): Promise<VideoItem | null> {
+): Promise<DynamoDBVideoItem | null> {
     const result = await connection.documentClient.send(
         new GetCommand({
             TableName: connection.tableName,
@@ -143,7 +165,7 @@ export async function getVideoByID(
         return null;
     }
 
-    return requireSupportedVideoItem(result.Item);
+    return requireSupportedDynamoDBVideoItem(result.Item);
 }
 
 type ListVideosInput = {
@@ -153,7 +175,7 @@ type ListVideosInput = {
 };
 
 export type VideoListPage = {
-    videos: VideoItem[];
+    videos: DynamoDBVideoItem[];
     nextCursor: string | null;
 };
 
@@ -233,13 +255,13 @@ export async function listVideos(
 
     return {
         videos: (result.Items ?? []).map(
-            requireSupportedVideoItem
+            requireSupportedDynamoDBVideoItem
         ),
         nextCursor,
     };
 }
 
-type UpdateVideoItemInput = {
+type UpdateDynamoDBVideoItemInput = {
     userID: string;
     videoID: string;
     updateExpression: string;
@@ -250,10 +272,10 @@ type UpdateVideoItemInput = {
     >;
 };
 
-async function updateVideoItem(
+async function updateDynamoDBVideoItem(
     connection: DynamoDBConnection,
-    input: UpdateVideoItemInput
-): Promise<VideoItem> {
+    input: UpdateDynamoDBVideoItemInput
+): Promise<DynamoDBVideoItem> {
     const result = await connection.documentClient.send(
         new UpdateCommand({
             TableName: connection.tableName,
@@ -285,7 +307,7 @@ async function updateVideoItem(
         );
     }
 
-    return requireSupportedVideoItem(
+    return requireSupportedDynamoDBVideoItem(
         result.Attributes
     );
 }
@@ -299,8 +321,8 @@ type UpdateVideoTitleInput = {
 export async function updateVideoTitle(
     connection: DynamoDBConnection,
     input: UpdateVideoTitleInput
-): Promise<VideoItem> {
-    return updateVideoItem(connection, {
+): Promise<DynamoDBVideoItem> {
+    return updateDynamoDBVideoItem(connection, {
         userID: input.userID,
         videoID: input.videoID,
         updateExpression: "SET #title = :title",
@@ -322,8 +344,8 @@ type UpdateVideoStatusInput = {
 export async function updateVideoStatus(
     connection: DynamoDBConnection,
     input: UpdateVideoStatusInput
-): Promise<VideoItem> {
-    return updateVideoItem(connection, {
+): Promise<DynamoDBVideoItem> {
+    return updateDynamoDBVideoItem(connection, {
         userID: input.userID,
         videoID: input.videoID,
         updateExpression: "SET #status = :status",
@@ -344,7 +366,7 @@ type DeleteVideoInput = {
 export async function deleteVideo(
     connection: DynamoDBConnection,
     input: DeleteVideoInput
-): Promise<VideoItem> {
+): Promise<DynamoDBVideoItem> {
     const result = await connection.documentClient.send(
         new DeleteCommand({
             TableName: connection.tableName,
@@ -376,5 +398,46 @@ export async function deleteVideo(
         );
     }
 
-    return requireSupportedVideoItem(result.Attributes);
+    return requireSupportedDynamoDBVideoItem(
+        result.Attributes
+    );
+}
+
+export function createDynamoDBVideoDataAccess(
+    connection: DynamoDBConnection
+): VideoDataAccess {
+    return {
+        async getVideoByID(input) {
+            const item = await getVideoByID(
+                connection,
+                input
+            );
+
+            return item
+                ? toVideoDataAccessItem(item)
+                : null;
+        },
+
+        async listVideos({ userID }) {
+            const videos: VideoDataAccessItem[] = [];
+            let cursor: string | undefined;
+
+            do {
+                const page = await listVideos(connection, {
+                    userID,
+                    limit: MAX_VIDEO_LIST_PAGE_SIZE,
+                    cursor,
+                });
+
+                videos.push(
+                    ...page.videos.map(
+                        toVideoDataAccessItem
+                    )
+                );
+                cursor = page.nextCursor ?? undefined;
+            } while (cursor);
+
+            return videos;
+        },
+    };
 }

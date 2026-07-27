@@ -13,19 +13,22 @@ import {
     MAX_VIDEO_LIST_PAGE_SIZE,
     updateVideoStatus,
     updateVideoTitle,
+    createDynamoDBVideoDataAccess,
 } from "./dynamoDBVideoDataAccess";
 import {
     createSegment,
     getSegmentByID,
 } from "./dynamoDBSegmentDataAccess";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
-import type { VideoItem } from "./dynamoDBItems";
+import type { DynamoDBVideoItem } from "./dynamoDBItems";
 import {
     createSegmentPrimaryKey,
     createVideoPrimaryKey,
 } from "./dynamoDBKeys";
 
 const connection = createDynamoDBConnection();
+const videoDataAccess =
+    createDynamoDBVideoDataAccess(connection);
 
 type WaitForVideoCountInput = {
     userID: string;
@@ -35,7 +38,7 @@ type WaitForVideoCountInput = {
 async function waitForVideoCount({
     userID,
     expectedCount,
-}: WaitForVideoCountInput): Promise<VideoItem[]> {
+}: WaitForVideoCountInput): Promise<DynamoDBVideoItem[]> {
     for (let attempt = 0; attempt < 10; attempt++) {
         const page = await listVideos(connection, {
             userID,
@@ -92,6 +95,25 @@ describe("DynamoDB video data access integration", () => {
             });
 
             expect(readItem).toEqual(createdItem);
+            // The adapter hides DynamoDB keys and translates stored field names and dates.
+            const applicationVideo =
+                await videoDataAccess.getVideoByID({
+                    userID,
+                    videoID,
+                });
+            expect(applicationVideo).toEqual({
+                id: videoID,
+                userId: userID,
+                environment: "dev",
+                title: "Integration test video",
+                sourceType: "youtube",
+                sourceUrl: "https://youtube.com/watch?v=test",
+                storageKey: null,
+                storageProvider: null,
+                originalFileName: null,
+                status: "ready",
+                createdAt: new Date(createdItem.createdAt),
+            });
         } finally {
             await connection.documentClient.send(
                 new DeleteCommand({
@@ -343,6 +365,33 @@ describe("DynamoDB video data access integration", () => {
                     nextCursor: null,
                 });
             }
+            // The adapter returns application-shaped videos in the same chronological order.
+            const applicationVideos =
+                await videoDataAccess.listVideos({
+                    userID,
+                });
+            expect(
+                applicationVideos.map((video) => ({
+                    id: video.id,
+                    environment: video.environment,
+                    createdAt: video.createdAt,
+                }))
+            ).toEqual([
+                {
+                    id: earlierVideoID,
+                    environment: "dev",
+                    createdAt: new Date(
+                        "2026-07-21T10:00:00.000Z"
+                    ),
+                },
+                {
+                    id: laterVideoID,
+                    environment: "dev",
+                    createdAt: new Date(
+                        "2026-07-21T11:00:00.000Z"
+                    ),
+                },
+            ]);
         } finally {
             await Promise.all(
                 videosToDelete.map(({ userID, videoID }) =>

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
     createSegmentItem,
-    createVideoItem,
+    createDynamoDBVideoItem,
 } from "./dynamoDBItems";
 
-describe("createVideoItem", () => {
+describe("createDynamoDBVideoItem", () => {
     it("converts a video into its DynamoDB item shape", () => {
-        const item = createVideoItem({
+        const item = createDynamoDBVideoItem({
             videoID: "video-1",
             userID: "user-1",
             title: "Salsa lesson",

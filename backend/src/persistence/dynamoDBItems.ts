@@ -10,15 +10,15 @@ import type {
 } from "../domain/segment";
 import {
     createSegmentItemKeys,
-    createVideoItemKeys,
+    createDynamoDBVideoItemKeys,
     type SegmentItemKeys,
-    type VideoItemKeys,
+    type DynamoDBVideoItemKeys,
 } from "./dynamoDBKeys";
 
 export const CURRENT_VIDEO_SCHEMA_VERSION = 2;
 export const CURRENT_SEGMENT_SCHEMA_VERSION = 1;
 
-export type VideoItem = VideoItemKeys & {
+export type DynamoDBVideoItem = DynamoDBVideoItemKeys & {
     entityType: "video";
     schemaVersion: typeof CURRENT_VIDEO_SCHEMA_VERSION;
     videoID: string;
@@ -34,7 +34,7 @@ export type VideoItem = VideoItemKeys & {
     createdAt: string;
 };
 
-export type CreateVideoItemInput = {
+export type CreateDynamoDBVideoItemInput = {
     videoID: string;
     userID: string;
     title: string;
@@ -47,11 +47,11 @@ export type CreateVideoItemInput = {
     createdAt: Date;
 };
 
-export function createVideoItem(
-    input: CreateVideoItemInput
-): VideoItem {
+export function createDynamoDBVideoItem(
+    input: CreateDynamoDBVideoItemInput
+): DynamoDBVideoItem {
     return {
-        ...createVideoItemKeys({
+        ...createDynamoDBVideoItemKeys({
             userID: input.userID,
             videoID: input.videoID,
             createdAt: input.createdAt,
