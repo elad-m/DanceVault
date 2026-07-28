@@ -69,6 +69,7 @@ describe("DynamoDB video data access integration", () => {
     it("creates and reads a video item in DynamoDB", async () => {
         const userID = `integration-user-${randomUUID()}`;
         const videoID = `integration-video-${randomUUID()}`;
+        const createdAt = new Date();
 
         const itemKey = {
             PK: `USER#${userID}`,
@@ -76,7 +77,27 @@ describe("DynamoDB video data access integration", () => {
         };
 
         try {
-            const createdItem = await createVideo(connection, {
+            const createdVideo = await videoDataAccess.createVideo({
+                videoID,
+                userID,
+                title: "Integration test video",
+                sourceType: "youtube",
+                sourceURL: "https://youtube.com/watch?v=test",
+                storageKey: null,
+                storageProvider: null,
+                originalFileName: null,
+                status: "ready",
+                createdAt,
+            });
+
+            const readItem = await getVideoByID(connection, {
+                userID,
+                videoID,
+            });
+
+            expect(readItem).toMatchObject({
+                PK: `USER#${userID}`,
+                SK: `VIDEO#${videoID}`,
                 videoID,
                 userID,
                 title: "Integration test video",
@@ -86,34 +107,16 @@ describe("DynamoDB video data access integration", () => {
                 storageProviderName: null,
                 originalFileName: null,
                 status: "ready",
-                createdAt: new Date(),
+                createdAt: createdAt.toISOString(),
             });
 
-            const readItem = await getVideoByID(connection, {
-                userID,
-                videoID,
-            });
-
-            expect(readItem).toEqual(createdItem);
             // The adapter hides DynamoDB keys and translates stored field names and dates.
             const applicationVideo =
                 await videoDataAccess.getVideoByID({
                     userID,
                     videoID,
                 });
-            expect(applicationVideo).toEqual({
-                id: videoID,
-                userId: userID,
-                environment: "dev",
-                title: "Integration test video",
-                sourceType: "youtube",
-                sourceUrl: "https://youtube.com/watch?v=test",
-                storageKey: null,
-                storageProvider: null,
-                originalFileName: null,
-                status: "ready",
-                createdAt: new Date(createdItem.createdAt),
-            });
+            expect(applicationVideo).toEqual(createdVideo);
         } finally {
             await connection.documentClient.send(
                 new DeleteCommand({

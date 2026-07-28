@@ -101,6 +101,7 @@ describe("POST /videos", () => {
 
         const persistenceProvider: PersistenceProvider = {
             videoDataAccess: {
+                createVideo: vi.fn(async () => video),
                 getVideoByID: getVideoByIDMock,
                 listVideos: listVideosMock,
             },

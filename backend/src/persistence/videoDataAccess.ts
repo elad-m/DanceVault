@@ -1,6 +1,7 @@
 // Defines the database-independent video data used by application services.
 
 import type {
+    ExternalVideoSourceType,
     VideoSourceType,
     VideoStatus,
     VideoStorageProviderName,
@@ -30,7 +31,35 @@ type ListVideosInput = {
     userID: string;
 };
 
+type CreateVideoDataAccessInput = {
+    videoID: string;
+    userID: string;
+    title: string;
+    createdAt: Date;
+} & (
+    | {
+          sourceType: ExternalVideoSourceType;
+          sourceURL: string;
+          storageKey: null;
+          storageProvider: null;
+          originalFileName: null;
+          status: "ready";
+      }
+    | {
+          sourceType: "uploaded";
+          sourceURL: null;
+          storageKey: string;
+          storageProvider: VideoStorageProviderName;
+          originalFileName: string;
+          status: "pending_upload";
+      }
+);
+
 export type VideoDataAccess = {
+    createVideo(
+        input: CreateVideoDataAccessInput
+    ): Promise<VideoDataAccessItem>;
+
     getVideoByID(
         input: GetVideoByIDInput
     ): Promise<VideoDataAccessItem | null>;

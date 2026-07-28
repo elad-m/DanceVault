@@ -407,6 +407,23 @@ export function createDynamoDBVideoDataAccess(
     connection: DynamoDBConnection
 ): VideoDataAccess {
     return {
+        createVideo: async (input) => {
+            const item = await createVideo(connection, {
+                videoID: input.videoID,
+                userID: input.userID,
+                title: input.title,
+                sourceType: input.sourceType,
+                sourceURL: input.sourceURL,
+                storageKey: input.storageKey,
+                storageProviderName: input.storageProvider,
+                originalFileName: input.originalFileName,
+                status: input.status,
+                createdAt: input.createdAt,
+            });
+
+            return toVideoDataAccessItem(item);
+        },
+
         async getVideoByID(input) {
             const item = await getVideoByID(
                 connection,
