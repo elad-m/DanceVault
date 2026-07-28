@@ -11,8 +11,6 @@ export const prismaVideoDataAccess: VideoDataAccess = {
                 id: input.videoID,
                 title: input.title,
                 environment: runtime.environment,
-                sourceType: input.sourceType,
-                sourceUrl: input.sourceURL,
                 storageKey: input.storageKey,
                 storageProvider: input.storageProvider,
                 originalFileName: input.originalFileName,

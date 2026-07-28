@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
     areSegmentTimestampsValid,
     paginateResults,
-    toSegmentResponse,
 } from "./segmentService";
 
 describe("areSegmentTimestampsValid", () => {
@@ -40,55 +39,5 @@ describe("paginateResults", () => {
             items: [{ id: "segment-1" }, { id: "segment-2" }],
             nextCursor: "segment-2",
         });
-    });
-});
-
-describe("toSegmentResponse", () => {
-    it("adds a playback URL and hides the internal video relation", () => {
-        const response = toSegmentResponse({
-            id: "segment-1",
-            name: "Open stance wave",
-            startMilliseconds: 15000,
-            video: {
-                sourceType: "youtube",
-                sourceUrl: "https://youtube.com/watch?v=test-video",
-            },
-        });
-
-        expect(response).toEqual({
-            id: "segment-1",
-            name: "Open stance wave",
-            startMilliseconds: 15000,
-            playbackUrl: "https://youtube.com/watch?v=test-video&t=15s",
-        });
-        expect(response).not.toHaveProperty("video");
-    });
-
-    it("returns no playback URL while an uploaded video is pending", () => {
-        const response = toSegmentResponse({
-            id: "segment-1",
-            startMilliseconds: 15000,
-            video: {
-                sourceType: "uploaded",
-                sourceUrl: null,
-            },
-        });
-
-        expect(response.playbackUrl).toBeNull();
-    });
-
-    it("preserves millisecond precision in external playback URLs", () => {
-        const response = toSegmentResponse({
-            id: "segment-1",
-            startMilliseconds: 15500,
-            video: {
-                sourceType: "external_url",
-                sourceUrl: "https://example.com/video.mp4",
-            },
-        });
-
-        expect(response.playbackUrl).toBe(
-            "https://example.com/video.mp4#t=15.5"
-        );
     });
 });

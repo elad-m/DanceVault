@@ -1,5 +1,4 @@
 import type {
-    VideoSourceType,
     VideoStatus,
     VideoStorageProviderName,
 } from "../domain/video";
@@ -15,8 +14,8 @@ import {
     type DynamoDBVideoItemKeys,
 } from "./dynamoDBKeys";
 
-export const CURRENT_VIDEO_SCHEMA_VERSION = 2;
-export const CURRENT_SEGMENT_SCHEMA_VERSION = 1;
+export const CURRENT_VIDEO_SCHEMA_VERSION = 3;
+export const CURRENT_SEGMENT_SCHEMA_VERSION = 2;
 
 export type DynamoDBVideoItem = DynamoDBVideoItemKeys & {
     entityType: "video";
@@ -24,11 +23,9 @@ export type DynamoDBVideoItem = DynamoDBVideoItemKeys & {
     videoID: string;
     userID: string;
     title: string;
-    sourceType: VideoSourceType;
-    sourceURL: string | null;
-    storageKey: string | null;
-    storageProviderName: VideoStorageProviderName | null;
-    originalFileName: string | null;
+    storageKey: string;
+    storageProviderName: VideoStorageProviderName;
+    originalFileName: string;
     status: VideoStatus;
     segmentCount: number;
     createdAt: string;
@@ -38,11 +35,9 @@ export type CreateDynamoDBVideoItemInput = {
     videoID: string;
     userID: string;
     title: string;
-    sourceType: VideoSourceType;
-    sourceURL: string | null;
-    storageKey: string | null;
-    storageProviderName: VideoStorageProviderName | null;
-    originalFileName: string | null;
+    storageKey: string;
+    storageProviderName: VideoStorageProviderName;
+    originalFileName: string;
     status: VideoStatus;
     createdAt: Date;
 };
@@ -61,8 +56,6 @@ export function createDynamoDBVideoItem(
         videoID: input.videoID,
         userID: input.userID,
         title: input.title,
-        sourceType: input.sourceType,
-        sourceURL: input.sourceURL,
         storageKey: input.storageKey,
         storageProviderName:
             input.storageProviderName,
@@ -87,8 +80,6 @@ export type SegmentItem = SegmentItemKeys & {
     difficulty: Difficulty;
     confidence: Confidence;
     practicePriority: PracticePriority;
-    videoSourceType: VideoSourceType;
-    videoSourceURL: string | null;
     createdAt: string;
 };
 
@@ -104,8 +95,6 @@ export type CreateSegmentItemInput = {
     difficulty: Difficulty;
     confidence: Confidence;
     practicePriority: PracticePriority;
-    videoSourceType: VideoSourceType;
-    videoSourceURL: string | null;
     createdAt: Date;
 };
 
@@ -134,8 +123,6 @@ export function createSegmentItem(
         difficulty: input.difficulty,
         confidence: input.confidence,
         practicePriority: input.practicePriority,
-        videoSourceType: input.videoSourceType,
-        videoSourceURL: input.videoSourceURL,
         createdAt: input.createdAt.toISOString(),
     };
 }

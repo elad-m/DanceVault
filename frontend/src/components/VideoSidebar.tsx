@@ -86,11 +86,11 @@ export function VideoSidebar({
                         onClick={() => onSelect(video)}
                     >
                         <span className="video-icon">
-                            {video.sourceType === "uploaded" ? <Upload size={16} /> : <Film size={16} />}
+                            <Upload size={16} />
                         </span>
                         <span className="video-list-copy">
                             <strong>{video.title}</strong>
-                            <span>{video.originalFileName ?? video.sourceType.replace("_", " ")}</span>
+                            <span>{video.originalFileName}</span>
                         </span>
                         <span className={`status-dot ${video.status}`} title={video.status} />
                     </button>

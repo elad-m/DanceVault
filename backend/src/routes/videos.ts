@@ -3,12 +3,10 @@ import type {
     FastifyReply,
     FastifyRequest,
 } from "fastify";
-import { toSegmentResponse } from "../services/segmentService";
 import { ApiErrorCode, sendApiError } from "../httpErrors";
 import {
     completeVideoUpload,
-    createUploadedVideoPlaybackUrl,
-    createVideo,
+    createVideoPlaybackUrl,
     deleteVideoWithStorage,
     getVideoById,
     getVideoSegments,
@@ -16,21 +14,11 @@ import {
     updateVideo,
 } from "../services/videoService";
 import {
-    externalVideoSourceTypeSchema,
     supportedVideoContentTypeSchema,
-    type ExternalVideoSourceType,
     type SupportedVideoContentType,
 } from "../domain/video";
 import type { VideoStorageProvider } from "../storage";
 import type { VideoDataAccess } from "../persistence/videoDataAccess";
-
-type CreateVideoRequest = {
-    Body: {
-        title: string;
-        sourceType: ExternalVideoSourceType;
-        sourceUrl: string;
-    };
-};
 
 type CreateVideoUploadRequest = {
     Body: {
@@ -57,11 +45,6 @@ const videoProperties = {
         type: "string",
         minLength: 1,
     },
-    sourceType: externalVideoSourceTypeSchema,
-    sourceUrl: {
-        type: "string",
-        minLength: 1,
-    },
 } as const;
 
 const createVideoUploadRouteOptions = {
@@ -84,17 +67,6 @@ const createVideoUploadRouteOptions = {
     },
 } as const;
 
-const createVideoRouteOptions = {
-    schema: {
-        body: {
-            type: "object",
-            additionalProperties: false,
-            required: ["title", "sourceType", "sourceUrl"],
-            properties: videoProperties,
-        },
-    },
-} as const;
-
 const updateVideoRouteOptions = {
     schema: {
         body: {
@@ -107,22 +79,6 @@ const updateVideoRouteOptions = {
         },
     },
 } as const;
-
-async function createVideoHandler(
-    request: FastifyRequest<CreateVideoRequest>,
-    reply: FastifyReply
-) {
-    const { title, sourceType, sourceUrl } = request.body;
-
-    const video = await createVideo({
-        userId: request.userId,
-        title,
-        sourceType,
-        sourceUrl,
-    });
-
-    return reply.status(201).send(video);
-}
 
 async function createVideoUploadHandler(
     request: FastifyRequest<CreateVideoUploadRequest>,
@@ -203,7 +159,7 @@ async function getVideoPlaybackUrlHandler(
     reply: FastifyReply,
     videoStorageProvider: VideoStorageProvider
 ) {
-    const result = await createUploadedVideoPlaybackUrl({
+    const result = await createVideoPlaybackUrl({
         videoId: request.params.videoId,
         userId: request.userId,
         videoStorageProvider,
@@ -269,12 +225,7 @@ async function getVideoSegmentsHandler(
     });
 
     return {
-        segments: videoSegments.map((segment) =>
-            toSegmentResponse({
-                ...segment,
-                video,
-            })
-        ),
+        segments: videoSegments,
     };
 }
 
@@ -334,11 +285,6 @@ export function registerVideoRoutes(
     videoStorageProvider: VideoStorageProvider,
     videoDataAccess: VideoDataAccess
 ) {
-    app.post<CreateVideoRequest>(
-        "/videos",
-        createVideoRouteOptions,
-        createVideoHandler
-    );
     app.post<CreateVideoUploadRequest>(
         "/video-uploads",
         createVideoUploadRouteOptions,

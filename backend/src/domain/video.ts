@@ -1,22 +1,9 @@
-export type ExternalVideoSourceType =
-    | "youtube"
-    | "external_url";
-
-export type VideoSourceType =
-    | ExternalVideoSourceType
-    | "uploaded";
-
 export type VideoStatus =
     | "pending_upload"
     | "ready"
     | "upload_failed";
 
 export type VideoStorageProviderName = "minio" | "awsS3";
-
-export const externalVideoSourceTypeSchema = {
-    type: "string",
-    enum: ["youtube", "external_url"],
-} as const;
 
 export type SupportedVideoContentType = "video/mp4";
 

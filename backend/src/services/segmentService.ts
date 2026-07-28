@@ -1,4 +1,3 @@
-import { buildSegmentPlaybackUrl } from "../domain/segment";
 import { prisma } from "../db";
 import type {
     Confidence,
@@ -6,16 +5,6 @@ import type {
     PracticePriority,
 } from "../domain/segment";
 import { runtime } from "../runtime";
-
-// Helpers
-
-type SegmentWithPlaybackSource = {
-    startMilliseconds: number;
-    video: {
-        sourceType: string;
-        sourceUrl: string | null;
-    };
-};
 
 type UserScope = {
     userId: string;
@@ -28,17 +17,6 @@ type VideoScope = UserScope & {
 type SegmentScope = UserScope & {
     segmentId: string;
 };
-
-export function toSegmentResponse<T extends SegmentWithPlaybackSource>(
-    segment: T
-) {
-    const { video, ...segmentData } = segment;
-
-    return {
-        ...segmentData,
-        playbackUrl: buildSegmentPlaybackUrl(video, segment.startMilliseconds),
-    };
-}
 
 export function areSegmentTimestampsValid(
     startMilliseconds: number,
@@ -123,14 +101,6 @@ export async function getSegmentById({
                 environment: runtime.environment,
             },
         },
-        include: {
-            video: {
-                select: {
-                    sourceType: true,
-                    sourceUrl: true,
-                },
-            },
-        },
     });
 }
 
@@ -195,14 +165,6 @@ export async function searchSegments(input: SearchSegmentsInput) {
             }
             : undefined,
         skip: input.cursor ? 1 : 0,
-        include: {
-            video: {
-                select: {
-                    sourceType: true,
-                    sourceUrl: true,
-                },
-            },
-        },
     });
 
     return paginateResults(results, input.limit);
@@ -245,14 +207,6 @@ export async function getPracticeQueue(input: UserScope & PaginationInput) {
             }
             : undefined,
         skip: input.cursor ? 1 : 0,
-        include: {
-            video: {
-                select: {
-                    sourceType: true,
-                    sourceUrl: true,
-                },
-            },
-        },
     });
 
     return paginateResults(results, input.limit);

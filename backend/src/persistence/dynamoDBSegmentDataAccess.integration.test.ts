@@ -90,11 +90,9 @@ describe("DynamoDB segment data access integration", () => {
                 videoID,
                 userID,
                 title: "Segment parent video",
-                sourceType: "youtube",
-                sourceURL: "https://youtube.com/watch?v=test",
-                storageKey: null,
-                storageProviderName: null,
-                originalFileName: null,
+                storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
                 status: "ready",
                 createdAt: new Date(),
             });
@@ -111,9 +109,6 @@ describe("DynamoDB segment data access integration", () => {
                 difficulty: "easy",
                 confidence: "low",
                 practicePriority: "high",
-                videoSourceType: "youtube",
-                videoSourceURL:
-                    "https://youtube.com/watch?v=test",
                 createdAt: new Date(),
             });
 
@@ -191,9 +186,6 @@ describe("DynamoDB segment data access integration", () => {
                     difficulty: "easy",
                     confidence: "low",
                     practicePriority: "high",
-                    videoSourceType: "youtube",
-                    videoSourceURL:
-                        "https://youtube.com/watch?v=missing",
                     createdAt: new Date(),
                 })
             ).rejects.toBeInstanceOf(TransactionCanceledException);
@@ -245,8 +237,6 @@ describe("DynamoDB segment data access integration", () => {
             difficulty: "easy",
             confidence: "low",
             practicePriority: "high",
-            videoSourceType: "youtube",
-            videoSourceURL: "https://youtube.com/watch?v=test",
             createdAt: new Date(),
         };
 
@@ -255,11 +245,9 @@ describe("DynamoDB segment data access integration", () => {
                 videoID,
                 userID,
                 title: "Segment parent video",
-                sourceType: "youtube",
-                sourceURL: "https://youtube.com/watch?v=test",
-                storageKey: null,
-                storageProviderName: null,
-                originalFileName: null,
+                storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
                 status: "ready",
                 createdAt: new Date(),
             });
@@ -331,11 +319,9 @@ describe("DynamoDB segment data access integration", () => {
                 videoID,
                 userID,
                 title: "Segment list parent video",
-                sourceType: "youtube",
-                sourceURL: "https://youtube.com/watch?v=test",
-                storageKey: null,
-                storageProviderName: null,
-                originalFileName: null,
+                storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
                 status: "ready",
                 createdAt: new Date(),
             });
@@ -368,9 +354,6 @@ describe("DynamoDB segment data access integration", () => {
                     difficulty: "easy",
                     confidence: "low",
                     practicePriority: "high",
-                    videoSourceType: "youtube",
-                    videoSourceURL:
-                        "https://youtube.com/watch?v=test",
                     createdAt: new Date(),
                 });
             }
@@ -482,11 +465,9 @@ describe("DynamoDB segment data access integration", () => {
                     videoID,
                     userID,
                     title: `${userID}'s video`,
-                    sourceType: "youtube",
-                    sourceURL: "https://youtube.com/watch?v=test",
-                    storageKey: null,
-                    storageProviderName: null,
-                    originalFileName: null,
+                    storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                    storageProviderName: "awsS3",
+                    originalFileName: "video.mp4",
                     status: "ready",
                     createdAt: new Date(),
                 });
@@ -504,8 +485,6 @@ describe("DynamoDB segment data access integration", () => {
                 difficulty: "easy",
                 confidence: "low",
                 practicePriority: "high",
-                videoSourceType: "youtube",
-                videoSourceURL: "https://youtube.com/watch?v=test",
                 createdAt: new Date(),
             });
 
@@ -521,8 +500,6 @@ describe("DynamoDB segment data access integration", () => {
                 difficulty: "easy",
                 confidence: "low",
                 practicePriority: "high",
-                videoSourceType: "youtube",
-                videoSourceURL: "https://youtube.com/watch?v=test",
                 createdAt: new Date(),
             });
 
@@ -644,11 +621,9 @@ describe("DynamoDB segment data access integration", () => {
                 videoID,
                 userID,
                 title: "Segment update parent video",
-                sourceType: "youtube",
-                sourceURL: "https://youtube.com/watch?v=test",
-                storageKey: null,
-                storageProviderName: null,
-                originalFileName: null,
+                storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
                 status: "ready",
                 createdAt: new Date(),
             });
@@ -665,8 +640,6 @@ describe("DynamoDB segment data access integration", () => {
                 difficulty: "easy",
                 confidence: "low",
                 practicePriority: "low",
-                videoSourceType: "youtube",
-                videoSourceURL: "https://youtube.com/watch?v=test",
                 createdAt: new Date(),
             });
 
@@ -762,11 +735,9 @@ describe("DynamoDB segment data access integration", () => {
                 videoID,
                 userID: ownerUserID,
                 title: "Owned segment parent video",
-                sourceType: "youtube",
-                sourceURL: "https://youtube.com/watch?v=test",
-                storageKey: null,
-                storageProviderName: null,
-                originalFileName: null,
+                storageKey: `users/${ownerUserID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
                 status: "ready",
                 createdAt: new Date(),
             });
@@ -783,8 +754,6 @@ describe("DynamoDB segment data access integration", () => {
                 difficulty: "easy",
                 confidence: "low",
                 practicePriority: "low",
-                videoSourceType: "youtube",
-                videoSourceURL: "https://youtube.com/watch?v=test",
                 createdAt: new Date(),
             });
 
@@ -852,11 +821,9 @@ describe("DynamoDB segment data access integration", () => {
                 videoID,
                 userID,
                 title: "Segment deletion parent video",
-                sourceType: "youtube",
-                sourceURL: "https://youtube.com/watch?v=test",
-                storageKey: null,
-                storageProviderName: null,
-                originalFileName: null,
+                storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
                 status: "ready",
                 createdAt: new Date(),
             });
@@ -873,8 +840,6 @@ describe("DynamoDB segment data access integration", () => {
                 difficulty: "easy",
                 confidence: "low",
                 practicePriority: "high",
-                videoSourceType: "youtube",
-                videoSourceURL: "https://youtube.com/watch?v=test",
                 createdAt: new Date(),
             });
 
@@ -962,11 +927,9 @@ describe("DynamoDB segment data access integration", () => {
                 videoID,
                 userID: ownerUserID,
                 title: "Owned video",
-                sourceType: "youtube",
-                sourceURL: "https://youtube.com/watch?v=test",
-                storageKey: null,
-                storageProviderName: null,
-                originalFileName: null,
+                storageKey: `users/${ownerUserID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
                 status: "ready",
                 createdAt: new Date(),
             });
@@ -983,8 +946,6 @@ describe("DynamoDB segment data access integration", () => {
                 difficulty: "easy",
                 confidence: "low",
                 practicePriority: "high",
-                videoSourceType: "youtube",
-                videoSourceURL: "https://youtube.com/watch?v=test",
                 createdAt: new Date(),
             });
 

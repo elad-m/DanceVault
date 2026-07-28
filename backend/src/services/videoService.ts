@@ -2,7 +2,6 @@
 import { prisma } from "../db";
 import {
     createVideoStorageKey,
-    type ExternalVideoSourceType,
     type SupportedVideoContentType,
 } from "../domain/video";
 import { randomUUID } from "node:crypto";
@@ -13,13 +12,6 @@ import {
 import type { VideoStorageProviderName } from "../domain/video";
 import { runtime } from "../runtime";
 
-type CreateVideoInput = {
-    userId: string;
-    title: string;
-    sourceType: ExternalVideoSourceType;
-    sourceUrl: string;
-};
-
 type UserScope = {
     userId: string;
 };
@@ -27,22 +19,6 @@ type UserScope = {
 type VideoScope = UserScope & {
     videoId: string;
 };
-
-export async function createVideo(input: CreateVideoInput) {
-    return prisma.video.create({
-        data: {
-            title: input.title,
-            environment: runtime.environment,
-            sourceType: input.sourceType,
-            sourceUrl: input.sourceUrl,
-            user: {
-                connect: {
-                    id: input.userId,
-                },
-            },
-        },
-    });
-}
 
 type CreatePendingUploadVideoInput = {
     userId: string;
@@ -59,8 +35,6 @@ export async function createPendingUploadVideo(
         data: {
             title: input.title,
             environment: runtime.environment,
-            sourceType: "uploaded",
-            sourceUrl: null,
             storageKey: input.storageKey,
             storageProvider: input.storageProvider,
             originalFileName: input.originalFileName,
@@ -213,11 +187,7 @@ export async function completeVideoUpload({
         return { kind: "not_found" };
     }
 
-    if (
-        video.sourceType !== "uploaded" ||
-        !video.storageKey ||
-        video.storageProvider !== videoStorageProvider.name
-    ) {
+    if (video.storageProvider !== videoStorageProvider.name) {
         return { kind: "invalid_upload_state" };
     }
 
@@ -263,7 +233,7 @@ export type VideoPlaybackUrlResult =
           expiresInSeconds: number;
       };
 
-export async function createUploadedVideoPlaybackUrl({
+export async function createVideoPlaybackUrl({
     videoId,
     userId,
     videoStorageProvider,
@@ -277,11 +247,7 @@ export async function createUploadedVideoPlaybackUrl({
         return { kind: "not_found" };
     }
 
-    if (
-        video.sourceType !== "uploaded" ||
-        !video.storageKey ||
-        video.storageProvider !== videoStorageProvider.name
-    ) {
+    if (video.storageProvider !== videoStorageProvider.name) {
         return { kind: "invalid_upload_state" };
     }
 
@@ -326,13 +292,11 @@ export async function deleteVideoWithStorage({
         return { kind: "not_found" };
     }
 
-    if (video.sourceType === "uploaded" && video.storageKey) {
-        if (video.storageProvider !== videoStorageProvider.name) {
-            return { kind: "invalid_upload_state" };
-        }
-
-        await videoStorageProvider.deleteVideoObject(video.storageKey);
+    if (video.storageProvider !== videoStorageProvider.name) {
+        return { kind: "invalid_upload_state" };
     }
+
+    await videoStorageProvider.deleteVideoObject(video.storageKey);
 
     await deleteVideo({
         videoId,

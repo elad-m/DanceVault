@@ -73,18 +73,16 @@ afterAll(async () => {
 
 // Video routes
 
-describe("POST /videos", () => {
+describe("video data access injection", () => {
     it("uses the injected video data access for read routes", async () => {
         const video = {
             id: "injected-video",
             userId: TEST_USER_ID,
             environment: "local" as const,
             title: "Injected video",
-            sourceType: "youtube" as const,
-            sourceUrl: "https://youtube.com/watch?v=injected",
-            storageKey: null,
-            storageProvider: null,
-            originalFileName: null,
+            storageKey: "test-videos/injected-video.mp4",
+            storageProvider: "minio" as const,
+            originalFileName: "injected-video.mp4",
             status: "ready" as const,
             createdAt: new Date("2026-07-27T10:00:00.000Z"),
         };
@@ -148,99 +146,6 @@ describe("POST /videos", () => {
             closePersistenceMock
         ).toHaveBeenCalledExactlyOnceWith();
     });
-    it("creates a video", async () => {
-        const response = await app.inject({
-            method: "POST",
-            url: "/videos",
-            payload: {
-                title: "Bachata lesson summary",
-                sourceType: "youtube",
-                sourceUrl: "https://youtube.com/watch?v=test123",
-            },
-        });
-
-        expect(response.statusCode).toBe(201);
-        expect(response.json()).toMatchObject({
-            userId: TEST_USER_ID,
-            title: "Bachata lesson summary",
-            sourceType: "youtube",
-            sourceUrl: "https://youtube.com/watch?v=test123",
-        });
-    });
-
-    it("rejects a video with missing required fields", async () => {
-        const response = await app.inject({
-            method: "POST",
-            url: "/videos",
-            payload: {
-                title: "Incomplete lesson",
-            },
-        });
-
-        expect(response.statusCode).toBe(400);
-        expect(response.json()).toMatchObject({
-            error: {
-                code: "VALIDATION_ERROR",
-            },
-        });
-    });
-
-    it("rejects an empty video title", async () => {
-        const response = await app.inject({
-            method: "POST",
-            url: "/videos",
-            payload: {
-                title: "",
-                sourceType: "youtube",
-                sourceUrl: "https://youtube.com/watch?v=test123",
-            },
-        });
-
-        expect(response.statusCode).toBe(400);
-    });
-
-    it("rejects video fields with the wrong type", async () => {
-        const response = await app.inject({
-            method: "POST",
-            url: "/videos",
-            payload: {
-                title: "Bachata lesson summary",
-                sourceType: 42,
-                sourceUrl: "https://youtube.com/watch?v=test123",
-            },
-        });
-
-        expect(response.statusCode).toBe(400);
-    });
-
-    it("rejects unexpected video properties", async () => {
-        const response = await app.inject({
-            method: "POST",
-            url: "/videos",
-            payload: {
-                title: "Bachata lesson summary",
-                sourceType: "youtube",
-                sourceUrl: "https://youtube.com/watch?v=test123",
-                admin: true,
-            },
-        });
-
-        expect(response.statusCode).toBe(400);
-    });
-
-    it("rejects uploaded files because they use the upload route", async () => {
-        const response = await app.inject({
-            method: "POST",
-            url: "/videos",
-            payload: {
-                title: "Uploaded lesson",
-                sourceType: "uploaded",
-                sourceUrl: "not-used-for-uploads",
-            },
-        });
-
-        expect(response.statusCode).toBe(400);
-    });
 });
 
 describe("POST /video-uploads", () => {
@@ -260,8 +165,6 @@ describe("POST /video-uploads", () => {
         expect(body.video).toMatchObject({
             userId: TEST_USER_ID,
             title: "Uploaded salsa lesson",
-            sourceType: "uploaded",
-            sourceUrl: null,
             originalFileName: "lesson.mp4",
             status: "pending_upload",
             storageProvider: "minio",
@@ -320,8 +223,6 @@ describe("POST /video-uploads/:videoId/complete", () => {
                 id: "pending-upload-video",
                 userId: TEST_USER_ID,
                 title: "Pending uploaded lesson",
-                sourceType: "uploaded",
-                sourceUrl: null,
                 storageKey:
                     "users/test-user-1/videos/pending-upload-video.mp4",
                 storageProvider: "minio",
@@ -407,21 +308,6 @@ describe("POST /video-uploads/:videoId/complete", () => {
         expect(videoObjectExistsMock).not.toHaveBeenCalled();
     });
 
-    it("rejects completion for a video that is not an upload", async () => {
-        const response = await app.inject({
-            method: "POST",
-            url: "/video-uploads/sample-video-1/complete",
-        });
-
-        expect(response.statusCode).toBe(409);
-        expect(response.json()).toMatchObject({
-            error: {
-                code: "INVALID_VIDEO_UPLOAD_STATE",
-            },
-        });
-        expect(videoObjectExistsMock).not.toHaveBeenCalled();
-    });
-
     it("does not complete another user's video", async () => {
         await createOtherUserTestData();
 
@@ -446,8 +332,7 @@ describe("GET /videos/:videoId", () => {
         expect(response.json()).toMatchObject({
             id: "sample-video-1",
             title: "Test lesson summary",
-            sourceType: "youtube",
-            sourceUrl: "https://youtube.com/watch?v=test-video",
+            storageKey: "test-videos/sample-video-1.mp4",
         });
     });
 
@@ -474,8 +359,6 @@ describe("GET /videos/:videoId/playback-url", () => {
                 id: `uploaded-video-${status}`,
                 userId: TEST_USER_ID,
                 title: "Uploaded lesson",
-                sourceType: "uploaded",
-                sourceUrl: null,
                 storageKey: `users/test-user-1/videos/${status}.mp4`,
                 storageProvider: "minio",
                 originalFileName: "lesson.mp4",
@@ -521,21 +404,6 @@ describe("GET /videos/:videoId/playback-url", () => {
         expect(createVideoPlaybackUrlMock).not.toHaveBeenCalled();
     });
 
-    it("rejects playback URLs for an external video", async () => {
-        const response = await app.inject({
-            method: "GET",
-            url: "/videos/sample-video-1/playback-url",
-        });
-
-        expect(response.statusCode).toBe(409);
-        expect(response.json()).toMatchObject({
-            error: {
-                code: "INVALID_VIDEO_UPLOAD_STATE",
-            },
-        });
-        expect(createVideoPlaybackUrlMock).not.toHaveBeenCalled();
-    });
-
     it("does not create a playback URL for another user's video", async () => {
         await createOtherUserTestData();
 
@@ -574,8 +442,10 @@ describe("GET /videos", () => {
                 userId: TEST_USER_ID,
                 environment: "dev",
                 title: "Dev-only lesson",
-                sourceType: "youtube",
-                sourceUrl: "https://youtube.com/watch?v=dev-video",
+                storageKey: "test-videos/dev-video.mp4",
+                storageProvider: "awsS3",
+                originalFileName: "dev-video.mp4",
+                status: "ready",
             },
         });
 
@@ -601,8 +471,10 @@ describe("GET /videos", () => {
                 userId: TEST_USER_ID,
                 environment: "dev",
                 title: "Dev-only lesson",
-                sourceType: "youtube",
-                sourceUrl: "https://youtube.com/watch?v=dev-video",
+                storageKey: "test-videos/dev-video.mp4",
+                storageProvider: "awsS3",
+                originalFileName: "dev-video.mp4",
+                status: "ready",
             },
         });
 
@@ -623,7 +495,7 @@ describe("GET /videos", () => {
 });
 
 describe("GET /videos/:videoId/segments", () => {
-    it("returns the video's segments with playback URLs", async () => {
+    it("returns the video's segments", async () => {
         const response = await app.inject({
             method: "GET",
             url: "/videos/sample-video-1/segments",
@@ -634,8 +506,6 @@ describe("GET /videos/:videoId/segments", () => {
             expect.arrayContaining([
                 expect.objectContaining({
                     name: "Open stance wave",
-                    playbackUrl:
-                        "https://youtube.com/watch?v=test-video&t=10s",
                 }),
             ])
         );
@@ -662,8 +532,10 @@ describe("PATCH /videos/:videoId", () => {
         const video = await prisma.video.create({
             data: {
                 title: "Video before update",
-                sourceType: "youtube",
-                sourceUrl: "https://youtube.com/watch?v=before-update",
+                storageKey: "test-videos/video-before-update.mp4",
+                storageProvider: "minio",
+                originalFileName: "video-before-update.mp4",
+                status: "ready",
                 user: {
                     connect: {
                         id: TEST_USER_ID,
@@ -684,8 +556,6 @@ describe("PATCH /videos/:videoId", () => {
         expect(response.json()).toMatchObject({
             id: video.id,
             title: "Updated test lesson",
-            sourceType: "youtube",
-            sourceUrl: "https://youtube.com/watch?v=before-update",
         });
 
         const savedVideo = await prisma.video.findUniqueOrThrow({
@@ -697,12 +567,12 @@ describe("PATCH /videos/:videoId", () => {
         expect(savedVideo.title).toBe("Updated test lesson");
     });
 
-    it("rejects source changes outside their dedicated workflow", async () => {
+    it("rejects storage changes outside the upload workflow", async () => {
         const response = await app.inject({
             method: "PATCH",
             url: "/videos/sample-video-1",
             payload: {
-                sourceUrl: "https://example.com/replacement",
+                storageKey: "test-videos/replacement.mp4",
             },
         });
 
@@ -744,8 +614,6 @@ describe("DELETE /videos/:videoId", () => {
             data: {
                 userId: TEST_USER_ID,
                 title: "Uploaded video to delete",
-                sourceType: "uploaded",
-                sourceUrl: null,
                 storageKey:
                     "users/test-user-1/videos/uploaded-video-to-delete.mp4",
                 storageProvider: "minio",
@@ -778,8 +646,6 @@ describe("DELETE /videos/:videoId", () => {
             data: {
                 userId: TEST_USER_ID,
                 title: "Uploaded video with storage failure",
-                sourceType: "uploaded",
-                sourceUrl: null,
                 storageKey:
                     "users/test-user-1/videos/storage-failure.mp4",
                 storageProvider: "minio",
@@ -813,8 +679,6 @@ describe("DELETE /videos/:videoId", () => {
             data: {
                 userId: TEST_USER_ID,
                 title: "AWS uploaded video to delete",
-                sourceType: "uploaded",
-                sourceUrl: null,
                 storageKey:
                     "users/test-user-1/videos/aws-video-to-delete.mp4",
                 storageProvider: "awsS3",
@@ -845,12 +709,14 @@ describe("DELETE /videos/:videoId", () => {
         expect(retainedVideo).not.toBeNull();
     });
 
-    it("deletes an external video and its segments", async () => {
+    it("deletes an uploaded video and its segments", async () => {
         const video = await prisma.video.create({
             data: {
                 title: "Video to delete",
-                sourceType: "external_url",
-                sourceUrl: "https://example.com/video-to-delete",
+                storageKey: "test-videos/video-with-segments.mp4",
+                storageProvider: "minio",
+                originalFileName: "video-with-segments.mp4",
+                status: "ready",
                 user: {
                     connect: {
                         id: TEST_USER_ID,
@@ -877,7 +743,9 @@ describe("DELETE /videos/:videoId", () => {
 
         expect(response.statusCode).toBe(204);
         expect(response.body).toBe("");
-        expect(deleteVideoObjectMock).not.toHaveBeenCalled();
+        expect(deleteVideoObjectMock).toHaveBeenCalledExactlyOnceWith(
+            video.storageKey
+        );
 
         const deletedVideo = await prisma.video.findUnique({
             where: {

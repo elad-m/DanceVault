@@ -1,7 +1,6 @@
 import {
     ChevronLeft,
     ChevronRight,
-    ExternalLink,
     Maximize2,
     Pause,
     Play,
@@ -51,7 +50,7 @@ export function PracticePlayer({
         setCurrentMilliseconds(segment?.startMilliseconds ?? 0);
         thumbnailCapturedForSegmentRef.current = null;
 
-        if (!segment || !video || video.sourceType !== "uploaded" || video.status !== "ready") return;
+        if (!segment || !video || video.status !== "ready") return;
 
         let cancelled = false;
         setLoading(true);
@@ -140,8 +139,6 @@ export function PracticePlayer({
         );
     }
 
-    const externalUrl = segment.playbackUrl ?? video.sourceUrl;
-
     return (
         <section className="practice-player">
             <div className="practice-player-heading">
@@ -156,55 +153,43 @@ export function PracticePlayer({
             </div>
 
             <div className="practice-player-shell" ref={shellRef}>
-                {video.sourceType === "uploaded" ? (
-                    playbackUrl ? (
-                        <div className="practice-video-stage" style={{ aspectRatio }}>
-                            <video
-                                ref={videoRef}
-                                src={playbackUrl}
-                                crossOrigin="anonymous"
-                                preload="metadata"
-                                onClick={togglePlayback}
-                                onLoadedMetadata={(event) => {
-                                    const player = event.currentTarget;
-                                    setAspectRatio(`${player.videoWidth} / ${player.videoHeight}`);
-                                    player.currentTime = segment.startMilliseconds / 1000;
-                                }}
-                                onLoadedData={(event) => captureSegmentThumbnail(event.currentTarget)}
-                                onSeeked={(event) => captureSegmentThumbnail(event.currentTarget)}
-                                onPlay={() => setPlaying(true)}
-                                onPause={() => setPlaying(false)}
-                                onTimeUpdate={(event) => {
-                                    const player = event.currentTarget;
-                                    const milliseconds = Math.round(player.currentTime * 1000);
-                                    if (milliseconds >= segment.endMilliseconds) {
-                                        player.pause();
-                                        player.currentTime = segment.endMilliseconds / 1000;
-                                        setCurrentMilliseconds(segment.endMilliseconds);
-                                        return;
-                                    }
-                                    setCurrentMilliseconds(milliseconds);
-                                }}
-                            />
-                        </div>
-                    ) : (
-                        <div className="practice-video-stage practice-player-message">
-                            {loading ? "Loading segment..." : "Video unavailable"}
-                        </div>
-                    )
+                {playbackUrl ? (
+                    <div className="practice-video-stage" style={{ aspectRatio }}>
+                        <video
+                            ref={videoRef}
+                            src={playbackUrl}
+                            crossOrigin="anonymous"
+                            preload="metadata"
+                            onClick={togglePlayback}
+                            onLoadedMetadata={(event) => {
+                                const player = event.currentTarget;
+                                setAspectRatio(`${player.videoWidth} / ${player.videoHeight}`);
+                                player.currentTime = segment.startMilliseconds / 1000;
+                            }}
+                            onLoadedData={(event) => captureSegmentThumbnail(event.currentTarget)}
+                            onSeeked={(event) => captureSegmentThumbnail(event.currentTarget)}
+                            onPlay={() => setPlaying(true)}
+                            onPause={() => setPlaying(false)}
+                            onTimeUpdate={(event) => {
+                                const player = event.currentTarget;
+                                const milliseconds = Math.round(player.currentTime * 1000);
+                                if (milliseconds >= segment.endMilliseconds) {
+                                    player.pause();
+                                    player.currentTime = segment.endMilliseconds / 1000;
+                                    setCurrentMilliseconds(segment.endMilliseconds);
+                                    return;
+                                }
+                                setCurrentMilliseconds(milliseconds);
+                            }}
+                        />
+                    </div>
                 ) : (
                     <div className="practice-video-stage practice-player-message">
-                        <ExternalLink size={22} />
-                        <span>External video source</span>
-                        {externalUrl && (
-                            <a className="primary-button" href={externalUrl} target="_blank" rel="noreferrer">
-                                Open at timestamp
-                            </a>
-                        )}
+                        {loading ? "Loading segment..." : "Video unavailable"}
                     </div>
                 )}
 
-                {video.sourceType === "uploaded" && playbackUrl && (
+                {playbackUrl && (
                     <div className="practice-player-controls">
                         <button className="player-control-button" onClick={togglePlayback} aria-label={playing ? "Pause segment" : "Play segment"}>
                             {playing ? <Pause size={17} /> : <Play size={17} />}

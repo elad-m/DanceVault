@@ -10,12 +10,9 @@ describe("createDynamoDBVideoItem", () => {
             videoID: "video-1",
             userID: "user-1",
             title: "Salsa lesson",
-            sourceType: "youtube",
-            sourceURL:
-                "https://youtube.com/watch?v=video-1",
-            storageKey: null,
-            storageProviderName: null,
-            originalFileName: null,
+            storageKey: "users/user-1/videos/video-1.mp4",
+            storageProviderName: "awsS3",
+            originalFileName: "video-1.mp4",
             status: "ready",
             createdAt: new Date(
                 "2026-07-20T12:34:56.789Z"
@@ -30,16 +27,13 @@ describe("createDynamoDBVideoItem", () => {
                 "VIDEO#2026-07-20T12:34:56.789Z#video-1",
 
             entityType: "video",
-            schemaVersion: 2,
+            schemaVersion: 3,
             videoID: "video-1",
             userID: "user-1",
             title: "Salsa lesson",
-            sourceType: "youtube",
-            sourceURL:
-                "https://youtube.com/watch?v=video-1",
-            storageKey: null,
-            storageProviderName: null,
-            originalFileName: null,
+            storageKey: "users/user-1/videos/video-1.mp4",
+            storageProviderName: "awsS3",
+            originalFileName: "video-1.mp4",
             status: "ready",
             segmentCount: 0,
             createdAt: "2026-07-20T12:34:56.789Z",
@@ -61,9 +55,6 @@ describe("createSegmentItem", () => {
             difficulty: "medium",
             confidence: "low",
             practicePriority: "high",
-            videoSourceType: "youtube",
-            videoSourceURL:
-                "https://youtube.com/watch?v=video-1",
             createdAt: new Date(
                 "2026-07-20T12:35:00.000Z"
             ),
@@ -80,7 +71,7 @@ describe("createSegmentItem", () => {
                 "SEGMENT#2026-07-20T12:35:00.000Z#segment-1",
 
             entityType: "segment",
-            schemaVersion: 1,
+            schemaVersion: 2,
             segmentID: "segment-1",
             videoID: "video-1",
             userID: "user-1",
@@ -92,9 +83,6 @@ describe("createSegmentItem", () => {
             difficulty: "medium",
             confidence: "low",
             practicePriority: "high",
-            videoSourceType: "youtube",
-            videoSourceURL:
-                "https://youtube.com/watch?v=video-1",
             createdAt: "2026-07-20T12:35:00.000Z",
         });
     });

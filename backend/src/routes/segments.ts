@@ -23,7 +23,6 @@ import {
     getPracticeQueue,
     getSegmentById,
     searchSegments,
-    toSegmentResponse,
     updateSegment,
 } from "../services/segmentService";
 
@@ -210,12 +209,7 @@ async function createSegmentHandler(
         practicePriority: request.body.practicePriority,
     });
 
-    return reply.status(201).send(
-        toSegmentResponse({
-            ...segment,
-            video,
-        })
-    );
+    return reply.status(201).send(segment);
 }
 
 async function getSegmentHandler(
@@ -234,7 +228,7 @@ async function getSegmentHandler(
         });
     }
 
-    return toSegmentResponse(segment);
+    return segment;
 }
 
 async function searchSegmentsHandler(
@@ -261,7 +255,7 @@ async function searchSegmentsHandler(
     });
 
     return {
-        segments: segments.map(toSegmentResponse),
+        segments,
         nextCursor,
     };
 }
@@ -277,7 +271,7 @@ async function getPracticeQueueHandler(
     });
 
     return {
-        segments: segments.map(toSegmentResponse),
+        segments,
         nextCursor,
     };
 }
@@ -321,10 +315,7 @@ async function updateSegmentHandler(
         ...request.body,
     });
 
-    return toSegmentResponse({
-        ...updatedSegment,
-        video: existingSegment.video,
-    });
+    return updatedSegment;
 }
 
 async function deleteSegmentHandler(

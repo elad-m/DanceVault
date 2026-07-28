@@ -17,7 +17,6 @@ async function main() {
 
         const videos = await prisma.video.findMany({
             where: {
-                sourceType: "uploaded",
                 environment: runtime.environment,
             },
             select: {
@@ -50,7 +49,7 @@ async function main() {
                         minio: minioProvider.bucketName,
                         awsS3: awsProvider.bucketName,
                     },
-                    uploadedVideoRows: videos.length,
+                    videoRows: videos.length,
                     environment: runtime.environment,
                     minioObjectCount: minioObjectKeys.length,
                     awsS3ObjectCount: awsObjectKeys.length,

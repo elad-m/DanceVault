@@ -42,8 +42,8 @@ export function DeleteVideoDialog({
 
                 <p className="delete-video-copy">
                     <strong>{video.title}</strong> and all of its segments will
-                    be deleted. {video.sourceType === "uploaded" &&
-                        "The uploaded file will also be removed from storage."}
+                    be deleted. The uploaded file will also be removed from
+                    storage.
                 </p>
 
                 <footer className="modal-footer">

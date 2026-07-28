@@ -1,6 +1,5 @@
 import {
     ArrowLeft,
-    ExternalLink,
     LoaderCircle,
     Maximize2,
     Pause,
@@ -71,7 +70,7 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
 
         Promise.all([
             getVideoSegments(video.id),
-            video.sourceType === "uploaded" && video.status === "ready"
+            video.status === "ready"
                 ? getPlaybackUrl(video.id)
                 : Promise.resolve(null),
         ])
@@ -201,7 +200,7 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
         <main className="workspace">
             <header className="workspace-header">
                 <div>
-                    <span className="eyebrow">{video.sourceType.replace("_", " ")}</span>
+                    <span className="eyebrow">Uploaded video</span>
                     <h1>{video.title}</h1>
                 </div>
                 <div className="workspace-header-actions">
@@ -280,12 +279,6 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
                                     </button>
                                 </div>
                             </>
-                        ) : video.sourceUrl ? (
-                            <div className="video-stage player-message">
-                                <ExternalLink size={22} />
-                                <span>External video source</span>
-                                <a className="primary-button" href={video.sourceUrl} target="_blank" rel="noreferrer">Open video</a>
-                            </div>
                         ) : (
                             <div className="video-stage player-message"><RotateCw size={22} /><span>Upload is not ready for playback.</span></div>
                         )}

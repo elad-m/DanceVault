@@ -1,8 +1,6 @@
 // Defines the database-independent video data used by application services.
 
 import type {
-    ExternalVideoSourceType,
-    VideoSourceType,
     VideoStatus,
     VideoStorageProviderName,
 } from "../domain/video";
@@ -13,11 +11,9 @@ export type VideoDataAccessItem = {
     userId: string;
     environment: AppEnvironment;
     title: string;
-    sourceType: VideoSourceType;
-    sourceUrl: string | null;
-    storageKey: string | null;
-    storageProvider: VideoStorageProviderName | null;
-    originalFileName: string | null;
+    storageKey: string;
+    storageProvider: VideoStorageProviderName;
+    originalFileName: string;
     status: VideoStatus;
     createdAt: Date;
 };
@@ -35,25 +31,12 @@ type CreateVideoDataAccessInput = {
     videoID: string;
     userID: string;
     title: string;
+    storageKey: string;
+    storageProvider: VideoStorageProviderName;
+    originalFileName: string;
+    status: "pending_upload";
     createdAt: Date;
-} & (
-    | {
-          sourceType: ExternalVideoSourceType;
-          sourceURL: string;
-          storageKey: null;
-          storageProvider: null;
-          originalFileName: null;
-          status: "ready";
-      }
-    | {
-          sourceType: "uploaded";
-          sourceURL: null;
-          storageKey: string;
-          storageProvider: VideoStorageProviderName;
-          originalFileName: string;
-          status: "pending_upload";
-      }
-);
+};
 
 export type VideoDataAccess = {
     createVideo(

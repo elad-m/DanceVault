@@ -30,8 +30,10 @@ export async function resetTestDatabase() {
         data: {
             id: "sample-video-1",
             title: "Test lesson summary",
-            sourceType: "youtube",
-            sourceUrl: "https://youtube.com/watch?v=test-video",
+            storageKey: "test-videos/sample-video-1.mp4",
+            storageProvider: "minio",
+            originalFileName: "sample-video-1.mp4",
+            status: "ready",
             user: {
                 connect: {
                     id: TEST_USER_ID,
@@ -81,9 +83,10 @@ export async function createOtherUserTestData() {
                 create: {
                     id: OTHER_TEST_VIDEO_ID,
                     title: "Another user's lesson",
-                    sourceType: "youtube",
-                    sourceUrl:
-                        "https://youtube.com/watch?v=other-user-video",
+                    storageKey: "test-videos/other-user-video.mp4",
+                    storageProvider: "minio",
+                    originalFileName: "other-user-video.mp4",
+                    status: "ready",
                     segments: {
                         create: {
                             id: OTHER_TEST_SEGMENT_ID,

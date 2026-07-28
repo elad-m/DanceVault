@@ -138,12 +138,6 @@ export default function App() {
             return;
         }
 
-        if (video.sourceType !== "uploaded") {
-            const externalUrl = video.sourceUrl;
-            if (externalUrl) window.open(externalUrl, "_blank", "noopener,noreferrer");
-            return;
-        }
-
         setSelectedVideo(video);
         setSeekRequest({
             id: segment.id,

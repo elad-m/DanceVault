@@ -1,14 +1,11 @@
 export type VideoStatus = "pending_upload" | "ready" | "upload_failed";
-export type VideoSourceType = "youtube" | "external_url" | "uploaded";
 
 export type Video = {
     id: string;
     userId: string;
     title: string;
-    sourceType: VideoSourceType;
-    sourceUrl: string | null;
-    storageKey: string | null;
-    originalFileName: string | null;
+    storageKey: string;
+    originalFileName: string;
     status: VideoStatus;
     createdAt: string;
 };
@@ -28,7 +25,6 @@ export type Segment = {
     difficulty: Difficulty;
     confidence: Confidence;
     practicePriority: PracticePriority;
-    playbackUrl: string | null;
     createdAt: string;
 };
 
