@@ -3,7 +3,14 @@ import type { FastifyError } from "fastify";
 import { ApiErrorCode, sendApiError } from "./httpErrors";
 import { registerSegmentRoutes } from "./routes/segments";
 import { registerVideoRoutes } from "./routes/videos";
-import { createLiveAuthenticationDependencies, registerAuthentication } from "./auth/authentication";
+import {
+    createLiveAuthenticationDependencies,
+    registerAuthentication,
+} from "./auth/authentication";
+import {
+    createPersistenceProvider,
+    type PersistenceProvider,
+} from "./persistence";
 import {
     createVideoStorageProvider,
     getActiveVideoStorageProviderName,
@@ -12,12 +19,14 @@ import {
 
 type BuildAppOptions = {
     videoStorageProvider?: VideoStorageProvider;
+    persistenceProvider?: PersistenceProvider;
 };
 
 export function buildApp({
     videoStorageProvider = createVideoStorageProvider(
         getActiveVideoStorageProviderName()
     ),
+    persistenceProvider = createPersistenceProvider(),
 }: BuildAppOptions = {}) {
     const app = Fastify({
         logger: true,
@@ -29,8 +38,9 @@ export function buildApp({
         },
     });
 
-    app.addHook("onClose", () => {
+    app.addHook("onClose", async () => {
         videoStorageProvider.close();
+        await persistenceProvider.close();
     });
 
     app.setErrorHandler((error: FastifyError, request, reply) => {
@@ -58,7 +68,11 @@ export function buildApp({
         app,
         createLiveAuthenticationDependencies()
     );
-    registerVideoRoutes(app, videoStorageProvider);
+    registerVideoRoutes(
+        app,
+        videoStorageProvider,
+        persistenceProvider.videoDataAccess
+    );
     registerSegmentRoutes(app);
 
     return app;

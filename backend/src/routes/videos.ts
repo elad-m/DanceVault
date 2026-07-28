@@ -13,7 +13,6 @@ import {
     getVideoById,
     getVideoSegments,
     initializeVideoUpload,
-    listVideos,
     updateVideo,
 } from "../services/videoService";
 import {
@@ -23,6 +22,7 @@ import {
     type SupportedVideoContentType,
 } from "../domain/video";
 import type { VideoStorageProvider } from "../storage";
+import type { VideoDataAccess } from "../persistence/videoDataAccess";
 
 type CreateVideoRequest = {
     Body: {
@@ -180,11 +180,12 @@ async function completeVideoUploadHandler(
 
 async function getVideoHandler(
     request: FastifyRequest<VideoParams>,
-    reply: FastifyReply
+    reply: FastifyReply,
+    videoDataAccess: VideoDataAccess
 ) {
-    const video = await getVideoById({
-        videoId: request.params.videoId,
-        userId: request.userId,
+    const video = await videoDataAccess.getVideoByID({
+        videoID: request.params.videoId,
+        userID: request.userId,
     });
 
     if (!video) {
@@ -235,9 +236,12 @@ async function getVideoPlaybackUrlHandler(
     };
 }
 
-async function listVideosHandler(request: FastifyRequest) {
-    const videos = await listVideos({
-        userId: request.userId,
+async function listVideosHandler(
+    request: FastifyRequest,
+    videoDataAccess: VideoDataAccess
+) {
+    const videos = await videoDataAccess.listVideos({
+        userID: request.userId,
     });
 
     return { videos };
@@ -327,7 +331,8 @@ async function deleteVideoHandler(
 
 export function registerVideoRoutes(
     app: FastifyInstance,
-    videoStorageProvider: VideoStorageProvider
+    videoStorageProvider: VideoStorageProvider,
+    videoDataAccess: VideoDataAccess
 ) {
     app.post<CreateVideoRequest>(
         "/videos",
@@ -349,7 +354,15 @@ export function registerVideoRoutes(
                 videoStorageProvider
             )
     );
-    app.get<VideoParams>("/videos/:videoId", getVideoHandler);
+    app.get<VideoParams>(
+        "/videos/:videoId",
+        (request, reply) =>
+            getVideoHandler(
+                request,
+                reply,
+                videoDataAccess
+            )
+    );
     app.get<VideoParams>(
         "/videos/:videoId/playback-url",
         (request, reply) =>
@@ -359,7 +372,14 @@ export function registerVideoRoutes(
                 videoStorageProvider
             )
     );
-    app.get("/videos", listVideosHandler);
+    app.get(
+        "/videos",
+        (request) =>
+            listVideosHandler(
+                request,
+                videoDataAccess
+            )
+    );
     app.get<VideoParams>("/videos/:videoId/segments", getVideoSegmentsHandler);
     app.patch<UpdateVideoRequest>(
         "/videos/:videoId",

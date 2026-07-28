@@ -21,6 +21,7 @@ import type {
     VideoStorageProvider,
 } from "../storage";
 import { resetRuntimeForTest, setRuntimeForTest } from "../runtime";
+import type { PersistenceProvider } from "../persistence";
 
 const createVideoUploadUrlMock = vi.fn(
     async ({
@@ -36,7 +37,7 @@ const videoObjectExistsMock = vi.fn(
     async (_storageKey: string): Promise<boolean> => false
 );
 const deleteVideoObjectMock = vi.fn(
-    async (_storageKey: string): Promise<void> => {}
+    async (_storageKey: string): Promise<void> => { }
 );
 const fakeVideoStorageProvider: VideoStorageProvider = {
     name: "minio",
@@ -46,7 +47,7 @@ const fakeVideoStorageProvider: VideoStorageProvider = {
     deleteVideoObject: deleteVideoObjectMock,
     videoObjectExists: videoObjectExistsMock,
     listVideoObjectKeys: async () => [],
-    close: () => {},
+    close: () => { },
 };
 
 const app = buildApp({
@@ -73,6 +74,79 @@ afterAll(async () => {
 // Video routes
 
 describe("POST /videos", () => {
+    it("uses the injected video data access for read routes", async () => {
+        const video = {
+            id: "injected-video",
+            userId: TEST_USER_ID,
+            environment: "local" as const,
+            title: "Injected video",
+            sourceType: "youtube" as const,
+            sourceUrl: "https://youtube.com/watch?v=injected",
+            storageKey: null,
+            storageProvider: null,
+            originalFileName: null,
+            status: "ready" as const,
+            createdAt: new Date("2026-07-27T10:00:00.000Z"),
+        };
+
+        const getVideoByIDMock = vi.fn(
+            async () => video
+        );
+        const listVideosMock = vi.fn(
+            async () => [video]
+        );
+        const closePersistenceMock = vi.fn(
+            async () => { }
+        );
+
+        const persistenceProvider: PersistenceProvider = {
+            videoDataAccess: {
+                getVideoByID: getVideoByIDMock,
+                listVideos: listVideosMock,
+            },
+            close: closePersistenceMock,
+        };
+
+        const injectedApp = buildApp({
+            videoStorageProvider: fakeVideoStorageProvider,
+            persistenceProvider,
+        });
+        registerTestAuthentication(injectedApp);
+
+        try {
+            const getResponse = await injectedApp.inject({
+                method: "GET",
+                url: `/videos/${video.id}`,
+            });
+            const listResponse = await injectedApp.inject({
+                method: "GET",
+                url: "/videos",
+            });
+
+            expect(getResponse.statusCode).toBe(200);
+            expect(getResponse.json().id).toBe(video.id);
+            expect(listResponse.statusCode).toBe(200);
+            expect(listResponse.json().videos).toHaveLength(1);
+
+            expect(
+                getVideoByIDMock
+            ).toHaveBeenCalledExactlyOnceWith({
+                userID: TEST_USER_ID,
+                videoID: video.id,
+            });
+            expect(
+                listVideosMock
+            ).toHaveBeenCalledExactlyOnceWith({
+                userID: TEST_USER_ID,
+            });
+        } finally {
+            await injectedApp.close();
+        }
+
+        expect(
+            closePersistenceMock
+        ).toHaveBeenCalledExactlyOnceWith();
+    });
     it("creates a video", async () => {
         const response = await app.inject({
             method: "POST",

@@ -100,18 +100,6 @@ export async function getVideoById({ videoId, userId }: VideoScope) {
     });
 }
 
-export async function listVideos({ userId }: UserScope) {
-    return prisma.video.findMany({
-        where: {
-            userId,
-            environment: runtime.environment,
-        },
-        orderBy: {
-            createdAt: "asc",
-        },
-    });
-}
-
 export async function getVideoSegments({ videoId, userId }: VideoScope) {
     return prisma.segment.findMany({
         where: {
