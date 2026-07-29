@@ -48,12 +48,6 @@ function EditSegmentForm({
         segment.description ?? ""
     );
     const [tags, setTags] = useState(segment.tags.join(", "));
-    const [startSeconds, setStartSeconds] = useState(
-        String(segment.startMilliseconds / 1000)
-    );
-    const [endSeconds, setEndSeconds] = useState(
-        String(segment.endMilliseconds / 1000)
-    );
     const [difficulty, setDifficulty] = useState<Difficulty>(
         segment.difficulty
     );
@@ -63,22 +57,12 @@ function EditSegmentForm({
     const [practicePriority, setPracticePriority] =
         useState<PracticePriority>(segment.practicePriority);
 
-    const startMilliseconds = Math.round(Number(startSeconds) * 1000);
-    const endMilliseconds = Math.round(Number(endSeconds) * 1000);
-    const timestampsAreValid =
-        Number.isFinite(startMilliseconds) &&
-        Number.isFinite(endMilliseconds) &&
-        startMilliseconds >= 0 &&
-        endMilliseconds > startMilliseconds;
-
     async function submit(event: FormEvent) {
         event.preventDefault();
 
         await onSave(segment, {
             name: name.trim(),
             description: description.trim(),
-            startMilliseconds,
-            endMilliseconds,
             tags: tags
                 .split(",")
                 .map((tag) => tag.trim())
@@ -122,33 +106,6 @@ function EditSegmentForm({
                         autoFocus
                     />
                 </label>
-
-                <div className="edit-time-grid">
-                    <label>
-                        Start (seconds)
-                        <input
-                            type="number"
-                            min="0"
-                            step="0.001"
-                            value={startSeconds}
-                            onChange={(event) =>
-                                setStartSeconds(event.target.value)
-                            }
-                        />
-                    </label>
-                    <label>
-                        End (seconds)
-                        <input
-                            type="number"
-                            min="0.001"
-                            step="0.001"
-                            value={endSeconds}
-                            onChange={(event) =>
-                                setEndSeconds(event.target.value)
-                            }
-                        />
-                    </label>
-                </div>
 
                 <label>
                     Description
@@ -230,9 +187,7 @@ function EditSegmentForm({
                     </button>
                     <button
                         className="primary-button"
-                        disabled={
-                            !name.trim() || !timestampsAreValid || saving
-                        }
+                        disabled={!name.trim() || saving}
                     >
                         {saving ? (
                             <LoaderCircle className="spin" size={16} />

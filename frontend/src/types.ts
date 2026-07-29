@@ -42,8 +42,6 @@ export type CreateSegmentInput = {
 export type UpdateSegmentInput = {
     name?: string;
     description?: string;
-    startMilliseconds?: number;
-    endMilliseconds?: number;
     tags?: string[];
     difficulty?: Difficulty;
     confidence?: Confidence;
