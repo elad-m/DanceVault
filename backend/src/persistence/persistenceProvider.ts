@@ -6,9 +6,13 @@ import { createDynamoDBConnection } from "./dynamoDBConnection";
 import { createDynamoDBVideoDataAccess } from "./dynamoDBVideoDataAccess";
 import { prismaVideoDataAccess } from "./prismaVideoDataAccess";
 import type { VideoDataAccess } from "./videoDataAccess";
+import { createDynamoDBSegmentDataAccess } from "./dynamoDBSegmentDataAccess";
+import { prismaSegmentDataAccess } from "./prismaSegmentDataAccess";
+import type { SegmentDataAccess } from "./segmentDataAccess";
 
 export type PersistenceProvider = {
     videoDataAccess: VideoDataAccess;
+    segmentDataAccess: SegmentDataAccess;
     close(): Promise<void>;
 };
 
@@ -16,7 +20,7 @@ export function createPersistenceProvider(): PersistenceProvider {
     if (runtime.environment === "local") {
         return {
             videoDataAccess: prismaVideoDataAccess,
-
+            segmentDataAccess: prismaSegmentDataAccess,
             async close() {
                 await prisma.$disconnect();
             },
@@ -28,7 +32,8 @@ export function createPersistenceProvider(): PersistenceProvider {
     return {
         videoDataAccess:
             createDynamoDBVideoDataAccess(connection),
-
+        segmentDataAccess:
+            createDynamoDBSegmentDataAccess(connection),
         async close() {
             connection.close();
         },

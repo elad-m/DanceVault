@@ -71,9 +71,14 @@ export function buildApp({
     registerVideoRoutes(
         app,
         videoStorageProvider,
-        persistenceProvider.videoDataAccess
+        persistenceProvider.videoDataAccess,
+        persistenceProvider.segmentDataAccess
     );
-    registerSegmentRoutes(app);
+    registerSegmentRoutes(
+        app,
+        persistenceProvider.videoDataAccess,
+        persistenceProvider.segmentDataAccess
+    );
 
     return app;
 }

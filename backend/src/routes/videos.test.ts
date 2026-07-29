@@ -22,6 +22,8 @@ import type {
 } from "../storage";
 import { resetRuntimeForTest, setRuntimeForTest } from "../runtime";
 import type { PersistenceProvider } from "../persistence";
+import type { VideoDataAccess } from "../persistence/videoDataAccess";
+import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
 
 const createVideoUploadUrlMock = vi.fn(
     async ({
@@ -48,6 +50,27 @@ const fakeVideoStorageProvider: VideoStorageProvider = {
     videoObjectExists: videoObjectExistsMock,
     listVideoObjectKeys: async () => [],
     close: () => { },
+};
+
+const unusedSegmentDataAccess: SegmentDataAccess = {
+    async createSegment() {
+        throw new Error("Not used by video route tests");
+    },
+    async getSegmentByID() {
+        throw new Error("Not used by video route tests");
+    },
+    async listSegments() {
+        throw new Error("Not used by video route tests");
+    },
+    async listSegmentsByVideo() {
+        throw new Error("Not used by video route tests");
+    },
+    async updateSegmentMetadata() {
+        throw new Error("Not used by video route tests");
+    },
+    async deleteSegment() {
+        throw new Error("Not used by video route tests");
+    },
 };
 
 const app = buildApp({
@@ -100,9 +123,17 @@ describe("video data access injection", () => {
         const persistenceProvider: PersistenceProvider = {
             videoDataAccess: {
                 createVideo: vi.fn(async () => video),
+                updateVideoStatus: vi.fn(async () => video),
                 getVideoByID: getVideoByIDMock,
                 listVideos: listVideosMock,
+                updateVideoTitle: vi.fn(async () => {
+                    throw new Error("Not used by this test");
+                }),
+                deleteVideo: vi.fn(async () => {
+                    throw new Error("Not used by this test");
+                }),
             },
+            segmentDataAccess: unusedSegmentDataAccess,
             close: closePersistenceMock,
         };
 
@@ -145,6 +176,75 @@ describe("video data access injection", () => {
         expect(
             closePersistenceMock
         ).toHaveBeenCalledExactlyOnceWith();
+    });
+    it("uses the injected video data access when creating an upload", async () => {
+        const createVideoMock = vi.fn<
+            VideoDataAccess["createVideo"]
+        >(async (input) => ({
+            id: input.videoID,
+            userId: input.userID,
+            environment: "local",
+            title: input.title,
+            storageKey: input.storageKey,
+            storageProvider: input.storageProvider,
+            originalFileName: input.originalFileName,
+            status: input.status,
+            createdAt: input.createdAt,
+        }));
+
+        const persistenceProvider: PersistenceProvider = {
+            videoDataAccess: {
+                createVideo: createVideoMock,
+                updateVideoStatus: vi.fn(async () => {
+                    throw new Error("Not used by this test");
+                }),
+                getVideoByID: vi.fn(async () => null),
+                listVideos: vi.fn(async () => []),
+                updateVideoTitle: vi.fn(async () => {
+                    throw new Error("Not used by this test");
+                }),
+                deleteVideo: vi.fn(async () => {
+                    throw new Error("Not used by this test");
+                }),
+            },
+            segmentDataAccess: unusedSegmentDataAccess,
+            close: vi.fn(async () => { }),
+        };
+
+        const injectedApp = buildApp({
+            videoStorageProvider: fakeVideoStorageProvider,
+            persistenceProvider,
+        });
+        registerTestAuthentication(injectedApp);
+
+        try {
+            const response = await injectedApp.inject({
+                method: "POST",
+                url: "/video-uploads",
+                payload: {
+                    title: "Injected upload",
+                    fileName: "lesson.mp4",
+                    contentType: "video/mp4",
+                },
+            });
+
+            expect(response.statusCode).toBe(201);
+
+            expect(createVideoMock).toHaveBeenCalledExactlyOnceWith({
+                videoID: expect.any(String),
+                userID: TEST_USER_ID,
+                title: "Injected upload",
+                storageKey: expect.stringMatching(
+                    /^users\/test-user-1\/videos\/[0-9a-f-]+\.mp4$/
+                ),
+                storageProvider: "minio",
+                originalFileName: "lesson.mp4",
+                status: "pending_upload",
+                createdAt: expect.any(Date),
+            });
+        } finally {
+            await injectedApp.close();
+        }
     });
 });
 

@@ -8,10 +8,7 @@ import {
     completeVideoUpload,
     createVideoPlaybackUrl,
     deleteVideoWithStorage,
-    getVideoById,
-    getVideoSegments,
     initializeVideoUpload,
-    updateVideo,
 } from "../services/videoService";
 import {
     supportedVideoContentTypeSchema,
@@ -19,6 +16,7 @@ import {
 } from "../domain/video";
 import type { VideoStorageProvider } from "../storage";
 import type { VideoDataAccess } from "../persistence/videoDataAccess";
+import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
 
 type CreateVideoUploadRequest = {
     Body: {
@@ -83,7 +81,8 @@ const updateVideoRouteOptions = {
 async function createVideoUploadHandler(
     request: FastifyRequest<CreateVideoUploadRequest>,
     reply: FastifyReply,
-    videoStorageProvider: VideoStorageProvider
+    videoStorageProvider: VideoStorageProvider,
+    videoDataAccess: VideoDataAccess
 ) {
     const upload = await initializeVideoUpload({
         userId: request.userId,
@@ -91,6 +90,7 @@ async function createVideoUploadHandler(
         fileName: request.body.fileName,
         contentType: request.body.contentType,
         videoStorageProvider,
+        videoDataAccess,
     });
 
     return reply.status(201).send({
@@ -102,12 +102,14 @@ async function createVideoUploadHandler(
 async function completeVideoUploadHandler(
     request: FastifyRequest<VideoParams>,
     reply: FastifyReply,
-    videoStorageProvider: VideoStorageProvider
+    videoStorageProvider: VideoStorageProvider,
+    videoDataAccess: VideoDataAccess
 ) {
     const result = await completeVideoUpload({
         videoId: request.params.videoId,
         userId: request.userId,
         videoStorageProvider,
+        videoDataAccess,
     });
 
     if (result.kind === "not_found") {
@@ -157,12 +159,14 @@ async function getVideoHandler(
 async function getVideoPlaybackUrlHandler(
     request: FastifyRequest<VideoParams>,
     reply: FastifyReply,
-    videoStorageProvider: VideoStorageProvider
+    videoStorageProvider: VideoStorageProvider,
+    videoDataAccess: VideoDataAccess
 ) {
     const result = await createVideoPlaybackUrl({
         videoId: request.params.videoId,
         userId: request.userId,
         videoStorageProvider,
+        videoDataAccess,
     });
 
     if (result.kind === "not_found") {
@@ -205,11 +209,13 @@ async function listVideosHandler(
 
 async function getVideoSegmentsHandler(
     request: FastifyRequest<VideoParams>,
-    reply: FastifyReply
+    reply: FastifyReply,
+    videoDataAccess: VideoDataAccess,
+    segmentDataAccess: SegmentDataAccess
 ) {
-    const video = await getVideoById({
-        videoId: request.params.videoId,
-        userId: request.userId,
+    const video = await videoDataAccess.getVideoByID({
+        videoID: request.params.videoId,
+        userID: request.userId,
     });
 
     if (!video) {
@@ -219,10 +225,11 @@ async function getVideoSegmentsHandler(
         });
     }
 
-    const videoSegments = await getVideoSegments({
-        videoId: request.params.videoId,
-        userId: request.userId,
-    });
+    const videoSegments =
+        await segmentDataAccess.listSegmentsByVideo({
+            videoID: request.params.videoId,
+            userID: request.userId,
+        });
 
     return {
         segments: videoSegments,
@@ -231,11 +238,12 @@ async function getVideoSegmentsHandler(
 
 async function updateVideoHandler(
     request: FastifyRequest<UpdateVideoRequest>,
-    reply: FastifyReply
+    reply: FastifyReply,
+    videoDataAccess: VideoDataAccess
 ) {
-    const existingVideo = await getVideoById({
-        videoId: request.params.videoId,
-        userId: request.userId,
+    const existingVideo = await videoDataAccess.getVideoByID({
+        videoID: request.params.videoId,
+        userID: request.userId,
     });
 
     if (!existingVideo) {
@@ -245,22 +253,26 @@ async function updateVideoHandler(
         });
     }
 
-    return updateVideo({
-        videoId: request.params.videoId,
-        userId: request.userId,
-        ...request.body,
+    return videoDataAccess.updateVideoTitle({
+        videoID: request.params.videoId,
+        userID: request.userId,
+        title: request.body.title!,
     });
 }
 
 async function deleteVideoHandler(
     request: FastifyRequest<VideoParams>,
     reply: FastifyReply,
-    videoStorageProvider: VideoStorageProvider
+    videoStorageProvider: VideoStorageProvider,
+    videoDataAccess: VideoDataAccess,
+    segmentDataAccess: SegmentDataAccess
 ) {
     const result = await deleteVideoWithStorage({
         videoId: request.params.videoId,
         userId: request.userId,
         videoStorageProvider,
+        videoDataAccess,
+        segmentDataAccess,
     });
 
     if (result.kind === "not_found") {
@@ -283,13 +295,19 @@ async function deleteVideoHandler(
 export function registerVideoRoutes(
     app: FastifyInstance,
     videoStorageProvider: VideoStorageProvider,
-    videoDataAccess: VideoDataAccess
+    videoDataAccess: VideoDataAccess,
+    segmentDataAccess: SegmentDataAccess
 ) {
     app.post<CreateVideoUploadRequest>(
         "/video-uploads",
         createVideoUploadRouteOptions,
         (request, reply) =>
-            createVideoUploadHandler(request, reply, videoStorageProvider)
+            createVideoUploadHandler(
+                request,
+                reply,
+                videoStorageProvider,
+                videoDataAccess
+            )
     );
     app.post<VideoParams>(
         "/video-uploads/:videoId/complete",
@@ -297,7 +315,8 @@ export function registerVideoRoutes(
             completeVideoUploadHandler(
                 request,
                 reply,
-                videoStorageProvider
+                videoStorageProvider,
+                videoDataAccess
             )
     );
     app.get<VideoParams>(
@@ -315,7 +334,8 @@ export function registerVideoRoutes(
             getVideoPlaybackUrlHandler(
                 request,
                 reply,
-                videoStorageProvider
+                videoStorageProvider,
+                videoDataAccess
             )
     );
     app.get(
@@ -326,15 +346,35 @@ export function registerVideoRoutes(
                 videoDataAccess
             )
     );
-    app.get<VideoParams>("/videos/:videoId/segments", getVideoSegmentsHandler);
+    app.get<VideoParams>(
+        "/videos/:videoId/segments",
+        (request, reply) =>
+            getVideoSegmentsHandler(
+                request,
+                reply,
+                videoDataAccess,
+                segmentDataAccess
+            )
+    );
     app.patch<UpdateVideoRequest>(
         "/videos/:videoId",
         updateVideoRouteOptions,
-        updateVideoHandler
+        (request, reply) =>
+            updateVideoHandler(
+                request,
+                reply,
+                videoDataAccess
+            )
     );
     app.delete<VideoParams>(
         "/videos/:videoId",
         (request, reply) =>
-            deleteVideoHandler(request, reply, videoStorageProvider)
+            deleteVideoHandler(
+                request,
+                reply,
+                videoStorageProvider,
+                videoDataAccess,
+                segmentDataAccess
+            )
     );
 }

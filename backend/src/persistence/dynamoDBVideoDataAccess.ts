@@ -420,6 +420,15 @@ export function createDynamoDBVideoDataAccess(
             return toVideoDataAccessItem(item);
         },
 
+        async updateVideoStatus(input) {
+            const item = await updateVideoStatus(
+                connection,
+                input
+            );
+
+            return toVideoDataAccessItem(item);
+        },
+
         async getVideoByID(input) {
             const item = await getVideoByID(
                 connection,
@@ -451,6 +460,18 @@ export function createDynamoDBVideoDataAccess(
             } while (cursor);
 
             return videos;
+        },
+
+        async updateVideoTitle(input) {
+            const item = await updateVideoTitle(
+                connection,
+                input
+            );
+
+            return toVideoDataAccessItem(item);
+        },
+        async deleteVideo(input) {
+            await deleteVideo(connection, input);
         },
     };
 }

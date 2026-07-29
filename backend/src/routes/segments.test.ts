@@ -474,8 +474,6 @@ describe("PATCH /segments/:segmentId", () => {
             payload: {
                 name: "Updated open stance wave",
                 description: "Updated description",
-                startMilliseconds: 12000,
-                endMilliseconds: 24000,
                 tags: ["wave", "updated"],
                 difficulty: "hard",
                 confidence: "high",
@@ -488,8 +486,8 @@ describe("PATCH /segments/:segmentId", () => {
             id: existingSegment.id,
             name: "Updated open stance wave",
             description: "Updated description",
-            startMilliseconds: 12000,
-            endMilliseconds: 24000,
+            startMilliseconds: existingSegment.startMilliseconds,
+            endMilliseconds: existingSegment.endMilliseconds,
             tags: ["wave", "updated"],
             difficulty: "hard",
             confidence: "high",
@@ -503,8 +501,12 @@ describe("PATCH /segments/:segmentId", () => {
         });
 
         expect(savedSegment.name).toBe("Updated open stance wave");
-        expect(savedSegment.startMilliseconds).toBe(12000);
-        expect(savedSegment.endMilliseconds).toBe(24000);
+        expect(savedSegment.startMilliseconds).toBe(
+            existingSegment.startMilliseconds
+        );
+        expect(savedSegment.endMilliseconds).toBe(
+            existingSegment.endMilliseconds
+        );
         expect(savedSegment.confidence).toBe("high");
         expect(savedSegment.practicePriority).toBe("low");
     });
@@ -553,7 +555,7 @@ describe("PATCH /segments/:segmentId", () => {
         expect(response.statusCode).toBe(400);
     });
 
-    it("validates timestamps using unchanged stored values", async () => {
+    it("rejects timestamp updates", async () => {
         const existingSegment = await prisma.segment.findFirstOrThrow();
 
         const response = await app.inject({
@@ -565,10 +567,9 @@ describe("PATCH /segments/:segmentId", () => {
         });
 
         expect(response.statusCode).toBe(400);
-        expect(response.json()).toEqual({
+        expect(response.json()).toMatchObject({
             error: {
-                code: "INVALID_SEGMENT_TIMESTAMPS",
-                message: "endMilliseconds must be greater than startMilliseconds",
+                code: "VALIDATION_ERROR",
             },
         });
     });

@@ -38,9 +38,30 @@ type CreateVideoDataAccessInput = {
     createdAt: Date;
 };
 
+type UpdateVideoStatusDataAccessInput = {
+    userID: string;
+    videoID: string;
+    status: VideoStatus;
+};
+
+type UpdateVideoTitleDataAccessInput = {
+    userID: string;
+    videoID: string;
+    title: string;
+};
+
+type DeleteVideoDataAccessInput = {
+    userID: string;
+    videoID: string;
+};
+
 export type VideoDataAccess = {
     createVideo(
         input: CreateVideoDataAccessInput
+    ): Promise<VideoDataAccessItem>;
+
+    updateVideoStatus(
+        input: UpdateVideoStatusDataAccessInput
     ): Promise<VideoDataAccessItem>;
 
     getVideoByID(
@@ -50,4 +71,10 @@ export type VideoDataAccess = {
     listVideos(
         input: ListVideosInput
     ): Promise<VideoDataAccessItem[]>;
+
+    updateVideoTitle(
+        input: UpdateVideoTitleDataAccessInput
+    ): Promise<VideoDataAccessItem>;
+
+    deleteVideo(input: DeleteVideoDataAccessInput): Promise<void>;
 };

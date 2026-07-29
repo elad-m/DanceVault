@@ -1,5 +1,4 @@
 // Contains business rules and application workflows for videos.
-import { prisma } from "../db";
 import {
     createVideoStorageKey,
     type SupportedVideoContentType,
@@ -9,8 +8,11 @@ import {
     videoUrlExpirationSeconds,
     type VideoStorageProvider,
 } from "../storage";
-import type { VideoStorageProviderName } from "../domain/video";
-import { runtime } from "../runtime";
+import type {
+    VideoDataAccess,
+    VideoDataAccessItem,
+} from "../persistence/videoDataAccess";
+import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
 
 type UserScope = {
     userId: string;
@@ -20,107 +22,12 @@ type VideoScope = UserScope & {
     videoId: string;
 };
 
-type CreatePendingUploadVideoInput = {
-    userId: string;
-    title: string;
-    storageKey: string;
-    storageProvider: VideoStorageProviderName;
-    originalFileName: string;
-};
-
-export async function createPendingUploadVideo(
-    input: CreatePendingUploadVideoInput
-) {
-    return prisma.video.create({
-        data: {
-            title: input.title,
-            environment: runtime.environment,
-            storageKey: input.storageKey,
-            storageProvider: input.storageProvider,
-            originalFileName: input.originalFileName,
-            status: "pending_upload",
-            user: {
-                connect: {
-                    id: input.userId,
-                },
-            },
-        },
-    });
-}
-
-export async function markVideoUploadReady({
-    videoId,
-    userId,
-}: VideoScope) {
-    return prisma.video.update({
-        where: {
-            id: videoId,
-            userId,
-            environment: runtime.environment,
-        },
-        data: {
-            status: "ready",
-        },
-    });
-}
-
-export async function getVideoById({ videoId, userId }: VideoScope) {
-    return prisma.video.findFirst({
-        where: {
-            id: videoId,
-            userId,
-            environment: runtime.environment,
-        },
-    });
-}
-
-export async function getVideoSegments({ videoId, userId }: VideoScope) {
-    return prisma.segment.findMany({
-        where: {
-            videoId,
-            video: {
-                userId,
-                environment: runtime.environment,
-            },
-        },
-        orderBy: {
-            startMilliseconds: "asc",
-        },
-    });
-}
-
-type UpdateVideoInput = VideoScope & {
-    title?: string;
-};
-
-export async function updateVideo(input: UpdateVideoInput) {
-    const { videoId, userId, ...data } = input;
-
-    return prisma.video.update({
-        where: {
-            id: videoId,
-            userId,
-            environment: runtime.environment,
-        },
-        data,
-    });
-}
-
-export async function deleteVideo({ videoId, userId }: VideoScope) {
-    return prisma.video.delete({
-        where: {
-            id: videoId,
-            userId,
-            environment: runtime.environment,
-        },
-    });
-}
-
 type InitializeVideoUploadInput = UserScope & {
     title: string;
     fileName: string;
     contentType: SupportedVideoContentType;
     videoStorageProvider: VideoStorageProvider;
+    videoDataAccess: VideoDataAccess;
 };
 
 export async function initializeVideoUpload({
@@ -129,23 +36,27 @@ export async function initializeVideoUpload({
     fileName,
     contentType,
     videoStorageProvider,
+    videoDataAccess,
 }: InitializeVideoUploadInput) {
-    const uploadId = randomUUID();
+    const videoID = randomUUID();
     const storageKey = createVideoStorageKey({
         userId,
-        uploadId,
+        uploadId: videoID,
     });
     const uploadUrl = await videoStorageProvider.createVideoUploadUrl({
         storageKey,
         contentType,
     });
 
-    const video = await createPendingUploadVideo({
-        userId,
+    const video = await videoDataAccess.createVideo({
+        videoID,
+        userID: userId,
         title,
         storageKey,
         storageProvider: videoStorageProvider.name,
         originalFileName: fileName,
+        status: "pending_upload",
+        createdAt: new Date(),
     });
 
     return {
@@ -156,18 +67,22 @@ export async function initializeVideoUpload({
 
 export type VideoUploadCompletionResult =
     | {
-          kind: "not_found";
-      }
+        kind: "not_found";
+    }
     | {
-          kind: "invalid_upload_state";
-      }
+        kind: "invalid_upload_state";
+    }
     | {
-          kind: "upload_object_missing";
-      }
+        kind: "upload_object_missing";
+    }
     | {
-          kind: "ready";
-          video: Awaited<ReturnType<typeof getVideoById>>;
-      };
+        kind: "ready";
+        video: VideoDataAccessItem;
+    };
+
+type CompleteVideoUploadInput = VideoStorageOperationInput & {
+    videoDataAccess: VideoDataAccess;
+};
 
 type VideoStorageOperationInput = VideoScope & {
     videoStorageProvider: VideoStorageProvider;
@@ -177,10 +92,11 @@ export async function completeVideoUpload({
     videoId,
     userId,
     videoStorageProvider,
-}: VideoStorageOperationInput): Promise<VideoUploadCompletionResult> {
-    const video = await getVideoById({
-        videoId,
-        userId,
+    videoDataAccess,
+}: CompleteVideoUploadInput): Promise<VideoUploadCompletionResult> {
+    const video = await videoDataAccess.getVideoByID({
+        videoID: videoId,
+        userID: userId,
     });
 
     if (!video) {
@@ -206,9 +122,10 @@ export async function completeVideoUpload({
         return { kind: "upload_object_missing" };
     }
 
-    const readyVideo = await markVideoUploadReady({
-        videoId: video.id,
-        userId,
+    const readyVideo = await videoDataAccess.updateVideoStatus({
+        videoID: video.id,
+        userID: userId,
+        status: "ready",
     });
 
     return {
@@ -219,28 +136,33 @@ export async function completeVideoUpload({
 
 export type VideoPlaybackUrlResult =
     | {
-          kind: "not_found";
-      }
+        kind: "not_found";
+    }
     | {
-          kind: "invalid_upload_state";
-      }
+        kind: "invalid_upload_state";
+    }
     | {
-          kind: "not_ready";
-      }
+        kind: "not_ready";
+    }
     | {
-          kind: "ready";
-          playbackUrl: string;
-          expiresInSeconds: number;
-      };
+        kind: "ready";
+        playbackUrl: string;
+        expiresInSeconds: number;
+    };
+
+type CreateVideoPlaybackUrlInput = VideoStorageOperationInput & {
+    videoDataAccess: VideoDataAccess;
+};
 
 export async function createVideoPlaybackUrl({
     videoId,
     userId,
     videoStorageProvider,
-}: VideoStorageOperationInput): Promise<VideoPlaybackUrlResult> {
-    const video = await getVideoById({
-        videoId,
-        userId,
+    videoDataAccess,
+}: CreateVideoPlaybackUrlInput): Promise<VideoPlaybackUrlResult> {
+    const video = await videoDataAccess.getVideoByID({
+        videoID: videoId,
+        userID: userId,
     });
 
     if (!video) {
@@ -267,25 +189,33 @@ export async function createVideoPlaybackUrl({
     };
 }
 
+type DeleteVideoWithStorageInput =
+    VideoStorageOperationInput & {
+        videoDataAccess: VideoDataAccess;
+        segmentDataAccess: SegmentDataAccess;
+    };
+
 export type DeleteVideoWithStorageResult =
     | {
-          kind: "not_found";
-      }
+        kind: "not_found";
+    }
     | {
-          kind: "invalid_upload_state";
-      }
+        kind: "invalid_upload_state";
+    }
     | {
-          kind: "deleted";
-      };
+        kind: "deleted";
+    };
 
 export async function deleteVideoWithStorage({
     videoId,
     userId,
     videoStorageProvider,
-}: VideoStorageOperationInput): Promise<DeleteVideoWithStorageResult> {
-    const video = await getVideoById({
-        videoId,
-        userId,
+    videoDataAccess,
+    segmentDataAccess,
+}: DeleteVideoWithStorageInput): Promise<DeleteVideoWithStorageResult> {
+    const video = await videoDataAccess.getVideoByID({
+        videoID: videoId,
+        userID: userId,
     });
 
     if (!video) {
@@ -296,11 +226,27 @@ export async function deleteVideoWithStorage({
         return { kind: "invalid_upload_state" };
     }
 
-    await videoStorageProvider.deleteVideoObject(video.storageKey);
+    await videoStorageProvider.deleteVideoObject(
+        video.storageKey
+    );
 
-    await deleteVideo({
-        videoId,
-        userId,
+    const segments =
+        await segmentDataAccess.listSegmentsByVideo({
+            videoID: video.id,
+            userID: userId,
+        });
+
+    for (const segment of segments) {
+        await segmentDataAccess.deleteSegment({
+            segmentID: segment.id,
+            videoID: video.id,
+            userID: userId,
+        });
+    }
+
+    await videoDataAccess.deleteVideo({
+        videoID: video.id,
+        userID: userId,
     });
 
     return { kind: "deleted" };

@@ -17,14 +17,11 @@ import type {
 import {
     areSegmentTimestampsValid,
     createSegment,
-    deleteSegment,
-    findSegmentForDeletion,
-    findVideoForSegmentCreation,
     getPracticeQueue,
-    getSegmentById,
     searchSegments,
-    updateSegment,
 } from "../services/segmentService";
+import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
+import type { VideoDataAccess } from "../persistence/videoDataAccess";
 
 type CreateSegmentRequest = {
     Params: {
@@ -71,8 +68,6 @@ type UpdateSegmentRequest = SegmentParams & {
     Body: {
         name?: string;
         description?: string;
-        startMilliseconds?: number;
-        endMilliseconds?: number;
         tags?: string[];
         difficulty?: Difficulty;
         confidence?: Confidence;
@@ -80,21 +75,13 @@ type UpdateSegmentRequest = SegmentParams & {
     };
 };
 
-const segmentProperties = {
+const segmentMetadataProperties = {
     name: {
         type: "string",
         minLength: 1,
     },
     description: {
         type: "string",
-    },
-    startMilliseconds: {
-        type: "integer",
-        minimum: 0,
-    },
-    endMilliseconds: {
-        type: "integer",
-        minimum: 1,
     },
     tags: {
         type: "array",
@@ -107,13 +94,27 @@ const segmentProperties = {
     practicePriority: practicePrioritySchema,
 } as const;
 
+const segmentTimestampProperties = {
+    startMilliseconds: {
+        type: "integer",
+        minimum: 0,
+    },
+    endMilliseconds: {
+        type: "integer",
+        minimum: 1,
+    },
+} as const;
+
 const createSegmentRouteOptions = {
     schema: {
         body: {
             type: "object",
             additionalProperties: false,
             required: ["name", "startMilliseconds", "endMilliseconds"],
-            properties: segmentProperties,
+            properties: {
+                ...segmentMetadataProperties,
+                ...segmentTimestampProperties,
+            },
         },
     },
 } as const;
@@ -166,18 +167,20 @@ const updateSegmentRouteOptions = {
             type: "object",
             additionalProperties: false,
             minProperties: 1,
-            properties: segmentProperties,
+            properties: segmentMetadataProperties,
         },
     },
 } as const;
 
 async function createSegmentHandler(
     request: FastifyRequest<CreateSegmentRequest>,
-    reply: FastifyReply
+    reply: FastifyReply,
+    videoDataAccess: VideoDataAccess,
+    segmentDataAccess: SegmentDataAccess
 ) {
-    const video = await findVideoForSegmentCreation({
-        videoId: request.params.videoId,
-        userId: request.userId,
+    const video = await videoDataAccess.getVideoByID({
+        videoID: request.params.videoId,
+        userID: request.userId,
     });
 
     if (!video) {
@@ -207,6 +210,7 @@ async function createSegmentHandler(
         difficulty: request.body.difficulty,
         confidence: request.body.confidence,
         practicePriority: request.body.practicePriority,
+        segmentDataAccess,
     });
 
     return reply.status(201).send(segment);
@@ -214,11 +218,12 @@ async function createSegmentHandler(
 
 async function getSegmentHandler(
     request: FastifyRequest<SegmentParams>,
-    reply: FastifyReply
+    reply: FastifyReply,
+    segmentDataAccess: SegmentDataAccess
 ) {
-    const segment = await getSegmentById({
-        segmentId: request.params.segmentId,
-        userId: request.userId,
+    const segment = await segmentDataAccess.getSegmentByID({
+        segmentID: request.params.segmentId,
+        userID: request.userId,
     });
 
     if (!segment) {
@@ -232,7 +237,8 @@ async function getSegmentHandler(
 }
 
 async function searchSegmentsHandler(
-    request: FastifyRequest<SearchSegmentsRequest>
+    request: FastifyRequest<SearchSegmentsRequest>,
+    segmentDataAccess: SegmentDataAccess
 ) {
     const {
         tag,
@@ -252,6 +258,7 @@ async function searchSegmentsHandler(
         text,
         limit,
         cursor,
+        segmentDataAccess,
     });
 
     return {
@@ -261,13 +268,15 @@ async function searchSegmentsHandler(
 }
 
 async function getPracticeQueueHandler(
-    request: FastifyRequest<PracticeQueueRequest>
+    request: FastifyRequest<PracticeQueueRequest>,
+    segmentDataAccess: SegmentDataAccess
 ) {
     const limit = request.query.limit ? Number(request.query.limit) : 20;
     const { items: segments, nextCursor } = await getPracticeQueue({
         userId: request.userId,
         limit,
         cursor: request.query.cursor,
+        segmentDataAccess,
     });
 
     return {
@@ -278,11 +287,12 @@ async function getPracticeQueueHandler(
 
 async function updateSegmentHandler(
     request: FastifyRequest<UpdateSegmentRequest>,
-    reply: FastifyReply
+    reply: FastifyReply,
+    segmentDataAccess: SegmentDataAccess
 ) {
-    const existingSegment = await getSegmentById({
-        segmentId: request.params.segmentId,
-        userId: request.userId,
+    const existingSegment = await segmentDataAccess.getSegmentByID({
+        segmentID: request.params.segmentId,
+        userID: request.userId,
     });
 
     if (!existingSegment) {
@@ -292,39 +302,21 @@ async function updateSegmentHandler(
         });
     }
 
-    const nextStartMilliseconds =
-        request.body.startMilliseconds ?? existingSegment.startMilliseconds;
-    const nextEndMilliseconds =
-        request.body.endMilliseconds ?? existingSegment.endMilliseconds;
-
-    if (
-        !areSegmentTimestampsValid(
-            nextStartMilliseconds,
-            nextEndMilliseconds
-        )
-    ) {
-        return sendApiError(reply, {
-            statusCode: 400,
-            code: ApiErrorCode.InvalidSegmentTimestamps,
-        });
-    }
-
-    const updatedSegment = await updateSegment({
-        userId: request.userId,
-        segmentId: existingSegment.id,
+    return segmentDataAccess.updateSegmentMetadata({
+        segmentID: existingSegment.id,
+        userID: request.userId,
         ...request.body,
     });
-
-    return updatedSegment;
 }
 
 async function deleteSegmentHandler(
     request: FastifyRequest<SegmentParams>,
-    reply: FastifyReply
+    reply: FastifyReply,
+    segmentDataAccess: SegmentDataAccess
 ) {
-    const existingSegment = await findSegmentForDeletion({
-        segmentId: request.params.segmentId,
-        userId: request.userId,
+    const existingSegment = await segmentDataAccess.getSegmentByID({
+        segmentID: request.params.segmentId,
+        userID: request.userId,
     });
 
     if (!existingSegment) {
@@ -334,35 +326,73 @@ async function deleteSegmentHandler(
         });
     }
 
-    await deleteSegment({
-        segmentId: existingSegment.id,
-        userId: request.userId,
+    await segmentDataAccess.deleteSegment({
+        segmentID: existingSegment.id,
+        videoID: existingSegment.videoId,
+        userID: request.userId,
     });
 
     return reply.status(204).send();
 }
 
-export function registerSegmentRoutes(app: FastifyInstance) {
+export function registerSegmentRoutes(
+    app: FastifyInstance,
+    videoDataAccess: VideoDataAccess,
+    segmentDataAccess: SegmentDataAccess
+) {
     app.post<CreateSegmentRequest>(
         "/videos/:videoId/segments",
         createSegmentRouteOptions,
-        createSegmentHandler
+        (request, reply) =>
+            createSegmentHandler(
+                request,
+                reply,
+                videoDataAccess,
+                segmentDataAccess
+            )
     );
-    app.get<SegmentParams>("/segments/:segmentId", getSegmentHandler);
+    app.get<SegmentParams>(
+        "/segments/:segmentId",
+        (request, reply) =>
+            getSegmentHandler(
+                request,
+                reply,
+                segmentDataAccess
+            )
+    );
     app.get<SearchSegmentsRequest>(
         "/segments",
         searchSegmentsRouteOptions,
-        searchSegmentsHandler
+        (request) =>
+            searchSegmentsHandler(
+                request,
+                segmentDataAccess
+            )
     );
     app.get<PracticeQueueRequest>(
         "/practice-queue",
         practiceQueueRouteOptions,
-        getPracticeQueueHandler
+        (request) =>
+            getPracticeQueueHandler(
+                request,
+                segmentDataAccess
+            )
     );
     app.patch<UpdateSegmentRequest>(
         "/segments/:segmentId",
         updateSegmentRouteOptions,
-        updateSegmentHandler
+        (request, reply) =>
+            updateSegmentHandler(
+                request,
+                reply,
+                segmentDataAccess
+            )
     );
-    app.delete<SegmentParams>("/segments/:segmentId", deleteSegmentHandler);
+    app.delete<SegmentParams>("/segments/:segmentId", (request, reply) =>
+        deleteSegmentHandler(
+            request,
+            reply,
+            segmentDataAccess
+        )
+    );
 }

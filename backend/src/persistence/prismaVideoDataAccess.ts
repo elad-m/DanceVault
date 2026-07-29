@@ -25,6 +25,19 @@ export const prismaVideoDataAccess: VideoDataAccess = {
         });
     },
 
+    async updateVideoStatus({ userID, videoID, status }) {
+        return prisma.video.update({
+            where: {
+                id: videoID,
+                userId: userID,
+                environment: runtime.environment,
+            },
+            data: {
+                status,
+            },
+        });
+    },
+
     async getVideoByID({ userID, videoID }) {
         return prisma.video.findFirst({
             where: {
@@ -43,6 +56,29 @@ export const prismaVideoDataAccess: VideoDataAccess = {
             },
             orderBy: {
                 createdAt: "asc",
+            },
+        });
+    },
+
+    async updateVideoTitle({ userID, videoID, title }) {
+        return prisma.video.update({
+            where: {
+                id: videoID,
+                userId: userID,
+                environment: runtime.environment,
+            },
+            data: {
+                title,
+            },
+        });
+    },
+
+    async deleteVideo({ userID, videoID }) {
+        await prisma.video.delete({
+            where: {
+                id: videoID,
+                userId: userID,
+                environment: runtime.environment,
             },
         });
     },

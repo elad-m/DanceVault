@@ -1,10 +1,10 @@
-import { prisma } from "../db";
 import type {
     Confidence,
     Difficulty,
     PracticePriority,
 } from "../domain/segment";
-import { runtime } from "../runtime";
+import { randomUUID } from "node:crypto";
+import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
 
 type UserScope = {
     userId: string;
@@ -12,10 +12,6 @@ type UserScope = {
 
 type VideoScope = UserScope & {
     videoId: string;
-};
-
-type SegmentScope = UserScope & {
-    segmentId: string;
 };
 
 export function areSegmentTimestampsValid(
@@ -27,10 +23,29 @@ export function areSegmentTimestampsValid(
 
 export function paginateResults<T extends { id: string }>(
     results: T[],
-    limit: number
+    limit: number,
+    cursor?: string
 ) {
-    const items = results.slice(0, limit);
-    const hasNextPage = results.length > limit;
+    let startIndex = 0;
+
+    if (cursor) {
+        const cursorIndex = results.findIndex(
+            (result) => result.id === cursor
+        );
+
+        if (cursorIndex === -1) {
+            throw new Error("Invalid segment cursor");
+        }
+
+        startIndex = cursorIndex + 1;
+    }
+
+    const pageCandidates = results.slice(
+        startIndex,
+        startIndex + limit + 1
+    );
+    const items = pageCandidates.slice(0, limit);
+    const hasNextPage = pageCandidates.length > limit;
     const nextCursor = hasNextPage
         ? items[items.length - 1]?.id ?? null
         : null;
@@ -39,19 +54,6 @@ export function paginateResults<T extends { id: string }>(
         items,
         nextCursor,
     };
-}
-
-export async function findVideoForSegmentCreation({
-    videoId,
-    userId,
-}: VideoScope) {
-    return prisma.video.findFirst({
-        where: {
-            id: videoId,
-            userId,
-            environment: runtime.environment,
-        },
-    });
 }
 
 // CRUD Operations
@@ -65,42 +67,23 @@ type CreateSegmentInput = VideoScope & {
     difficulty?: Difficulty;
     confidence?: Confidence;
     practicePriority?: PracticePriority;
+    segmentDataAccess: SegmentDataAccess;
 };
 
 export async function createSegment(input: CreateSegmentInput) {
-    return prisma.segment.create({
-        data: {
-            video: {
-                connect: {
-                    id: input.videoId,
-                    userId: input.userId,
-                    environment: runtime.environment,
-                },
-            },
-            name: input.name,
-            description: input.description,
-            startMilliseconds: input.startMilliseconds,
-            endMilliseconds: input.endMilliseconds,
-            tags: input.tags ?? [],
-            difficulty: input.difficulty ?? "medium",
-            confidence: input.confidence ?? "medium",
-            practicePriority: input.practicePriority ?? "medium",
-        },
-    });
-}
-
-export async function getSegmentById({
-    segmentId,
-    userId,
-}: SegmentScope) {
-    return prisma.segment.findFirst({
-        where: {
-            id: segmentId,
-            video: {
-                userId,
-                environment: runtime.environment,
-            },
-        },
+    return input.segmentDataAccess.createSegment({
+        segmentID: randomUUID(),
+        videoID: input.videoId,
+        userID: input.userId,
+        name: input.name,
+        description: input.description ?? null,
+        startMilliseconds: input.startMilliseconds,
+        endMilliseconds: input.endMilliseconds,
+        tags: input.tags ?? [],
+        difficulty: input.difficulty ?? "medium",
+        confidence: input.confidence ?? "medium",
+        practicePriority: input.practicePriority ?? "medium",
+        createdAt: new Date(),
     });
 }
 
@@ -116,154 +99,121 @@ type SearchSegmentsInput = UserScope &
         confidence?: Confidence;
         practicePriority?: PracticePriority;
         text?: string;
+        segmentDataAccess: SegmentDataAccess;
     };
 
 export async function searchSegments(input: SearchSegmentsInput) {
-    const results = await prisma.segment.findMany({
-        where: {
-            video: {
-                userId: input.userId,
-                environment: runtime.environment,
-            },
-            tags: input.tag
-                ? {
-                    has: input.tag,
+    const allSegments =
+        await input.segmentDataAccess.listSegments({
+            userID: input.userId,
+        });
+
+    const normalizedText = input.text?.toLowerCase();
+
+    const matchingSegments = allSegments
+        .filter((segment) => {
+            if (
+                input.tag &&
+                !segment.tags.includes(input.tag)
+            ) {
+                return false;
+            }
+
+            if (
+                input.difficulty &&
+                segment.difficulty !== input.difficulty
+            ) {
+                return false;
+            }
+
+            if (
+                input.confidence &&
+                segment.confidence !== input.confidence
+            ) {
+                return false;
+            }
+
+            if (
+                input.practicePriority &&
+                segment.practicePriority !==
+                input.practicePriority
+            ) {
+                return false;
+            }
+
+            if (normalizedText) {
+                const nameMatches = segment.name
+                    .toLowerCase()
+                    .includes(normalizedText);
+                const descriptionMatches =
+                    segment.description
+                        ?.toLowerCase()
+                        .includes(normalizedText) ??
+                    false;
+
+                if (!nameMatches && !descriptionMatches) {
+                    return false;
                 }
-                : undefined,
-            difficulty: input.difficulty,
-            confidence: input.confidence,
-            practicePriority: input.practicePriority,
-            OR: input.text
-                ? [
-                    {
-                        name: {
-                            contains: input.text,
-                            mode: "insensitive",
-                        },
-                    },
-                    {
-                        description: {
-                            contains: input.text,
-                            mode: "insensitive",
-                        },
-                    },
-                ]
-                : undefined,
-        },
-        orderBy: [
-            {
-                createdAt: "asc",
-            },
-            {
-                id: "asc",
-            },
-        ],
-        take: input.limit + 1,
-        cursor: input.cursor
-            ? {
-                id: input.cursor,
             }
-            : undefined,
-        skip: input.cursor ? 1 : 0,
-    });
 
-    return paginateResults(results, input.limit);
+            return true;
+        })
+        .sort(
+            (first, second) =>
+                first.createdAt.getTime() -
+                second.createdAt.getTime() ||
+                first.id.localeCompare(second.id)
+        );
+
+    return paginateResults(
+        matchingSegments,
+        input.limit,
+        input.cursor
+    );
 }
 
-export async function getPracticeQueue(input: UserScope & PaginationInput) {
-    const results = await prisma.segment.findMany({
-        where: {
-            video: {
-                userId: input.userId,
-                environment: runtime.environment,
-            },
-            OR: [
-                {
-                    practicePriority: "high",
-                },
-                {
-                    confidence: "low",
-                },
-            ],
-        },
-        orderBy: [
-            {
-                practicePriority: "desc",
-            },
-            {
-                confidence: "asc",
-            },
-            {
-                createdAt: "asc",
-            },
-            {
-                id: "asc",
-            },
-        ],
-        take: input.limit + 1,
-        cursor: input.cursor
-            ? {
-                id: input.cursor,
-            }
-            : undefined,
-        skip: input.cursor ? 1 : 0,
-    });
+export async function getPracticeQueue(
+    input: UserScope &
+        PaginationInput & {
+            segmentDataAccess: SegmentDataAccess;
+        }
+) {
+    const allSegments =
+        await input.segmentDataAccess.listSegments({
+            userID: input.userId,
+        });
 
-    return paginateResults(results, input.limit);
-}
+    const priorityRank: Record<PracticePriority, number> = {
+        low: 1,
+        medium: 2,
+        high: 3,
+    };
+    const confidenceRank: Record<Confidence, number> = {
+        low: 1,
+        medium: 2,
+        high: 3,
+    };
 
-type UpdateSegmentInput = SegmentScope & {
-    name?: string;
-    description?: string;
-    startMilliseconds?: number;
-    endMilliseconds?: number;
-    tags?: string[];
-    difficulty?: Difficulty;
-    confidence?: Confidence;
-    practicePriority?: PracticePriority;
-};
+    const queueSegments = allSegments
+        .filter(
+            (segment) =>
+                segment.practicePriority === "high" ||
+                segment.confidence === "low"
+        )
+        .sort(
+            (first, second) =>
+                priorityRank[second.practicePriority] -
+                    priorityRank[first.practicePriority] ||
+                confidenceRank[first.confidence] -
+                    confidenceRank[second.confidence] ||
+                first.createdAt.getTime() -
+                    second.createdAt.getTime() ||
+                first.id.localeCompare(second.id)
+        );
 
-export async function updateSegment(input: UpdateSegmentInput) {
-    const { segmentId, userId, ...data } = input;
-
-    return prisma.segment.update({
-        where: {
-            id: segmentId,
-            video: {
-                userId,
-                environment: runtime.environment,
-            },
-        },
-        data,
-    });
-}
-
-export async function findSegmentForDeletion({
-    segmentId,
-    userId,
-}: SegmentScope) {
-    return prisma.segment.findFirst({
-        where: {
-            id: segmentId,
-            video: {
-                userId,
-                environment: runtime.environment,
-            },
-        },
-    });
-}
-
-export async function deleteSegment({
-    segmentId,
-    userId,
-}: SegmentScope) {
-    return prisma.segment.delete({
-        where: {
-            id: segmentId,
-            video: {
-                userId,
-                environment: runtime.environment,
-            },
-        },
-    });
+    return paginateResults(
+        queueSegments,
+        input.limit,
+        input.cursor
+    );
 }

@@ -1,10 +1,10 @@
 // Performs segment database operations and hides DynamoDB-specific item mapping.
-
 import {
     GetCommand,
     QueryCommand,
     TransactWriteCommand,
     UpdateCommand,
+    type QueryCommandInput,
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBConnection } from "./dynamoDBConnection";
 import {
@@ -26,6 +26,10 @@ import type {
     Difficulty,
     PracticePriority,
 } from "../domain/segment";
+import type {
+    SegmentDataAccess,
+    SegmentDataAccessItem,
+} from "./segmentDataAccess";
 
 const SEGMENTS_BY_VIDEO_INDEX_NAME = "SegmentsByVideo";
 export const MAX_SEGMENTS_BY_VIDEO_PAGE_SIZE = 50;
@@ -107,6 +111,24 @@ function requireSupportedSegmentItem(
     return item as SegmentItem;
 }
 
+function toSegmentDataAccessItem(
+    item: SegmentItem
+): SegmentDataAccessItem {
+    return {
+        id: item.segmentID,
+        videoId: item.videoID,
+        name: item.name,
+        description: item.description,
+        startMilliseconds: item.startMilliseconds,
+        endMilliseconds: item.endMilliseconds,
+        tags: item.tags,
+        difficulty: item.difficulty,
+        confidence: item.confidence,
+        practicePriority: item.practicePriority,
+        createdAt: new Date(item.createdAt),
+    };
+}
+
 export async function createSegment(
     connection: DynamoDBConnection,
     input: CreateSegmentItemInput
@@ -183,6 +205,49 @@ export async function getSegmentByID(
     }
 
     return requireSupportedSegmentItem(result.Item);
+}
+
+type ListSegmentsByUserInput = {
+    userID: string;
+};
+
+export async function listSegmentsByUser(
+    connection: DynamoDBConnection,
+    input: ListSegmentsByUserInput
+): Promise<SegmentItem[]> {
+    const segments: SegmentItem[] = [];
+    let exclusiveStartKey:
+        QueryCommandInput["ExclusiveStartKey"];
+
+    do {
+        const result = await connection.documentClient.send(
+            new QueryCommand({
+                TableName: connection.tableName,
+                KeyConditionExpression:
+                    "PK = :userPK " +
+                    "AND begins_with(SK, :segmentPrefix)",
+                ExpressionAttributeValues: {
+                    ":userPK": createUserPartitionKey(
+                        input.userID
+                    ),
+                    ":segmentPrefix":
+                        SEGMENT_ITEM_KEY_PREFIX,
+                },
+                ExclusiveStartKey: exclusiveStartKey,
+                ConsistentRead: true,
+            })
+        );
+
+        segments.push(
+            ...(result.Items ?? []).map(
+                requireSupportedSegmentItem
+            )
+        );
+
+        exclusiveStartKey = result.LastEvaluatedKey;
+    } while (exclusiveStartKey);
+
+    return segments;
 }
 
 type ListSegmentsByVideoInput = {
@@ -436,4 +501,83 @@ export async function deleteSegment(
             ],
         })
     );
+}
+
+export function createDynamoDBSegmentDataAccess(
+    connection: DynamoDBConnection
+): SegmentDataAccess {
+    return {
+        async createSegment(input) {
+            const item = await createSegment(
+                connection,
+                input
+            );
+
+            return toSegmentDataAccessItem(item);
+        },
+
+        async getSegmentByID(input) {
+            const item = await getSegmentByID(
+                connection,
+                input
+            );
+
+            return item
+                ? toSegmentDataAccessItem(item)
+                : null;
+        },
+
+        async listSegments({ userID }) {
+            const items = await listSegmentsByUser(
+                connection,
+                {
+                    userID,
+                }
+            );
+
+            return items.map(toSegmentDataAccessItem);
+        },
+
+        async listSegmentsByVideo({
+            userID,
+            videoID,
+        }) {
+            const segments: SegmentDataAccessItem[] = [];
+            let cursor: string | undefined;
+
+            do {
+                const page = await listSegmentsByVideo(
+                    connection,
+                    {
+                        userID,
+                        videoID,
+                        limit: MAX_SEGMENTS_BY_VIDEO_PAGE_SIZE,
+                        cursor,
+                    }
+                );
+
+                segments.push(
+                    ...page.segments.map(
+                        toSegmentDataAccessItem
+                    )
+                );
+                cursor = page.nextCursor ?? undefined;
+            } while (cursor);
+
+            return segments;
+        },
+
+        async updateSegmentMetadata(input) {
+            const item = await updateSegmentMetadata(
+                connection,
+                input
+            );
+
+            return toSegmentDataAccessItem(item);
+        },
+
+        async deleteSegment(input) {
+            await deleteSegment(connection, input);
+        },
+    };
 }

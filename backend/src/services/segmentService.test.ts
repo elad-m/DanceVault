@@ -40,4 +40,19 @@ describe("paginateResults", () => {
             nextCursor: "segment-2",
         });
     });
+
+    it("starts after the cursor when requesting the next page", () => {
+        const results = [
+            { id: "segment-1" },
+            { id: "segment-2" },
+            { id: "segment-3" },
+        ];
+
+        expect(
+            paginateResults(results, 2, "segment-2")
+        ).toEqual({
+            items: [{ id: "segment-3" }],
+            nextCursor: null,
+        });
+    });
 });
