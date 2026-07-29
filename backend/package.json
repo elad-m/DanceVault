@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc --noEmit",
+    "aws:login": "aws login --profile dancevault-admin",
     "local": "cross-env APP_ENVIRONMENT=local tsx src/index.ts",
     "dev": "cross-env APP_ENVIRONMENT=dev tsx src/index.ts",
     "db:test:migrate": "cross-env DATABASE_URL=postgresql://dancevault:dancevault@localhost:5433/dancevault_test?schema=public prisma migrate deploy",
