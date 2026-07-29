@@ -13,6 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import {
     createSegment,
+    deleteSegment,
     getPlaybackUrl,
     getVideoSegments,
     updateSegment,
@@ -24,6 +25,7 @@ import type {
     UpdateSegmentInput,
     Video,
 } from "../types";
+import { DeleteSegmentDialog } from "./DeleteSegmentDialog";
 import { EditSegmentDialog } from "./EditSegmentDialog";
 import { SegmentEditor } from "./SegmentEditor";
 
@@ -53,6 +55,9 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
     const [segmentBeingEdited, setSegmentBeingEdited] =
         useState<Segment | null>(null);
     const [savingSegmentEdit, setSavingSegmentEdit] = useState(false);
+    const [segmentPendingDeletion, setSegmentPendingDeletion] =
+        useState<Segment | null>(null);
+    const [deletingSegment, setDeletingSegment] = useState(false);
 
     useEffect(() => {
         setPlaybackUrl(null);
@@ -62,6 +67,7 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
         setVideoAspectRatio("16 / 9");
         setIsPlaying(false);
         setSegmentBeingEdited(null);
+        setSegmentPendingDeletion(null);
 
         if (!video) return;
 
@@ -141,6 +147,26 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
             );
         } finally {
             setSavingSegmentEdit(false);
+        }
+    }
+
+    async function handleDeleteSegment(segment: Segment) {
+        setDeletingSegment(true);
+
+        try {
+            await deleteSegment(segment.id);
+            setSegments((current) =>
+                current.filter((candidate) => candidate.id !== segment.id)
+            );
+            setSegmentPendingDeletion(null);
+        } catch (error) {
+            onError(
+                error instanceof Error
+                    ? error.message
+                    : "Could not delete segment"
+            );
+        } finally {
+            setDeletingSegment(false);
         }
     }
 
@@ -317,6 +343,16 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
                                 >
                                     <Pencil size={15} />
                                 </button>
+                                <button
+                                    className="segment-edit-button"
+                                    onClick={() =>
+                                        setSegmentPendingDeletion(segment)
+                                    }
+                                    aria-label={`Delete ${segment.name}`}
+                                    title="Delete segment"
+                                >
+                                    <Trash2 size={15} />
+                                </button>
                             </article>
                         ))}
                         {!loading && segments.length === 0 && <p className="empty-copy">No segments indexed yet.</p>}
@@ -328,6 +364,12 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
                 saving={savingSegmentEdit}
                 onCancel={() => setSegmentBeingEdited(null)}
                 onSave={saveSegmentEdit}
+            />
+            <DeleteSegmentDialog
+                segment={segmentPendingDeletion}
+                deleting={deletingSegment}
+                onCancel={() => setSegmentPendingDeletion(null)}
+                onConfirm={handleDeleteSegment}
             />
         </main>
     );

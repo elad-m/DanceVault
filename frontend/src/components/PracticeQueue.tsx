@@ -1,8 +1,9 @@
-import { ListChecks, LoaderCircle, Pencil } from "lucide-react";
+import { ListChecks, LoaderCircle, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { getPracticeQueue, updateSegment } from "../api";
+import { deleteSegment, getPracticeQueue, updateSegment } from "../api";
 import { formatDuration } from "../format";
 import {
+    deleteSegmentThumbnail,
     getSegmentThumbnail,
     saveSegmentThumbnail,
 } from "../thumbnailStorage";
@@ -13,6 +14,7 @@ import type {
     UpdateSegmentInput,
     Video,
 } from "../types";
+import { DeleteSegmentDialog } from "./DeleteSegmentDialog";
 import { PracticePlayer } from "./PracticePlayer";
 import { EditSegmentDialog } from "./EditSegmentDialog";
 
@@ -60,6 +62,9 @@ export function PracticeQueue({
     const [updatingSegmentId, setUpdatingSegmentId] = useState<string | null>(null);
     const [segmentBeingEdited, setSegmentBeingEdited] =
         useState<Segment | null>(null);
+    const [segmentPendingDeletion, setSegmentPendingDeletion] =
+        useState<Segment | null>(null);
+    const [deletingSegment, setDeletingSegment] = useState(false);
     const [nextCursor, setNextCursor] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
@@ -170,6 +175,46 @@ export function PracticeQueue({
         if (saved) setSegmentBeingEdited(null);
     }
 
+    async function handleDeleteSegment(segment: Segment) {
+        setDeletingSegment(true);
+
+        try {
+            await deleteSegment(segment.id);
+            const deletedIndex = segments.findIndex(
+                (candidate) => candidate.id === segment.id
+            );
+            const remainingSegments = segments.filter(
+                (candidate) => candidate.id !== segment.id
+            );
+
+            setSegments(remainingSegments);
+            setThumbnails((current) => {
+                const next = { ...current };
+                delete next[segment.id];
+                return next;
+            });
+            void deleteSegmentThumbnail(segment.id).catch(() => undefined);
+
+            if (selectedSegmentId === segment.id) {
+                selectSegment(
+                    remainingSegments[
+                        Math.min(deletedIndex, remainingSegments.length - 1)
+                    ]?.id ?? null
+                );
+            }
+
+            setSegmentPendingDeletion(null);
+        } catch (error) {
+            onError(
+                error instanceof Error
+                    ? error.message
+                    : "Could not delete segment"
+            );
+        } finally {
+            setDeletingSegment(false);
+        }
+    }
+
     const selectedIndex = segments.findIndex((segment) => segment.id === selectedSegmentId);
     const selectedSegment = selectedIndex >= 0 ? segments[selectedIndex] : null;
     const selectedVideo = selectedSegment
@@ -265,6 +310,19 @@ export function PracticeQueue({
                                     >
                                         <Pencil size={15} />
                                     </button>
+                                    <button
+                                        className="practice-edit-button"
+                                        onClick={() =>
+                                            setSegmentPendingDeletion(segment)
+                                        }
+                                        disabled={
+                                            updatingSegmentId === segment.id
+                                        }
+                                        aria-label={`Delete ${segment.name}`}
+                                        title="Delete segment"
+                                    >
+                                        <Trash2 size={15} />
+                                    </button>
                                 </div>
                             </article>
                         ))}
@@ -292,6 +350,12 @@ export function PracticeQueue({
                 }
                 onCancel={() => setSegmentBeingEdited(null)}
                 onSave={saveSegmentEdit}
+            />
+            <DeleteSegmentDialog
+                segment={segmentPendingDeletion}
+                deleting={deletingSegment}
+                onCancel={() => setSegmentPendingDeletion(null)}
+                onConfirm={handleDeleteSegment}
             />
         </main>
     );

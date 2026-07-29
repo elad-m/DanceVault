@@ -54,3 +54,23 @@ export async function saveSegmentThumbnail(
         };
     });
 }
+
+export async function deleteSegmentThumbnail(
+    segmentId: string
+): Promise<void> {
+    const database = await openThumbnailDatabase();
+
+    return new Promise((resolve, reject) => {
+        const transaction = database.transaction(thumbnailStoreName, "readwrite");
+        transaction.objectStore(thumbnailStoreName).delete(segmentId);
+
+        transaction.oncomplete = () => {
+            database.close();
+            resolve();
+        };
+        transaction.onerror = () => {
+            database.close();
+            reject(transaction.error);
+        };
+    });
+}

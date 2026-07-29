@@ -70,7 +70,7 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .segments-panel .panel-heading { padding: 17px 17px 14px; border-bottom: 1px solid #e7e9e5; }
 .panel-heading h2 { margin: 2px 0 0; font-size: 16px; }
 .segment-list { max-height: calc(100vh - 170px); overflow: auto; }
-.segment-row { width: 100%; border-bottom: 1px solid #eceeeb; background: white; display: grid; grid-template-columns: minmax(0, 1fr) 40px; align-items: stretch; color: #242724; }
+.segment-row { width: 100%; border-bottom: 1px solid #eceeeb; background: white; display: grid; grid-template-columns: minmax(0, 1fr) 40px 40px; align-items: stretch; color: #242724; }
 .segment-row:hover { background: #f6f7f4; }
 .segment-play-button { min-width: 0; border: 0; background: transparent; padding: 12px 8px 12px 14px; display: grid; grid-template-columns: 62px minmax(0, 1fr) 16px; align-items: center; gap: 10px; text-align: left; color: inherit; }
 .segment-edit-button, .practice-edit-button { border: 0; background: transparent; color: #747b76; display: grid; place-items: center; }

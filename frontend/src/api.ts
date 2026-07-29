@@ -99,6 +99,12 @@ export async function updateSegment(
     });
 }
 
+export async function deleteSegment(segmentId: string): Promise<void> {
+    return requestJson<void>(`/segments/${segmentId}`, {
+        method: "DELETE",
+    });
+}
+
 export async function uploadVideo(
     title: string,
     file: File
