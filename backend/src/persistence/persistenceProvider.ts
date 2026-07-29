@@ -1,14 +1,10 @@
-// Selects the environment's data-access implementations and owns their connections.
+// Selects the environment's data-access implementations and owns their connection.
 
-import { prisma } from "../db";
-import { runtime } from "../runtime";
 import { createDynamoDBConnection } from "./dynamoDBConnection";
-import { createDynamoDBVideoDataAccess } from "./dynamoDBVideoDataAccess";
-import { prismaVideoDataAccess } from "./prismaVideoDataAccess";
-import type { VideoDataAccess } from "./videoDataAccess";
 import { createDynamoDBSegmentDataAccess } from "./dynamoDBSegmentDataAccess";
-import { prismaSegmentDataAccess } from "./prismaSegmentDataAccess";
+import { createDynamoDBVideoDataAccess } from "./dynamoDBVideoDataAccess";
 import type { SegmentDataAccess } from "./segmentDataAccess";
+import type { VideoDataAccess } from "./videoDataAccess";
 
 export type PersistenceProvider = {
     videoDataAccess: VideoDataAccess;
@@ -17,16 +13,6 @@ export type PersistenceProvider = {
 };
 
 export function createPersistenceProvider(): PersistenceProvider {
-    if (runtime.environment === "local") {
-        return {
-            videoDataAccess: prismaVideoDataAccess,
-            segmentDataAccess: prismaSegmentDataAccess,
-            async close() {
-                await prisma.$disconnect();
-            },
-        };
-    }
-
     const connection = createDynamoDBConnection();
 
     return {
@@ -34,6 +20,7 @@ export function createPersistenceProvider(): PersistenceProvider {
             createDynamoDBVideoDataAccess(connection),
         segmentDataAccess:
             createDynamoDBSegmentDataAccess(connection),
+
         async close() {
             connection.close();
         },

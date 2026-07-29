@@ -1,10 +1,19 @@
 import { prisma } from "../db";
 import type { FastifyInstance } from "fastify";
+import type { PersistenceProvider } from "../persistence";
+import { prismaSegmentDataAccess } from "../persistence/prismaSegmentDataAccess";
+import { prismaVideoDataAccess } from "../persistence/prismaVideoDataAccess";
 
 export const TEST_USER_ID = "test-user-1";
 export const OTHER_TEST_USER_ID = "test-user-2";
 export const OTHER_TEST_VIDEO_ID = "other-user-video";
 export const OTHER_TEST_SEGMENT_ID = "other-user-segment";
+
+export const prismaTestPersistenceProvider: PersistenceProvider = {
+    videoDataAccess: prismaVideoDataAccess,
+    segmentDataAccess: prismaSegmentDataAccess,
+    async close() {},
+};
 
 export function registerTestAuthentication(app: FastifyInstance) {
     app.addHook("onRequest", async (request) => {

@@ -9,10 +9,13 @@ import {
     createOtherUserTestData,
     OTHER_TEST_SEGMENT_ID,
     OTHER_TEST_VIDEO_ID,
+    prismaTestPersistenceProvider,
 } from "../test/testDatabase";
 import { resetRuntimeForTest, setRuntimeForTest } from "../runtime";
 
-const app = buildApp();
+const app = buildApp({
+    persistenceProvider: prismaTestPersistenceProvider,
+});
 registerTestAuthentication(app);
 
 beforeEach(async () => {

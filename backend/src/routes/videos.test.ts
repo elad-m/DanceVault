@@ -15,6 +15,7 @@ import {
     TEST_USER_ID,
     createOtherUserTestData,
     OTHER_TEST_VIDEO_ID,
+    prismaTestPersistenceProvider,
 } from "../test/testDatabase";
 import type {
     CreateVideoUploadUrlInput,
@@ -75,6 +76,7 @@ const unusedSegmentDataAccess: SegmentDataAccess = {
 
 const app = buildApp({
     videoStorageProvider: fakeVideoStorageProvider,
+    persistenceProvider: prismaTestPersistenceProvider,
 });
 registerTestAuthentication(app);
 

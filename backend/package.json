@@ -4,14 +4,15 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "tsc --noEmit",
     "aws:login": "aws login --profile dancevault-admin",
-    "local": "cross-env APP_ENVIRONMENT=local tsx src/index.ts",
-    "dev": "cross-env APP_ENVIRONMENT=dev tsx src/index.ts",
+    "build": "tsc --noEmit",
+    "db:local:init": "cross-env DYNAMODB_ENDPOINT=http://127.0.0.1:8000 AWS_DYNAMODB_REGION=us-east-1 DYNAMODB_TABLE_NAME=DanceVaultLocalData tsx src/scripts/initializeLocalDynamoDB.ts",
+    "db:seed": "tsx prisma/seed.ts",
     "db:test:migrate": "cross-env DATABASE_URL=postgresql://dancevault:dancevault@localhost:5433/dancevault_test?schema=public prisma migrate deploy",
+    "dev": "cross-env APP_ENVIRONMENT=dev tsx src/index.ts",
+    "local": "cross-env APP_ENVIRONMENT=local DYNAMODB_ENDPOINT=http://127.0.0.1:8000 AWS_DYNAMODB_REGION=us-east-1 DYNAMODB_TABLE_NAME=DanceVaultLocalData tsx src/index.ts",
     "test": "npm run db:test:migrate && cross-env DATABASE_URL=postgresql://dancevault:dancevault@localhost:5433/dancevault_test?schema=public vitest run",
-    "test:storage:integration": "vitest run --config vitest.integration.config.ts",
-    "db:seed": "tsx prisma/seed.ts"
+    "test:storage:integration": "vitest run --config vitest.integration.config.ts"
   },
   "keywords": [],
   "author": "",
