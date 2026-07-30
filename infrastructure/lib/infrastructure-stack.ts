@@ -4,6 +4,10 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as lambdaNodejs from "aws-cdk-lib/aws-lambda-nodejs";
+import * as path from "node:path";
+import * as logs from "aws-cdk-lib/aws-logs";
 
 export class InfrastructureStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -162,6 +166,88 @@ export class InfrastructureStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
+
+    const backendFunctionName =
+      "DanceVaultDevelopmentBackend";
+
+    const backendLogGroup = new logs.LogGroup(
+      this,
+      "BackendLogGroup",
+      {
+        logGroupName: `/aws/lambda/${backendFunctionName}`,
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
+
+    const backendFunction = new lambdaNodejs.NodejsFunction(
+      this,
+      "BackendFunction",
+      {
+        functionName: backendFunctionName,
+        logGroup: backendLogGroup,
+        entry: path.join(
+          __dirname,
+          "../../backend/src/lambdaHandler.ts",
+        ),
+        projectRoot: path.join(
+          __dirname,
+          "../../backend",
+        ),
+        depsLockFilePath: path.join(
+          __dirname,
+          "../../backend/package-lock.json",
+        ),
+        handler: "handler",
+        runtime: lambda.Runtime.NODEJS_24_X,
+        architecture: lambda.Architecture.ARM_64,
+        memorySize: 512,
+        timeout: cdk.Duration.seconds(30),
+        bundling: {
+          bundleAwsSDK: true,
+          sourceMap: true,
+        },
+        environment: {
+          APP_ENVIRONMENT: "dev",
+          AWS_DYNAMODB_REGION: this.region,
+          DYNAMODB_TABLE_NAME: dataTable.tableName,
+          AWS_S3_REGION: this.region,
+          AWS_S3_BUCKET: videoBucket.bucketName,
+          COGNITO_USER_POOL_ID: userPool.userPoolId,
+          COGNITO_CLIENT_ID: userPoolClient.userPoolClientId,
+        },
+      },
+    );
+
+    backendFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+          "dynamodb:ConditionCheckItem",
+          "dynamodb:TransactWriteItems",
+        ],
+        resources: [
+          dataTable.tableArn,
+          `${dataTable.tableArn}/index/*`,
+        ],
+      }),
+    );
+
+    backendFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+        ],
+        resources: [videoBucket.arnForObjects("*")],
+      }),
+    );
 
     const administratorUser = iam.User.fromUserName(
       this,

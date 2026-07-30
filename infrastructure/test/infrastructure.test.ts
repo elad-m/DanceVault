@@ -51,16 +51,34 @@ test('creates a least-privilege role for the local backend', () => {
 
   const roles = template.findResources('AWS::IAM::Role');
 
-  const localBackendRole = Object.values(roles).find(
-    (resource) =>
-      resource.Properties?.RoleName === 'DanceVaultLocalBackendRole',
+  const localBackendRoleEntry = Object.entries(roles).find(
+    ([, resource]) =>
+      resource.Properties?.RoleName ===
+      "DanceVaultLocalBackendRole",
   );
 
-  expect(localBackendRole).toBeDefined();
-  expect(JSON.stringify(localBackendRole)).toContain('dancevault-admin');
+  if (!localBackendRoleEntry) {
+    throw new Error("Local backend role was not found");
+  }
 
-  const policies = template.findResources('AWS::IAM::Policy');
-  const policy = Object.values(policies)[0];
+  const [localBackendRoleLogicalID, localBackendRole] =
+    localBackendRoleEntry;
+
+  expect(JSON.stringify(localBackendRole)).toContain(
+    "dancevault-admin",
+  );
+
+  const policies = template.findResources("AWS::IAM::Policy");
+
+  const policy = Object.values(policies).find((resource) =>
+    JSON.stringify(resource.Properties?.Roles).includes(
+      localBackendRoleLogicalID,
+    ),
+  );
+
+  if (!policy) {
+    throw new Error("Local backend policy was not found");
+  }
   const statements = policy.Properties.PolicyDocument.Statement;
 
   expect(statements).toEqual(expect.arrayContaining([
@@ -218,5 +236,37 @@ test('indexes segments by video and user content by creation time', () => {
         },
       }),
     ]),
+  });
+});
+
+test("creates the development backend Lambda", () => {
+  const app = new cdk.App();
+  const stack = new InfrastructureStack(app, "TestStack");
+  const template = Template.fromStack(stack);
+
+  template.hasResourceProperties("AWS::Lambda::Function", {
+    FunctionName: "DanceVaultDevelopmentBackend",
+    Runtime: "nodejs24.x",
+    Architectures: ["arm64"],
+    Handler: "index.handler",
+    MemorySize: 512,
+    Timeout: 30,
+    Environment: {
+      Variables: Match.objectLike({
+        APP_ENVIRONMENT: "dev",
+        DYNAMODB_TABLE_NAME: {
+          Ref: Match.stringLikeRegexp("DataTable"),
+        },
+        AWS_S3_BUCKET: {
+          Ref: Match.stringLikeRegexp("VideoBucket"),
+        },
+      }),
+    },
+  });
+
+  template.hasResourceProperties("AWS::Logs::LogGroup", {
+    LogGroupName:
+      "/aws/lambda/DanceVaultDevelopmentBackend",
+    RetentionInDays: 7,
   });
 });
