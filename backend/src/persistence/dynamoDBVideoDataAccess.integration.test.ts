@@ -231,6 +231,76 @@ describe("DynamoDB video data access integration", () => {
         });
     });
 
+    it("lists videos across users for the storage audit", async () => {
+        const firstUserID = `integration-user-${randomUUID()}`;
+        const secondUserID = `integration-user-${randomUUID()}`;
+        const firstVideoID = `integration-video-${randomUUID()}`;
+        const secondVideoID = `integration-video-${randomUUID()}`;
+        const videosToDelete = [
+            {
+                userID: firstUserID,
+                videoID: firstVideoID,
+            },
+            {
+                userID: secondUserID,
+                videoID: secondVideoID,
+            },
+        ];
+
+        try {
+            await createVideo(connection, {
+                videoID: firstVideoID,
+                userID: firstUserID,
+                title: "First user's video",
+                storageKey: `users/${firstUserID}/videos/${firstVideoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "first.mp4",
+                status: "ready",
+                createdAt: new Date(
+                    "2026-07-30T10:00:00.000Z"
+                ),
+            });
+            await createVideo(connection, {
+                videoID: secondVideoID,
+                userID: secondUserID,
+                title: "Second user's video",
+                storageKey: `users/${secondUserID}/videos/${secondVideoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "second.mp4",
+                status: "ready",
+                createdAt: new Date(
+                    "2026-07-30T11:00:00.000Z"
+                ),
+            });
+
+            const videos =
+                await videoDataAccess.listAllVideosForStorageAudit();
+
+            expect(
+                videos.map((video) => video.id)
+            ).toEqual(
+                expect.arrayContaining([
+                    firstVideoID,
+                    secondVideoID,
+                ])
+            );
+        } finally {
+            await Promise.all(
+                videosToDelete.map(({ userID, videoID }) =>
+                    connection.documentClient.send(
+                        new DeleteCommand({
+                            TableName: connection.tableName,
+                            Key: createVideoPrimaryKey({
+                                userID,
+                                videoID,
+                            }),
+                        })
+                    )
+                )
+            );
+        }
+    });
+
     it("lists a user's videos chronologically with ownership-scoped cursor pagination", async () => {
         const userID = `integration-user-${randomUUID()}`;
         const otherUserID =

@@ -1,27 +1,4 @@
 services:
-  postgres:
-    image: postgres:17
-    container_name: dancevault-postgres
-    environment:
-      POSTGRES_USER: dancevault
-      POSTGRES_PASSWORD: dancevault
-      POSTGRES_DB: dancevault
-    ports:
-      - "5432:5432"
-    volumes:
-      - dancevault-postgres-data:/var/lib/postgresql/data
-
-  postgres-test:
-    image: postgres:17
-    container_name: dancevault-postgres-test
-    environment:
-      POSTGRES_USER: dancevault
-      POSTGRES_PASSWORD: dancevault
-      POSTGRES_DB: dancevault_test
-    ports:
-      - "5433:5432"
-    volumes:
-      - dancevault-postgres-test-data:/var/lib/postgresql/data
   dynamodb-local:
     image: amazon/dynamodb-local:latest
     container_name: dancevault-dynamodb
@@ -45,7 +22,5 @@ services:
     volumes:
       - dancevault-minio-data:/data
 volumes:
-  dancevault-postgres-data:
-  dancevault-postgres-test-data:
   dancevault-minio-data:
   dancevault-dynamodb-data:

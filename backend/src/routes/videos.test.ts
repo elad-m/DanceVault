@@ -175,6 +175,9 @@ describe("video data access injection", () => {
                 updateVideoStatus: vi.fn(async () => video),
                 getVideoByID: getVideoByIDMock,
                 listVideos: listVideosMock,
+                listAllVideosForStorageAudit: vi.fn(
+                    async () => []
+                ),
                 updateVideoTitle: vi.fn(async () => {
                     throw new Error("Not used by this test");
                 }),
@@ -249,6 +252,9 @@ describe("video data access injection", () => {
                 }),
                 getVideoByID: vi.fn(async () => null),
                 listVideos: vi.fn(async () => []),
+                listAllVideosForStorageAudit: vi.fn(
+                    async () => []
+                ),
                 updateVideoTitle: vi.fn(async () => {
                     throw new Error("Not used by this test");
                 }),

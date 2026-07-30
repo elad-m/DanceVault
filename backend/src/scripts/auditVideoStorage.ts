@@ -1,5 +1,5 @@
 import { auditStorageState } from "../domain/storageAudit";
-import { prisma } from "../db";
+import { createPersistenceProvider } from "../persistence";
 import { createVideoStorageProvider } from "../storage";
 import { runtime } from "../runtime";
 
@@ -10,26 +10,14 @@ const stalePendingUploadMilliseconds =
 async function main() {
     const minioProvider = createVideoStorageProvider("minio");
     const awsProvider = createVideoStorageProvider("awsS3");
+    const persistenceProvider = createPersistenceProvider();
 
     try {
         const minioObjectKeys = await minioProvider.listVideoObjectKeys();
         const awsObjectKeys = await awsProvider.listVideoObjectKeys();
 
-        const videos = await prisma.video.findMany({
-            where: {
-                environment: runtime.environment,
-            },
-            select: {
-                id: true,
-                title: true,
-                storageKey: true,
-                status: true,
-                createdAt: true,
-            },
-            orderBy: {
-                createdAt: "asc",
-            },
-        });
+        const videos =
+            await persistenceProvider.videoDataAccess.listAllVideosForStorageAudit();
 
         const report = auditStorageState({
             videos,
@@ -63,7 +51,7 @@ async function main() {
     } finally {
         minioProvider.close();
         awsProvider.close();
-        await prisma.$disconnect();
+        await persistenceProvider.close();
     }
 }
 

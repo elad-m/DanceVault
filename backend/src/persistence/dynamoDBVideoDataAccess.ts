@@ -5,6 +5,7 @@ import {
     GetCommand,
     PutCommand,
     QueryCommand,
+    ScanCommand,
     UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBConnection } from "./dynamoDBConnection";
@@ -460,6 +461,46 @@ export function createDynamoDBVideoDataAccess(
             } while (cursor);
 
             return videos;
+        },
+
+        async listAllVideosForStorageAudit() {
+            const videos: VideoDataAccessItem[] = [];
+            let exclusiveStartKey:
+                | Record<string, unknown>
+                | undefined;
+
+            do {
+                const result =
+                    await connection.documentClient.send(
+                        new ScanCommand({
+                            TableName: connection.tableName,
+                            FilterExpression:
+                                "#entityType = :videoEntityType",
+                            ExpressionAttributeNames: {
+                                "#entityType": "entityType",
+                            },
+                            ExpressionAttributeValues: {
+                                ":videoEntityType": "video",
+                            },
+                            ExclusiveStartKey:
+                                exclusiveStartKey,
+                        })
+                    );
+
+                videos.push(
+                    ...(result.Items ?? []).map(
+                        requireSupportedDynamoDBVideoItem
+                    ).map(toVideoDataAccessItem)
+                );
+                exclusiveStartKey =
+                    result.LastEvaluatedKey;
+            } while (exclusiveStartKey);
+
+            return videos.sort(
+                (left, right) =>
+                    left.createdAt.getTime() -
+                    right.createdAt.getTime()
+            );
         },
 
         async updateVideoTitle(input) {

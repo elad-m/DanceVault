@@ -7,7 +7,6 @@
     "aws:login": "aws login --profile dancevault-admin",
     "build": "tsc --noEmit",
     "db:local:init": "cross-env DYNAMODB_ENDPOINT=http://127.0.0.1:8000 AWS_DYNAMODB_REGION=us-east-1 DYNAMODB_TABLE_NAME=DanceVaultLocalData tsx src/scripts/initializeLocalDynamoDB.ts",
-    "db:seed": "tsx prisma/seed.ts",
     "db:test:init": "cross-env DYNAMODB_ENDPOINT=http://127.0.0.1:8000 AWS_DYNAMODB_REGION=us-east-1 DYNAMODB_TABLE_NAME=DanceVaultTestData tsx src/scripts/initializeLocalDynamoDB.ts",
     "dev": "cross-env APP_ENVIRONMENT=dev tsx src/index.ts",
     "local": "cross-env APP_ENVIRONMENT=local DYNAMODB_ENDPOINT=http://127.0.0.1:8000 AWS_DYNAMODB_REGION=us-east-1 DYNAMODB_TABLE_NAME=DanceVaultLocalData tsx src/index.ts",
@@ -22,7 +21,6 @@
     "@types/node": "^25.9.3",
     "@types/uuid": "^10.0.0",
     "cross-env": "^10.1.0",
-    "prisma": "^7.8.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
@@ -32,12 +30,9 @@
     "@aws-sdk/client-s3": "^3.1076.0",
     "@aws-sdk/lib-dynamodb": "^3.1090.0",
     "@aws-sdk/s3-request-presigner": "^3.1076.0",
-    "@prisma/adapter-pg": "^7.8.0",
-    "@prisma/client": "^7.8.0",
     "aws-jwt-verify": "^5.2.1",
     "dotenv": "^17.4.2",
     "fastify": "^5.8.5",
-    "pg": "^8.22.0",
     "uuid": "^14.0.0"
   }
 }

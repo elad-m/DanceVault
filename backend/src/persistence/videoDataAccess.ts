@@ -72,6 +72,11 @@ export type VideoDataAccess = {
         input: ListVideosInput
     ): Promise<VideoDataAccessItem[]>;
 
+    // Operational full-table scan; never use this in a request handler.
+    listAllVideosForStorageAudit(): Promise<
+        VideoDataAccessItem[]
+    >;
+
     updateVideoTitle(
         input: UpdateVideoTitleDataAccessInput
     ): Promise<VideoDataAccessItem>;
