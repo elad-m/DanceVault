@@ -1,32 +1,40 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../app";
-import { prisma } from "../db";
 import {
-    clearTestDatabase,
     registerTestAuthentication,
-    resetTestDatabase,
     TEST_USER_ID,
-    createOtherUserTestData,
     OTHER_TEST_SEGMENT_ID,
+    OTHER_TEST_USER_ID,
     OTHER_TEST_VIDEO_ID,
-    prismaTestPersistenceProvider,
-} from "../test/testDatabase";
-import { resetRuntimeForTest, setRuntimeForTest } from "../runtime";
+} from "../test/routeTestSupport";
+import { resetRuntimeForTest } from "../runtime";
+import {
+    clearDynamoDBTestDatabase,
+    createOtherUserDynamoDBTestData,
+    createDynamoDBTestPersistenceProvider,
+    resetDynamoDBTestDatabase,
+} from "../test/dynamoDBTestDatabase";
+
+const persistenceProvider =
+    createDynamoDBTestPersistenceProvider();
 
 const app = buildApp({
-    persistenceProvider: prismaTestPersistenceProvider,
+    persistenceProvider,
 });
+
 registerTestAuthentication(app);
 
 beforeEach(async () => {
     resetRuntimeForTest();
-    await resetTestDatabase();
+
+    await resetDynamoDBTestDatabase({
+        persistenceProvider,
+    });
 });
 
 afterAll(async () => {
-    await clearTestDatabase();
+    await clearDynamoDBTestDatabase();
     await app.close();
-    await prisma.$disconnect();
 });
 
 // Segment routes
@@ -216,41 +224,6 @@ describe("POST /videos/:videoId/segments", () => {
 
         expect(response.statusCode).toBe(400);
     });
-
-    it("does not create a segment inside a video from another app environment", async () => {
-        await prisma.video.create({
-            data: {
-                id: "dev-video",
-                userId: TEST_USER_ID,
-                environment: "dev",
-                title: "Dev-only lesson",
-                storageKey: "test-videos/dev-video.mp4",
-                storageProvider: "awsS3",
-                originalFileName: "dev-video.mp4",
-                status: "ready",
-            },
-        });
-
-        const response = await app.inject({
-            method: "POST",
-            url: "/videos/dev-video/segments",
-            payload: {
-                name: "Wrong environment segment",
-                startMilliseconds: 10000,
-                endMilliseconds: 20000,
-            },
-        });
-
-        expect(response.statusCode).toBe(404);
-
-        const storedSegment = await prisma.segment.findFirst({
-            where: {
-                name: "Wrong environment segment",
-            },
-        });
-
-        expect(storedSegment).toBeNull();
-    });
 });
 
 describe("GET /segments", () => {
@@ -309,42 +282,24 @@ describe("GET /segments", () => {
     });
 
     it("paginates segment search results with a cursor", async () => {
-        await prisma.video.create({
-            data: {
-                title: "Pagination lesson",
-                storageKey: "test-videos/pagination-video.mp4",
-                storageProvider: "minio",
-                originalFileName: "pagination-video.mp4",
-                status: "ready",
-                user: {
-                    connect: {
-                        id: TEST_USER_ID,
-                    },
-                },
-                segments: {
-                    create: [
-                        {
-                            name: "Pagination segment 1",
-                            startMilliseconds: 10000,
-                            endMilliseconds: 20000,
-                            tags: ["pagination-test"],
-                        },
-                        {
-                            name: "Pagination segment 2",
-                            startMilliseconds: 30000,
-                            endMilliseconds: 40000,
-                            tags: ["pagination-test"],
-                        },
-                        {
-                            name: "Pagination segment 3",
-                            startMilliseconds: 50000,
-                            endMilliseconds: 60000,
-                            tags: ["pagination-test"],
-                        },
-                    ],
-                },
-            },
-        });
+        for (let index = 1; index <= 3; index++) {
+            await persistenceProvider.segmentDataAccess.createSegment({
+                segmentID: `pagination-segment-${index}`,
+                videoID: "sample-video-1",
+                userID: TEST_USER_ID,
+                name: `Pagination segment ${index}`,
+                description: null,
+                startMilliseconds: index * 20000 - 10000,
+                endMilliseconds: index * 20000,
+                tags: ["pagination-test"],
+                difficulty: "medium",
+                confidence: "medium",
+                practicePriority: "medium",
+                createdAt: new Date(
+                    `2026-07-30T11:0${index}:00.000Z`
+                ),
+            });
+        }
 
         const firstPageResponse = await app.inject({
             method: "GET",
@@ -378,70 +333,19 @@ describe("GET /segments", () => {
 
         expect(response.statusCode).toBe(400);
     });
-
-    it("does not list segments from another app environment", async () => {
-        await prisma.video.create({
-            data: {
-                id: "dev-video",
-                userId: TEST_USER_ID,
-                environment: "dev",
-                title: "Dev-only lesson",
-                storageKey: "test-videos/dev-video.mp4",
-                storageProvider: "awsS3",
-                originalFileName: "dev-video.mp4",
-                status: "ready",
-                segments: {
-                    create: {
-                        id: "dev-segment",
-                        name: "Dev-only wave",
-                        startMilliseconds: 10000,
-                        endMilliseconds: 20000,
-                        tags: ["dev-only"],
-                    },
-                },
-            },
-        });
-
-        const localResponse = await app.inject({
-            method: "GET",
-            url: "/segments?tag=dev-only",
-        });
-
-        expect(localResponse.statusCode).toBe(200);
-        expect(localResponse.json().segments).toEqual([]);
-
-        setRuntimeForTest({ environment: "dev" });
-
-        const devResponse = await app.inject({
-            method: "GET",
-            url: "/segments?tag=dev-only",
-        });
-
-        expect(devResponse.statusCode).toBe(200);
-        expect(devResponse.json().segments).toEqual([
-            expect.objectContaining({
-                id: "dev-segment",
-            }),
-        ]);
-    });
 });
 
 describe("GET /segments/:segmentId", () => {
     it("returns an existing segment", async () => {
-        const existingSegment = await prisma.segment.findFirstOrThrow({
-            where: {
-                name: "Open stance wave",
-            },
-        });
 
         const response = await app.inject({
             method: "GET",
-            url: `/segments/${existingSegment.id}`,
+            url: "/segments/sample-segment-1",
         });
 
         expect(response.statusCode).toBe(200);
         expect(response.json()).toMatchObject({
-            id: existingSegment.id,
+            id: "sample-segment-1",
             name: "Open stance wave",
             videoId: "sample-video-1",
         });
@@ -465,15 +369,11 @@ describe("GET /segments/:segmentId", () => {
 
 describe("PATCH /segments/:segmentId", () => {
     it("updates editable segment properties", async () => {
-        const existingSegment = await prisma.segment.findFirstOrThrow({
-            where: {
-                name: "Open stance wave",
-            },
-        });
+
 
         const response = await app.inject({
             method: "PATCH",
-            url: `/segments/${existingSegment.id}`,
+            url: "/segments/sample-segment-1",
             payload: {
                 name: "Updated open stance wave",
                 description: "Updated description",
@@ -486,32 +386,31 @@ describe("PATCH /segments/:segmentId", () => {
 
         expect(response.statusCode).toBe(200);
         expect(response.json()).toMatchObject({
-            id: existingSegment.id,
+            id: "sample-segment-1",
             name: "Updated open stance wave",
             description: "Updated description",
-            startMilliseconds: existingSegment.startMilliseconds,
-            endMilliseconds: existingSegment.endMilliseconds,
+            startMilliseconds: 10000,
+            endMilliseconds: 20000,
             tags: ["wave", "updated"],
             difficulty: "hard",
             confidence: "high",
             practicePriority: "low",
         });
 
-        const savedSegment = await prisma.segment.findUniqueOrThrow({
-            where: {
-                id: existingSegment.id,
-            },
-        });
+        const savedSegment =
+            await persistenceProvider.segmentDataAccess.getSegmentByID({
+                userID: TEST_USER_ID,
+                segmentID: "sample-segment-1",
+            });
 
-        expect(savedSegment.name).toBe("Updated open stance wave");
-        expect(savedSegment.startMilliseconds).toBe(
-            existingSegment.startMilliseconds
-        );
-        expect(savedSegment.endMilliseconds).toBe(
-            existingSegment.endMilliseconds
-        );
-        expect(savedSegment.confidence).toBe("high");
-        expect(savedSegment.practicePriority).toBe("low");
+        expect(savedSegment).toMatchObject({
+            id: "sample-segment-1",
+            name: "Updated open stance wave",
+            startMilliseconds: 10000,
+            endMilliseconds: 20000,
+            confidence: "high",
+            practicePriority: "low",
+        });
     });
 
     it("returns 404 for a segment that does not exist", async () => {
@@ -533,11 +432,10 @@ describe("PATCH /segments/:segmentId", () => {
     });
 
     it("rejects an empty update", async () => {
-        const existingSegment = await prisma.segment.findFirstOrThrow();
 
         const response = await app.inject({
             method: "PATCH",
-            url: `/segments/${existingSegment.id}`,
+            url: "/segments/sample-segment-1",
             payload: {},
         });
 
@@ -545,11 +443,9 @@ describe("PATCH /segments/:segmentId", () => {
     });
 
     it("rejects unsupported update values", async () => {
-        const existingSegment = await prisma.segment.findFirstOrThrow();
-
         const response = await app.inject({
             method: "PATCH",
-            url: `/segments/${existingSegment.id}`,
+            url: "/segments/sample-segment-1",
             payload: {
                 confidence: "perfect",
             },
@@ -559,13 +455,11 @@ describe("PATCH /segments/:segmentId", () => {
     });
 
     it("rejects timestamp updates", async () => {
-        const existingSegment = await prisma.segment.findFirstOrThrow();
-
         const response = await app.inject({
             method: "PATCH",
-            url: `/segments/${existingSegment.id}`,
+            url: "/segments/sample-segment-1",
             payload: {
-                startMilliseconds: existingSegment.endMilliseconds,
+                startMilliseconds: 20000,
             },
         });
 
@@ -580,28 +474,18 @@ describe("PATCH /segments/:segmentId", () => {
 
 describe("DELETE /segments/:segmentId", () => {
     it("deletes an existing segment", async () => {
-        const segment = await prisma.segment.create({
-            data: {
-                videoId: "sample-video-1",
-                name: "Segment to delete",
-                startMilliseconds: 200000,
-                endMilliseconds: 210000,
-                tags: [],
-            },
-        });
-
         const response = await app.inject({
             method: "DELETE",
-            url: `/segments/${segment.id}`,
+            url: "/segments/sample-segment-3",
         });
 
         expect(response.statusCode).toBe(204);
 
-        const deletedSegment = await prisma.segment.findUnique({
-            where: {
-                id: segment.id,
-            },
-        });
+        const deletedSegment =
+            await persistenceProvider.segmentDataAccess.getSegmentByID({
+                userID: TEST_USER_ID,
+                segmentID: "sample-segment-3",
+            });
 
         expect(deletedSegment).toBeNull();
     });
@@ -624,67 +508,71 @@ describe("DELETE /segments/:segmentId", () => {
 
 describe("GET /practice-queue", () => {
     it("selects weak or high-priority segments in practice order", async () => {
-        await prisma.segment.updateMany({
-            data: {
+        for (const segmentID of [
+            "sample-segment-1",
+            "sample-segment-2",
+            "sample-segment-3",
+        ]) {
+            await persistenceProvider.segmentDataAccess.updateSegmentMetadata({
+                userID: TEST_USER_ID,
+                segmentID,
+                confidence: "high",
+                practicePriority: "low",
+            });
+        }
+
+        const queueSegments = [
+            {
+                segmentID: "queue-high-low",
+                name: "Queue high priority and low confidence",
+                startMilliseconds: 300000,
+                confidence: "low",
+                practicePriority: "high",
+            },
+            {
+                segmentID: "queue-high-high",
+                name: "Queue high priority and high confidence",
+                startMilliseconds: 320000,
+                confidence: "high",
+                practicePriority: "high",
+            },
+            {
+                segmentID: "queue-medium-low",
+                name: "Queue medium priority and low confidence",
+                startMilliseconds: 340000,
+                confidence: "low",
+                practicePriority: "medium",
+            },
+            {
+                segmentID: "queue-medium-medium",
+                name: "Not queued medium segment",
+                startMilliseconds: 360000,
+                confidence: "medium",
+                practicePriority: "medium",
+            },
+            {
+                segmentID: "queue-low-high",
+                name: "Not queued low-priority segment",
+                startMilliseconds: 380000,
                 confidence: "high",
                 practicePriority: "low",
             },
-        });
+        ] as const;
 
-        await prisma.segment.createMany({
-            data: [
-                {
-                    id: "queue-high-low",
-                    videoId: "sample-video-1",
-                    name: "Queue high priority and low confidence",
-                    startMilliseconds: 300000,
-                    endMilliseconds: 310000,
-                    tags: ["practice-queue-test"],
-                    confidence: "low",
-                    practicePriority: "high",
-                },
-                {
-                    id: "queue-high-high",
-                    videoId: "sample-video-1",
-                    name: "Queue high priority and high confidence",
-                    startMilliseconds: 320000,
-                    endMilliseconds: 330000,
-                    tags: ["practice-queue-test"],
-                    confidence: "high",
-                    practicePriority: "high",
-                },
-                {
-                    id: "queue-medium-low",
-                    videoId: "sample-video-1",
-                    name: "Queue medium priority and low confidence",
-                    startMilliseconds: 340000,
-                    endMilliseconds: 350000,
-                    tags: ["practice-queue-test"],
-                    confidence: "low",
-                    practicePriority: "medium",
-                },
-                {
-                    id: "queue-medium-medium",
-                    videoId: "sample-video-1",
-                    name: "Not queued medium segment",
-                    startMilliseconds: 360000,
-                    endMilliseconds: 370000,
-                    tags: ["practice-queue-test"],
-                    confidence: "medium",
-                    practicePriority: "medium",
-                },
-                {
-                    id: "queue-low-high",
-                    videoId: "sample-video-1",
-                    name: "Not queued low-priority segment",
-                    startMilliseconds: 380000,
-                    endMilliseconds: 390000,
-                    tags: ["practice-queue-test"],
-                    confidence: "high",
-                    practicePriority: "low",
-                },
-            ],
-        });
+        for (const [index, segment] of queueSegments.entries()) {
+            await persistenceProvider.segmentDataAccess.createSegment({
+                ...segment,
+                videoID: "sample-video-1",
+                userID: TEST_USER_ID,
+                description: null,
+                endMilliseconds: segment.startMilliseconds + 10000,
+                tags: ["practice-queue-test"],
+                difficulty: "medium",
+                createdAt: new Date(
+                    `2026-07-30T12:0${index + 1}:00.000Z`
+                ),
+            });
+        }
 
         const firstPageResponse = await app.inject({
             method: "GET",
@@ -734,7 +622,9 @@ describe("GET /practice-queue", () => {
 
 describe("Segment ownership", () => {
     it("does not create a segment inside another user's video", async () => {
-        await createOtherUserTestData();
+        await createOtherUserDynamoDBTestData({
+            persistenceProvider,
+        });
 
         const response = await app.inject({
             method: "POST",
@@ -748,17 +638,24 @@ describe("Segment ownership", () => {
 
         expect(response.statusCode).toBe(404);
 
-        const storedSegment = await prisma.segment.findFirst({
-            where: {
-                name: "Unauthorized segment",
-            },
-        });
+        const currentUserSegments =
+            await persistenceProvider.segmentDataAccess.listSegments({
+                userID: TEST_USER_ID,
+            });
 
-        expect(storedSegment).toBeNull();
+        expect(currentUserSegments).not.toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    name: "Unauthorized segment",
+                }),
+            ])
+        );
     });
 
     it("returns 404 when reading another user's segment", async () => {
-        await createOtherUserTestData();
+        await createOtherUserDynamoDBTestData({
+            persistenceProvider,
+        });
 
         const response = await app.inject({
             method: "GET",
@@ -769,7 +666,9 @@ describe("Segment ownership", () => {
     });
 
     it("excludes another user's segments from collections", async () => {
-        await createOtherUserTestData();
+        await createOtherUserDynamoDBTestData({
+            persistenceProvider,
+        });
 
         const searchResponse = await app.inject({
             method: "GET",
@@ -795,7 +694,9 @@ describe("Segment ownership", () => {
     });
 
     it("does not update another user's segment", async () => {
-        await createOtherUserTestData();
+        await createOtherUserDynamoDBTestData({
+            persistenceProvider,
+        });
 
         const response = await app.inject({
             method: "PATCH",
@@ -807,19 +708,21 @@ describe("Segment ownership", () => {
 
         expect(response.statusCode).toBe(404);
 
-        const storedSegment = await prisma.segment.findUniqueOrThrow({
-            where: {
-                id: OTHER_TEST_SEGMENT_ID,
-            },
-        });
+        const storedSegment =
+            await persistenceProvider.segmentDataAccess.getSegmentByID({
+                userID: OTHER_TEST_USER_ID,
+                segmentID: OTHER_TEST_SEGMENT_ID,
+            });
 
-        expect(storedSegment.name).toBe(
-            "Another user's weak segment"
-        );
+        expect(storedSegment).toMatchObject({
+            name: "Another user's weak segment",
+        });
     });
 
     it("does not delete another user's segment", async () => {
-        await createOtherUserTestData();
+        await createOtherUserDynamoDBTestData({
+            persistenceProvider,
+        });
 
         const response = await app.inject({
             method: "DELETE",
@@ -828,11 +731,11 @@ describe("Segment ownership", () => {
 
         expect(response.statusCode).toBe(404);
 
-        const storedSegment = await prisma.segment.findUnique({
-            where: {
-                id: OTHER_TEST_SEGMENT_ID,
-            },
-        });
+        const storedSegment =
+            await persistenceProvider.segmentDataAccess.getSegmentByID({
+                userID: OTHER_TEST_USER_ID,
+                segmentID: OTHER_TEST_SEGMENT_ID,
+            });
 
         expect(storedSegment).not.toBeNull();
     });

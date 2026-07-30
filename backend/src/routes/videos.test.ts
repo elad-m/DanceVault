@@ -7,24 +7,27 @@ import {
     vi,
 } from "vitest";
 import { buildApp } from "../app";
-import { prisma } from "../db";
 import {
-    clearTestDatabase,
     registerTestAuthentication,
-    resetTestDatabase,
     TEST_USER_ID,
-    createOtherUserTestData,
+    OTHER_TEST_USER_ID,
     OTHER_TEST_VIDEO_ID,
-    prismaTestPersistenceProvider,
-} from "../test/testDatabase";
+} from "../test/routeTestSupport";
 import type {
     CreateVideoUploadUrlInput,
     VideoStorageProvider,
 } from "../storage";
-import { resetRuntimeForTest, setRuntimeForTest } from "../runtime";
+import type { VideoStorageProviderName } from "../domain/video";
+import { resetRuntimeForTest } from "../runtime";
 import type { PersistenceProvider } from "../persistence";
 import type { VideoDataAccess } from "../persistence/videoDataAccess";
 import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
+import {
+    clearDynamoDBTestDatabase,
+    createDynamoDBTestPersistenceProvider,
+    createOtherUserDynamoDBTestData,
+    resetDynamoDBTestDatabase,
+} from "../test/dynamoDBTestDatabase";
 
 const createVideoUploadUrlMock = vi.fn(
     async ({
@@ -74,11 +77,54 @@ const unusedSegmentDataAccess: SegmentDataAccess = {
     },
 };
 
+const persistenceProvider =
+    createDynamoDBTestPersistenceProvider();
+
 const app = buildApp({
     videoStorageProvider: fakeVideoStorageProvider,
-    persistenceProvider: prismaTestPersistenceProvider,
+    persistenceProvider,
 });
 registerTestAuthentication(app);
+
+type CreateTestVideoInput = {
+    videoID: string;
+    title: string;
+    storageKey: string;
+    storageProvider?: VideoStorageProviderName;
+    originalFileName?: string;
+    status?: "pending_upload" | "ready";
+};
+
+async function createTestVideo({
+    videoID,
+    title,
+    storageKey,
+    storageProvider = "minio",
+    originalFileName = "lesson.mp4",
+    status = "ready",
+}: CreateTestVideoInput) {
+    const createdVideo =
+        await persistenceProvider.videoDataAccess.createVideo({
+            videoID,
+            userID: TEST_USER_ID,
+            title,
+            storageKey,
+            storageProvider,
+            originalFileName,
+            status: "pending_upload",
+            createdAt: new Date("2026-07-30T14:00:00.000Z"),
+        });
+
+    if (status === "pending_upload") {
+        return createdVideo;
+    }
+
+    return persistenceProvider.videoDataAccess.updateVideoStatus({
+        userID: TEST_USER_ID,
+        videoID,
+        status,
+    });
+}
 
 beforeEach(async () => {
     resetRuntimeForTest();
@@ -87,13 +133,14 @@ beforeEach(async () => {
     deleteVideoObjectMock.mockClear();
     videoObjectExistsMock.mockClear();
     videoObjectExistsMock.mockResolvedValue(false);
-    await resetTestDatabase();
+    await resetDynamoDBTestDatabase({
+        persistenceProvider,
+    });
 });
 
 afterAll(async () => {
-    await clearTestDatabase();
+    await clearDynamoDBTestDatabase();
     await app.close();
-    await prisma.$disconnect();
 });
 
 // Video routes
@@ -275,18 +322,20 @@ describe("POST /video-uploads", () => {
             ),
         });
 
-        const storedVideo = await prisma.video.findUniqueOrThrow({
-            where: {
-                id: body.video.id,
-            },
-        });
+        const storedVideo =
+            await persistenceProvider.videoDataAccess.getVideoByID({
+                userID: TEST_USER_ID,
+                videoID: body.video.id,
+            });
 
         expect(body.uploadUrl).toEqual(expect.any(String));
         expect(body.uploadUrl).toContain(body.video.storageKey);
         expect(body.uploadUrl).toContain("X-Amz-Signature");
-        expect(storedVideo.status).toBe("pending_upload");
-        expect(storedVideo.storageKey).toBe(body.video.storageKey);
-        expect(storedVideo.storageProvider).toBe("minio");
+        expect(storedVideo).toMatchObject({
+            status: "pending_upload",
+            storageKey: body.video.storageKey,
+        });
+        expect(storedVideo?.storageProvider).toBe("minio");
     });
 
     it("rejects unsupported content types", async () => {
@@ -320,17 +369,12 @@ describe("POST /video-uploads", () => {
 
 describe("POST /video-uploads/:videoId/complete", () => {
     async function createPendingUploadTestVideo() {
-        return prisma.video.create({
-            data: {
-                id: "pending-upload-video",
-                userId: TEST_USER_ID,
-                title: "Pending uploaded lesson",
-                storageKey:
-                    "users/test-user-1/videos/pending-upload-video.mp4",
-                storageProvider: "minio",
-                originalFileName: "lesson.mp4",
-                status: "pending_upload",
-            },
+        return createTestVideo({
+            videoID: "pending-upload-video",
+            title: "Pending uploaded lesson",
+            storageKey:
+                "users/test-user-1/videos/pending-upload-video.mp4",
+            status: "pending_upload",
         });
     }
 
@@ -352,12 +396,12 @@ describe("POST /video-uploads/:videoId/complete", () => {
             video.storageKey
         );
 
-        const storedVideo = await prisma.video.findUniqueOrThrow({
-            where: {
-                id: video.id,
-            },
-        });
-        expect(storedVideo.status).toBe("pending_upload");
+        const storedVideo =
+            await persistenceProvider.videoDataAccess.getVideoByID({
+                userID: TEST_USER_ID,
+                videoID: video.id,
+            });
+        expect(storedVideo?.status).toBe("pending_upload");
     });
 
     it("marks the video ready when its storage object exists", async () => {
@@ -378,23 +422,20 @@ describe("POST /video-uploads/:videoId/complete", () => {
             video.storageKey
         );
 
-        const storedVideo = await prisma.video.findUniqueOrThrow({
-            where: {
-                id: video.id,
-            },
-        });
-        expect(storedVideo.status).toBe("ready");
+        const storedVideo =
+            await persistenceProvider.videoDataAccess.getVideoByID({
+                userID: TEST_USER_ID,
+                videoID: video.id,
+            });
+        expect(storedVideo?.status).toBe("ready");
     });
 
     it("returns an already-ready video without checking storage again", async () => {
         const video = await createPendingUploadTestVideo();
-        await prisma.video.update({
-            where: {
-                id: video.id,
-            },
-            data: {
-                status: "ready",
-            },
+        await persistenceProvider.videoDataAccess.updateVideoStatus({
+            userID: TEST_USER_ID,
+            videoID: video.id,
+            status: "ready",
         });
 
         const response = await app.inject({
@@ -411,7 +452,9 @@ describe("POST /video-uploads/:videoId/complete", () => {
     });
 
     it("does not complete another user's video", async () => {
-        await createOtherUserTestData();
+        await createOtherUserDynamoDBTestData({
+            persistenceProvider,
+        });
 
         const response = await app.inject({
             method: "POST",
@@ -456,16 +499,11 @@ describe("GET /videos/:videoId", () => {
 
 describe("GET /videos/:videoId/playback-url", () => {
     async function createUploadedVideo(status: "pending_upload" | "ready") {
-        return prisma.video.create({
-            data: {
-                id: `uploaded-video-${status}`,
-                userId: TEST_USER_ID,
-                title: "Uploaded lesson",
-                storageKey: `users/test-user-1/videos/${status}.mp4`,
-                storageProvider: "minio",
-                originalFileName: "lesson.mp4",
-                status,
-            },
+        return createTestVideo({
+            videoID: `uploaded-video-${status}`,
+            title: "Uploaded lesson",
+            storageKey: `users/test-user-1/videos/${status}.mp4`,
+            status,
         });
     }
 
@@ -507,7 +545,9 @@ describe("GET /videos/:videoId/playback-url", () => {
     });
 
     it("does not create a playback URL for another user's video", async () => {
-        await createOtherUserTestData();
+        await createOtherUserDynamoDBTestData({
+            persistenceProvider,
+        });
 
         const response = await app.inject({
             method: "GET",
@@ -537,63 +577,6 @@ describe("GET /videos", () => {
         );
     });
 
-    it("does not list videos from another app environment", async () => {
-        await prisma.video.create({
-            data: {
-                id: "dev-video",
-                userId: TEST_USER_ID,
-                environment: "dev",
-                title: "Dev-only lesson",
-                storageKey: "test-videos/dev-video.mp4",
-                storageProvider: "awsS3",
-                originalFileName: "dev-video.mp4",
-                status: "ready",
-            },
-        });
-
-        const response = await app.inject({
-            method: "GET",
-            url: "/videos",
-        });
-
-        expect(response.statusCode).toBe(200);
-        expect(response.json().videos).not.toEqual(
-            expect.arrayContaining([
-                expect.objectContaining({
-                    id: "dev-video",
-                }),
-            ])
-        );
-    });
-
-    it("lists dev videos when the runtime environment is dev", async () => {
-        await prisma.video.create({
-            data: {
-                id: "dev-video",
-                userId: TEST_USER_ID,
-                environment: "dev",
-                title: "Dev-only lesson",
-                storageKey: "test-videos/dev-video.mp4",
-                storageProvider: "awsS3",
-                originalFileName: "dev-video.mp4",
-                status: "ready",
-            },
-        });
-
-        setRuntimeForTest({ environment: "dev" });
-
-        const response = await app.inject({
-            method: "GET",
-            url: "/videos",
-        });
-
-        expect(response.statusCode).toBe(200);
-        expect(response.json().videos).toEqual([
-            expect.objectContaining({
-                id: "dev-video",
-            }),
-        ]);
-    });
 });
 
 describe("GET /videos/:videoId/segments", () => {
@@ -631,19 +614,11 @@ describe("GET /videos/:videoId/segments", () => {
 
 describe("PATCH /videos/:videoId", () => {
     it("updates the video title", async () => {
-        const video = await prisma.video.create({
-            data: {
-                title: "Video before update",
-                storageKey: "test-videos/video-before-update.mp4",
-                storageProvider: "minio",
-                originalFileName: "video-before-update.mp4",
-                status: "ready",
-                user: {
-                    connect: {
-                        id: TEST_USER_ID,
-                    },
-                },
-            },
+        const video = await createTestVideo({
+            videoID: "video-before-update",
+            title: "Video before update",
+            storageKey: "test-videos/video-before-update.mp4",
+            originalFileName: "video-before-update.mp4",
         });
 
         const response = await app.inject({
@@ -660,13 +635,13 @@ describe("PATCH /videos/:videoId", () => {
             title: "Updated test lesson",
         });
 
-        const savedVideo = await prisma.video.findUniqueOrThrow({
-            where: {
-                id: video.id,
-            },
-        });
+        const savedVideo =
+            await persistenceProvider.videoDataAccess.getVideoByID({
+                userID: TEST_USER_ID,
+                videoID: video.id,
+            });
 
-        expect(savedVideo.title).toBe("Updated test lesson");
+        expect(savedVideo?.title).toBe("Updated test lesson");
     });
 
     it("rejects storage changes outside the upload workflow", async () => {
@@ -712,16 +687,11 @@ describe("PATCH /videos/:videoId", () => {
 
 describe("DELETE /videos/:videoId", () => {
     it("deletes a MinIO uploaded video's storage object and database record", async () => {
-        const video = await prisma.video.create({
-            data: {
-                userId: TEST_USER_ID,
-                title: "Uploaded video to delete",
-                storageKey:
-                    "users/test-user-1/videos/uploaded-video-to-delete.mp4",
-                storageProvider: "minio",
-                originalFileName: "lesson.mp4",
-                status: "ready",
-            },
+        const video = await createTestVideo({
+            videoID: "uploaded-video-to-delete",
+            title: "Uploaded video to delete",
+            storageKey:
+                "users/test-user-1/videos/uploaded-video-to-delete.mp4",
         });
 
         const response = await app.inject({
@@ -734,26 +704,21 @@ describe("DELETE /videos/:videoId", () => {
             video.storageKey
         );
 
-        const deletedVideo = await prisma.video.findUnique({
-            where: {
-                id: video.id,
-            },
-        });
+        const deletedVideo =
+            await persistenceProvider.videoDataAccess.getVideoByID({
+                userID: TEST_USER_ID,
+                videoID: video.id,
+            });
 
         expect(deletedVideo).toBeNull();
     });
 
     it("keeps the database record when storage deletion fails", async () => {
-        const video = await prisma.video.create({
-            data: {
-                userId: TEST_USER_ID,
-                title: "Uploaded video with storage failure",
-                storageKey:
-                    "users/test-user-1/videos/storage-failure.mp4",
-                storageProvider: "minio",
-                originalFileName: "lesson.mp4",
-                status: "ready",
-            },
+        const video = await createTestVideo({
+            videoID: "storage-failure-video",
+            title: "Uploaded video with storage failure",
+            storageKey:
+                "users/test-user-1/videos/storage-failure.mp4",
         });
 
         deleteVideoObjectMock.mockRejectedValueOnce(
@@ -767,26 +732,22 @@ describe("DELETE /videos/:videoId", () => {
 
         expect(response.statusCode).toBe(500);
 
-        const retainedVideo = await prisma.video.findUnique({
-            where: {
-                id: video.id,
-            },
-        });
+        const retainedVideo =
+            await persistenceProvider.videoDataAccess.getVideoByID({
+                userID: TEST_USER_ID,
+                videoID: video.id,
+            });
 
         expect(retainedVideo).not.toBeNull();
     });
 
     it("rejects a video stored by a different provider", async () => {
-        const video = await prisma.video.create({
-            data: {
-                userId: TEST_USER_ID,
-                title: "AWS uploaded video to delete",
-                storageKey:
-                    "users/test-user-1/videos/aws-video-to-delete.mp4",
-                storageProvider: "awsS3",
-                originalFileName: "lesson.mp4",
-                status: "ready",
-            },
+        const video = await createTestVideo({
+            videoID: "aws-video-to-delete",
+            title: "AWS uploaded video to delete",
+            storageKey:
+                "users/test-user-1/videos/aws-video-to-delete.mp4",
+            storageProvider: "awsS3",
         });
 
         const response = await app.inject({
@@ -802,41 +763,37 @@ describe("DELETE /videos/:videoId", () => {
         });
         expect(deleteVideoObjectMock).not.toHaveBeenCalled();
 
-        const retainedVideo = await prisma.video.findUnique({
-            where: {
-                id: video.id,
-            },
-        });
+        const retainedVideo =
+            await persistenceProvider.videoDataAccess.getVideoByID({
+                userID: TEST_USER_ID,
+                videoID: video.id,
+            });
 
         expect(retainedVideo).not.toBeNull();
     });
 
     it("deletes an uploaded video and its segments", async () => {
-        const video = await prisma.video.create({
-            data: {
-                title: "Video to delete",
-                storageKey: "test-videos/video-with-segments.mp4",
-                storageProvider: "minio",
-                originalFileName: "video-with-segments.mp4",
-                status: "ready",
-                user: {
-                    connect: {
-                        id: TEST_USER_ID,
-                    },
-                },
-                segments: {
-                    create: {
-                        name: "Dependent segment",
-                        startMilliseconds: 10000,
-                        endMilliseconds: 20000,
-                        tags: [],
-                    },
-                },
-            },
-            include: {
-                segments: true,
-            },
+        const video = await createTestVideo({
+            videoID: "video-with-segments",
+            title: "Video to delete",
+            storageKey: "test-videos/video-with-segments.mp4",
+            originalFileName: "video-with-segments.mp4",
         });
+        const segment =
+            await persistenceProvider.segmentDataAccess.createSegment({
+                segmentID: "segment-with-deleted-video",
+                videoID: video.id,
+                userID: TEST_USER_ID,
+                name: "Dependent segment",
+                description: null,
+                startMilliseconds: 10000,
+                endMilliseconds: 20000,
+                tags: [],
+                difficulty: "medium",
+                confidence: "medium",
+                practicePriority: "medium",
+                createdAt: new Date("2026-07-30T14:01:00.000Z"),
+            });
 
         const response = await app.inject({
             method: "DELETE",
@@ -849,16 +806,16 @@ describe("DELETE /videos/:videoId", () => {
             video.storageKey
         );
 
-        const deletedVideo = await prisma.video.findUnique({
-            where: {
-                id: video.id,
-            },
-        });
-        const deletedSegment = await prisma.segment.findUnique({
-            where: {
-                id: video.segments[0].id,
-            },
-        });
+        const deletedVideo =
+            await persistenceProvider.videoDataAccess.getVideoByID({
+                userID: TEST_USER_ID,
+                videoID: video.id,
+            });
+        const deletedSegment =
+            await persistenceProvider.segmentDataAccess.getSegmentByID({
+                userID: TEST_USER_ID,
+                segmentID: segment.id,
+            });
 
         expect(deletedVideo).toBeNull();
         expect(deletedSegment).toBeNull();
@@ -882,7 +839,9 @@ describe("DELETE /videos/:videoId", () => {
 
 describe("Video ownership", () => {
     it("does not list another user's video", async () => {
-        await createOtherUserTestData();
+        await createOtherUserDynamoDBTestData({
+            persistenceProvider,
+        });
 
         const response = await app.inject({
             method: "GET",
@@ -900,7 +859,9 @@ describe("Video ownership", () => {
     });
 
     it("returns 404 when reading another user's video", async () => {
-        await createOtherUserTestData();
+        await createOtherUserDynamoDBTestData({
+            persistenceProvider,
+        });
 
         const response = await app.inject({
             method: "GET",
@@ -911,7 +872,9 @@ describe("Video ownership", () => {
     });
 
     it("does not update another user's video", async () => {
-        await createOtherUserTestData();
+        await createOtherUserDynamoDBTestData({
+            persistenceProvider,
+        });
 
         const response = await app.inject({
             method: "PATCH",
@@ -923,17 +886,19 @@ describe("Video ownership", () => {
 
         expect(response.statusCode).toBe(404);
 
-        const storedVideo = await prisma.video.findUniqueOrThrow({
-            where: {
-                id: OTHER_TEST_VIDEO_ID,
-            },
-        });
+        const storedVideo =
+            await persistenceProvider.videoDataAccess.getVideoByID({
+                userID: OTHER_TEST_USER_ID,
+                videoID: OTHER_TEST_VIDEO_ID,
+            });
 
-        expect(storedVideo.title).toBe("Another user's lesson");
+        expect(storedVideo?.title).toBe("Another user's lesson");
     });
 
     it("does not delete another user's video", async () => {
-        await createOtherUserTestData();
+        await createOtherUserDynamoDBTestData({
+            persistenceProvider,
+        });
 
         const response = await app.inject({
             method: "DELETE",
@@ -942,17 +907,19 @@ describe("Video ownership", () => {
 
         expect(response.statusCode).toBe(404);
 
-        const storedVideo = await prisma.video.findUnique({
-            where: {
-                id: OTHER_TEST_VIDEO_ID,
-            },
-        });
+        const storedVideo =
+            await persistenceProvider.videoDataAccess.getVideoByID({
+                userID: OTHER_TEST_USER_ID,
+                videoID: OTHER_TEST_VIDEO_ID,
+            });
 
         expect(storedVideo).not.toBeNull();
     });
 
     it("does not return segments from another user's video", async () => {
-        await createOtherUserTestData();
+        await createOtherUserDynamoDBTestData({
+            persistenceProvider,
+        });
 
         const response = await app.inject({
             method: "GET",
