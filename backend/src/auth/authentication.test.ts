@@ -32,6 +32,10 @@ function buildAuthenticationTestApp(
         status: "ok",
     }));
 
+    testApp.options("/*", async (_request, reply) => {
+        return reply.status(204).send();
+    });
+
     testApp.get("/authenticated-user", async (request) => ({
         userId: request.userId,
     }));
@@ -120,6 +124,22 @@ describe("Cognito authentication", () => {
         });
 
         expect(response.statusCode).toBe(200);
+        expect(verify).not.toHaveBeenCalled();
+    });
+
+    it("leaves browser preflight requests public", async () => {
+        const verify = vi.fn();
+
+        app = buildAuthenticationTestApp({
+            verify,
+        });
+
+        const response = await app.inject({
+            method: "OPTIONS",
+            url: "/authenticated-user",
+        });
+
+        expect(response.statusCode).toBe(204);
         expect(verify).not.toHaveBeenCalled();
     });
 });

@@ -311,6 +311,11 @@ test("creates an HTTP API connected to the backend Lambda", () => {
     AuthorizationType: "JWT",
   });
 
+  template.hasResourceProperties("AWS::ApiGatewayV2::Route", {
+    RouteKey: "OPTIONS /{proxy+}",
+    AuthorizationType: "NONE",
+  });
+
   template.hasResourceProperties(
     "AWS::ApiGatewayV2::Authorizer",
     {

@@ -64,6 +64,10 @@ export function buildApp({
         return { status: "ok" };
     });
 
+    app.options("/*", async (_request, reply) => {
+        return reply.status(204).send();
+    });
+
     registerAuthentication(
         app,
         createLiveAuthenticationDependencies()

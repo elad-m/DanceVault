@@ -267,6 +267,16 @@ export class InfrastructureStack extends cdk.Stack {
       },
     );
 
+    backendAPI.addRoutes({
+      path: "/{proxy+}",
+      methods: [
+        apiGateway.HttpMethod.OPTIONS,
+      ],
+      integration: backendIntegration,
+      authorizer:
+        new apiGateway.HttpNoneAuthorizer(),
+    });
+
     new cdk.CfnOutput(this, "BackendAPIURL", {
       value: backendAPI.apiEndpoint,
     });

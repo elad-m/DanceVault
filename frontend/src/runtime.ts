@@ -16,8 +16,31 @@ function getAppEnvironment(): AppEnvironment {
     );
 }
 
+function getAPIBaseURL(
+    environment: AppEnvironment
+): string {
+    if (environment === "local") {
+        return "/api";
+    }
+
+    const apiBaseURL =
+        import.meta.env.VITE_API_BASE_URL;
+
+    if (!apiBaseURL) {
+        throw new Error(
+            "VITE_API_BASE_URL is not configured"
+        );
+    }
+
+    return apiBaseURL;
+}
+
+const environment = getAppEnvironment();
+
 export const runtime: {
     environment: AppEnvironment;
+    apiBaseURL: string;
 } = {
-    environment: getAppEnvironment(),
+    environment,
+    apiBaseURL: getAPIBaseURL(environment),
 };

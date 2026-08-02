@@ -4,7 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { ApiErrorCode, sendApiError } from "../httpErrors";
 
 export type CognitoAccessTokenVerifier = {
-    verify(accessToken: string): Promise<{sub: string}>;
+    verify(accessToken: string): Promise<{ sub: string }>;
 };
 
 export function createCognitoAccessTokenVerifier(): CognitoAccessTokenVerifier {
@@ -45,7 +45,10 @@ export function registerCognitoAuthentication(
     }: RegisterCognitoAuthenticationOptions
 ) {
     app.addHook("preHandler", async (request, reply) => {
-        if (request.url === "/health") {
+        if (
+            request.url === "/health" ||
+            request.method === "OPTIONS"
+        ) {
             return;
         }
 

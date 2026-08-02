@@ -23,6 +23,18 @@ describe("GET /health", () => {
     });
 });
 
+describe("OPTIONS /*", () => {
+    it("allows browser preflight requests without authentication", async () => {
+        const response = await app.inject({
+            method: "OPTIONS",
+            url: "/videos",
+        });
+
+        expect(response.statusCode).toBe(204);
+        expect(response.body).toBe("");
+    });
+});
+
 // Authentication
 
 describe("Authentication", () => {

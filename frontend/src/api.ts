@@ -5,6 +5,7 @@ import type {
     Video,
 } from "./types";
 import { addAuthenticationHeaders } from "./auth/authentication";
+import { runtime } from "./runtime";
 
 type ApiErrorBody = {
     error?: {
@@ -23,7 +24,7 @@ async function requestJson<T>(
         headers.set("content-type", "application/json");
     }
 
-    const response = await fetch(`/api${path}`, {
+    const response = await fetch(`${runtime.apiBaseURL}${path}`, {
         ...options,
         headers,
     });

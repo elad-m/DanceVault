@@ -4,7 +4,10 @@ import { ApiErrorCode, sendApiError } from "../httpErrors";
 export function registerLocalAuthentication(app: FastifyInstance) {
 
     app.addHook("preHandler", async (request, reply) => {
-        if (request.url === "/health") {
+        if (
+            request.url === "/health" ||
+            request.method === "OPTIONS"
+        ) {
             return;
         }
 
