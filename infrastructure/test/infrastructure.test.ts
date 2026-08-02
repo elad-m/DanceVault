@@ -270,3 +270,72 @@ test("creates the development backend Lambda", () => {
     RetentionInDays: 7,
   });
 });
+
+test("creates an HTTP API connected to the backend Lambda", () => {
+  const app = new cdk.App();
+  const stack = new InfrastructureStack(app, "TestStack");
+  const template = Template.fromStack(stack);
+
+  template.hasResourceProperties("AWS::ApiGatewayV2::Api", {
+    Name: "DanceVaultDevelopmentAPI",
+    ProtocolType: "HTTP",
+    CorsConfiguration: {
+      AllowOrigins: [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+      ],
+      AllowHeaders: [
+        "authorization",
+        "content-type",
+      ],
+      AllowMethods: [
+        "GET",
+        "POST",
+        "PATCH",
+        "DELETE",
+      ],
+      MaxAge: 3600,
+    },
+  });
+
+  template.hasResourceProperties(
+    "AWS::ApiGatewayV2::Integration",
+    {
+      IntegrationType: "AWS_PROXY",
+      PayloadFormatVersion: "2.0",
+    },
+  );
+
+  template.hasResourceProperties("AWS::ApiGatewayV2::Route", {
+    RouteKey: "$default",
+    AuthorizationType: "JWT",
+  });
+
+  template.hasResourceProperties(
+    "AWS::ApiGatewayV2::Authorizer",
+    {
+      Name: "BackendAuthorizer",
+      AuthorizerType: "JWT",
+      IdentitySource: [
+        "$request.header.Authorization",
+      ],
+      JwtConfiguration: {
+        Audience: [
+          {
+            Ref: Match.stringLikeRegexp(
+              "UserPoolWebClient",
+            ),
+          },
+        ],
+        Issuer: {
+          "Fn::GetAtt": [
+            Match.stringLikeRegexp("UserPool"),
+            "ProviderURL",
+          ],
+        },
+      },
+    },
+  );
+
+  template.hasOutput("BackendAPIURL", {});
+});

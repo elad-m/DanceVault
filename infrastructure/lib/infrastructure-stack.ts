@@ -8,6 +8,10 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as lambdaNodejs from "aws-cdk-lib/aws-lambda-nodejs";
 import * as path from "node:path";
 import * as logs from "aws-cdk-lib/aws-logs";
+import * as apiGateway from "aws-cdk-lib/aws-apigatewayv2";
+import * as apiGatewayIntegrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import * as apiGatewayAuthorizers from
+  "aws-cdk-lib/aws-apigatewayv2-authorizers";
 
 export class InfrastructureStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -218,6 +222,54 @@ export class InfrastructureStack extends cdk.Stack {
         },
       },
     );
+
+    const backendIntegration =
+      new apiGatewayIntegrations.HttpLambdaIntegration(
+        "BackendIntegration",
+        backendFunction,
+      );
+
+    const backendAuthorizer =
+      new apiGatewayAuthorizers.HttpJwtAuthorizer(
+        "BackendAuthorizer",
+        userPool.userPoolProviderUrl,
+        {
+          jwtAudience: [
+            userPoolClient.userPoolClientId,
+          ],
+        },
+      );
+
+    const backendAPI = new apiGateway.HttpApi(
+      this,
+      "BackendAPI",
+      {
+        apiName: "DanceVaultDevelopmentAPI",
+        defaultIntegration: backendIntegration,
+        defaultAuthorizer: backendAuthorizer,
+        corsPreflight: {
+          allowOrigins: [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+          ],
+          allowHeaders: [
+            "authorization",
+            "content-type",
+          ],
+          allowMethods: [
+            apiGateway.CorsHttpMethod.GET,
+            apiGateway.CorsHttpMethod.POST,
+            apiGateway.CorsHttpMethod.PATCH,
+            apiGateway.CorsHttpMethod.DELETE,
+          ],
+          maxAge: cdk.Duration.hours(1),
+        },
+      },
+    );
+
+    new cdk.CfnOutput(this, "BackendAPIURL", {
+      value: backendAPI.apiEndpoint,
+    });
 
     backendFunction.addToRolePolicy(
       new iam.PolicyStatement({
