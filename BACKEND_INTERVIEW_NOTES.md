@@ -64,6 +64,38 @@ curl.exe --include --request OPTIONS `
 - Where should JWT verification happen, and what are the tradeoffs of checking
   it in both an API gateway and the application?
 
+## CloudFront SPA Route Fallback
+
+**Status:** Revisit before interviews.
+
+### Request flow
+
+```text
+1. Browser requests /practice from CloudFront.
+
+2. CloudFront asks the S3 frontend bucket for /practice.
+
+3. S3 has no file named /practice, so it returns 403.
+
+4. CloudFront's custom error rule says:
+   "For 403, request /index.html instead."
+
+5. CloudFront asks the same S3 bucket for /index.html.
+
+6. S3 returns index.html.
+
+7. CloudFront sends that file to the browser with status 200.
+
+8. The JavaScript referenced by index.html starts React.
+
+9. React sees that the browser URL is still /practice and renders the Practice
+   screen.
+```
+
+This fallback is needed because `/practice` is a client-side React route, not
+an object stored in S3. If `/index.html` is also missing, CloudFront returns the
+error from that failed request; it does not repeatedly apply the fallback.
+
 ## Other DanceVault Topics To Revisit
 
 ### DynamoDB data modeling
