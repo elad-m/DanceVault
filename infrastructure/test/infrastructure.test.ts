@@ -8,7 +8,7 @@ test('creates a private encrypted development video bucket', () => {
   const stack = new InfrastructureStack(app, 'TestStack');
   const template = Template.fromStack(stack);
 
-  template.resourceCountIs('AWS::S3::Bucket', 1);
+  template.resourceCountIs("AWS::S3::Bucket", 2);
 
   template.hasResourceProperties('AWS::S3::Bucket', {
     BucketEncryption: {
@@ -36,12 +36,68 @@ test('creates a private encrypted development video bucket', () => {
         },
       ],
     },
+    CorsConfiguration: {
+      CorsRules: [
+        Match.objectLike({
+          AllowedOrigins: [
+            "http://127.0.0.1:5173",
+            "http://localhost:5173",
+            "http://192.168.68.59:5173",
+            "https://d3m4f87b9e10ko.cloudfront.net",
+          ],
+        }),
+      ],
+    },
   });
 
   template.hasResource('AWS::S3::Bucket', {
     DeletionPolicy: 'Delete',
     UpdateReplacePolicy: 'Delete',
   });
+});
+
+test("creates a private encrypted frontend bucket", () => {
+  const app = new cdk.App();
+  const stack = new InfrastructureStack(app, "TestStack");
+  const template = Template.fromStack(stack);
+
+  const buckets =
+    template.findResources("AWS::S3::Bucket");
+
+  const frontendBucketEntry =
+    Object.entries(buckets).find(
+      ([logicalID]) =>
+        logicalID.startsWith("FrontendBucket"),
+    );
+
+  if (!frontendBucketEntry) {
+    throw new Error("Frontend bucket was not found");
+  }
+
+  const [, frontendBucket] = frontendBucketEntry;
+
+  expect(frontendBucket.Properties).toMatchObject({
+    BucketEncryption: {
+      ServerSideEncryptionConfiguration: [
+        {
+          ServerSideEncryptionByDefault: {
+            SSEAlgorithm: "AES256",
+          },
+        },
+      ],
+    },
+    PublicAccessBlockConfiguration: {
+      BlockPublicAcls: true,
+      BlockPublicPolicy: true,
+      IgnorePublicAcls: true,
+      RestrictPublicBuckets: true,
+    },
+  });
+
+  expect(frontendBucket.DeletionPolicy).toBe("Delete");
+  expect(frontendBucket.UpdateReplacePolicy).toBe(
+    "Delete",
+  );
 });
 
 test('creates a least-privilege role for the local backend', () => {
@@ -131,9 +187,15 @@ test('creates Cognito authentication for the development web app', () => {
     AllowedOAuthFlows: ['code'],
     AllowedOAuthFlowsUserPoolClient: true,
     AllowedOAuthScopes: ['openid', 'email'],
-    CallbackURLs: ['http://localhost:5173/auth/callback'],
+    CallbackURLs: [
+      "http://localhost:5173/auth/callback",
+      "https://d3m4f87b9e10ko.cloudfront.net/auth/callback",
+    ],
     GenerateSecret: false,
-    LogoutURLs: ['http://localhost:5173/'],
+    LogoutURLs: [
+      "http://localhost:5173/",
+      "https://d3m4f87b9e10ko.cloudfront.net/",
+    ],
     PreventUserExistenceErrors: 'ENABLED',
     AuthSessionValidity: 15,
   });
@@ -283,6 +345,7 @@ test("creates an HTTP API connected to the backend Lambda", () => {
       AllowOrigins: [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "https://d3m4f87b9e10ko.cloudfront.net",
       ],
       AllowHeaders: [
         "authorization",
@@ -343,4 +406,73 @@ test("creates an HTTP API connected to the backend Lambda", () => {
   );
 
   template.hasOutput("BackendAPIURL", {});
+});
+
+test("hosts the frontend through CloudFront", () => {
+  const app = new cdk.App();
+  const stack = new InfrastructureStack(app, "TestStack");
+  const template = Template.fromStack(stack);
+
+  template.hasResourceProperties(
+    "AWS::CloudFront::Distribution",
+    {
+      DistributionConfig: Match.objectLike({
+        DefaultRootObject: "index.html",
+        Enabled: true,
+        PriceClass: "PriceClass_100",
+        DefaultCacheBehavior: Match.objectLike({
+          AllowedMethods: [
+            "GET",
+            "HEAD",
+            "OPTIONS",
+          ],
+          CachedMethods: [
+            "GET",
+            "HEAD",
+            "OPTIONS",
+          ],
+          Compress: true,
+          ViewerProtocolPolicy:
+            "redirect-to-https",
+        }),
+        CustomErrorResponses: Match.arrayWith([
+          Match.objectLike({
+            ErrorCode: 403,
+            ResponseCode: 200,
+            ResponsePagePath: "/index.html",
+          }),
+          Match.objectLike({
+            ErrorCode: 404,
+            ResponseCode: 200,
+            ResponsePagePath: "/index.html",
+          }),
+        ]),
+      }),
+    },
+  );
+
+  template.resourceCountIs(
+    "AWS::CloudFront::OriginAccessControl",
+    1,
+  );
+
+  template.hasOutput("FrontendURL", {});
+
+  template.hasResourceProperties(
+    "Custom::CDKBucketDeployment",
+    {
+      DestinationBucketName: {
+        Ref: Match.stringLikeRegexp(
+          "FrontendBucket",
+        ),
+      },
+      DistributionId: {
+        Ref: Match.stringLikeRegexp(
+          "FrontendDistribution",
+        ),
+      },
+      DistributionPaths: ["/*"],
+      Prune: true,
+    },
+  );
 });

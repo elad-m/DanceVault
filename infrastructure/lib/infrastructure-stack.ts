@@ -12,6 +12,9 @@ import * as apiGateway from "aws-cdk-lib/aws-apigatewayv2";
 import * as apiGatewayIntegrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as apiGatewayAuthorizers from
   "aws-cdk-lib/aws-apigatewayv2-authorizers";
+import * as cloudFront from "aws-cdk-lib/aws-cloudfront";
+import * as cloudFrontOrigins from "aws-cdk-lib/aws-cloudfront-origins";
+import * as s3Deployment from "aws-cdk-lib/aws-s3-deployment";
 
 export class InfrastructureStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -103,10 +106,12 @@ export class InfrastructureStack extends cdk.Stack {
           cognito.OAuthScope.EMAIL,
         ],
         callbackUrls: [
-          'http://localhost:5173/auth/callback',
+          "http://localhost:5173/auth/callback",
+          "https://d3m4f87b9e10ko.cloudfront.net/auth/callback",
         ],
         logoutUrls: [
-          'http://localhost:5173/',
+          "http://localhost:5173/",
+          "https://d3m4f87b9e10ko.cloudfront.net/",
         ],
       },
     });
@@ -157,6 +162,7 @@ export class InfrastructureStack extends cdk.Stack {
             'http://127.0.0.1:5173',
             'http://localhost:5173',
             'http://192.168.68.59:5173',
+            'https://d3m4f87b9e10ko.cloudfront.net',
           ],
           allowedHeaders: ['*'],
           exposedHeaders: ['ETag'],
@@ -169,6 +175,90 @@ export class InfrastructureStack extends cdk.Stack {
       ],
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
+    });
+
+    const frontendBucket = new s3.Bucket(
+      this,
+      "FrontendBucket",
+      {
+        blockPublicAccess:
+          s3.BlockPublicAccess.BLOCK_ALL,
+        encryption:
+          s3.BucketEncryption.S3_MANAGED,
+        enforceSSL: true,
+        versioned: false,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        autoDeleteObjects: true,
+      },
+    );
+
+    const frontendDistribution =
+      new cloudFront.Distribution(
+        this,
+        "FrontendDistribution",
+        {
+          defaultRootObject: "index.html",
+          defaultBehavior: {
+            origin:
+              cloudFrontOrigins.S3BucketOrigin
+                .withOriginAccessControl(
+                  frontendBucket,
+                ),
+            viewerProtocolPolicy:
+              cloudFront.ViewerProtocolPolicy
+                .REDIRECT_TO_HTTPS,
+            allowedMethods:
+              cloudFront.AllowedMethods
+                .ALLOW_GET_HEAD_OPTIONS,
+            cachedMethods:
+              cloudFront.CachedMethods
+                .CACHE_GET_HEAD_OPTIONS,
+            cachePolicy:
+              cloudFront.CachePolicy
+                .CACHING_OPTIMIZED,
+            compress: true,
+          },
+          errorResponses: [
+            {
+              httpStatus: 403,
+              responseHttpStatus: 200,
+              responsePagePath: "/index.html",
+              ttl: cdk.Duration.minutes(5),
+            },
+            {
+              httpStatus: 404,
+              responseHttpStatus: 200,
+              responsePagePath: "/index.html",
+              ttl: cdk.Duration.minutes(5),
+            },
+          ],
+          priceClass:
+            cloudFront.PriceClass.PRICE_CLASS_100,
+        },
+      );
+
+    new s3Deployment.BucketDeployment(
+      this,
+      "FrontendDeployment",
+      {
+        sources: [
+          s3Deployment.Source.asset(
+            path.join(
+              __dirname,
+              "../../frontend/dist",
+            ),
+          ),
+        ],
+        destinationBucket: frontendBucket,
+        distribution: frontendDistribution,
+        distributionPaths: ["/*"],
+        prune: true,
+      },
+    );
+
+    new cdk.CfnOutput(this, "FrontendURL", {
+      value:
+        `https://${frontendDistribution.distributionDomainName}`,
     });
 
     const backendFunctionName =
@@ -251,6 +341,7 @@ export class InfrastructureStack extends cdk.Stack {
           allowOrigins: [
             "http://localhost:5173",
             "http://127.0.0.1:5173",
+            "https://d3m4f87b9e10ko.cloudfront.net",
           ],
           allowHeaders: [
             "authorization",

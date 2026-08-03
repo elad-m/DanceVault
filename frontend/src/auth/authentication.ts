@@ -11,6 +11,8 @@ export function configureAuthentication(): void {
         return;
     }
 
+    const frontendOrigin = window.location.origin;
+
     Amplify.configure({
         Auth: {
             Cognito: {
@@ -21,10 +23,10 @@ export function configureAuthentication(): void {
                         domain: import.meta.env.VITE_COGNITO_DOMAIN,
                         scopes: ["openid", "email"],
                         redirectSignIn: [
-                            "http://localhost:5173/auth/callback",
+                            `${frontendOrigin}/auth/callback`,
                         ],
                         redirectSignOut: [
-                            "http://localhost:5173/",
+                            `${frontendOrigin}/`,
                         ],
                         responseType: "code",
                     },
