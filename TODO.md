@@ -52,6 +52,9 @@
 - Accept `video/quicktime` `.mov` uploads.
 - Inspect the actual video codec because `.mov` is only a container.
 - Convert uploads into one canonical playback format when necessary.
+- Diagnose slow playback over mobile data and produce a mobile-friendly
+  bitrate or adaptive-streaming output when the original upload is too large
+  to stream reliably.
 - Preserve original uploads only when there is a clear reason.
 - Design normalization together with frame stepping and thumbnails instead of
   only adding `.mov` to the allowed content types.
