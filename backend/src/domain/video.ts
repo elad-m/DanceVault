@@ -6,6 +6,7 @@ export type VideoStatus =
 export type VideoStorageProviderName = "minio" | "awsS3";
 
 export type SupportedVideoContentType = "video/mp4";
+export const maxVideoUploadSizeBytes: number = 500_000_000;
 
 export const supportedVideoContentTypeSchema = {
     type: "string",

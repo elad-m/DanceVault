@@ -21,7 +21,9 @@ export type VideoStorageProvider = {
     bucketName: string;
     createVideoUploadUrl(input: CreateVideoUploadUrlInput): Promise<string>;
     createVideoPlaybackUrl(storageKey: string): Promise<string>;
-    videoObjectExists(storageKey: string): Promise<boolean>;
+    getVideoObjectSizeBytes(
+        storageKey: string
+    ): Promise<number | null>;
     deleteVideoObject(storageKey: string): Promise<void>;
     listVideoObjectKeys(): Promise<string[]>;
     close(): void;
@@ -74,21 +76,30 @@ export function createVideoStorageProvider(
             });
         },
 
-        async videoObjectExists(storageKey: string): Promise<boolean> {
+        async getVideoObjectSizeBytes(
+            storageKey: string
+        ): Promise<number | null> {
             const command = new HeadObjectCommand({
                 Bucket: bucketName,
                 Key: storageKey,
             });
 
             try {
-                await client.send(command);
-                return true;
+                const response = await client.send(command);
+
+                if (response.ContentLength === undefined) {
+                    throw new Error(
+                        "Video storage did not return an object size"
+                    );
+                }
+
+                return response.ContentLength;
             } catch (error: unknown) {
                 if (
                     error instanceof S3ServiceException &&
                     error.$metadata.httpStatusCode === 404
                 ) {
-                    return false;
+                    return null;
                 }
 
                 throw error;

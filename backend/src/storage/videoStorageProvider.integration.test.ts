@@ -15,13 +15,14 @@ describe("S3 video storage integration", () => {
     it("uploads, downloads, and deletes an object", async () => {
         const storageKey = `integration-tests/${randomUUID()}.mp4`;
         const objectContents = "DanceVault storage integration test";
+        const objectBytes = new TextEncoder().encode(objectContents);
 
         try {
             expect(
-                await videoStorageProvider.videoObjectExists(
+                await videoStorageProvider.getVideoObjectSizeBytes(
                     storageKey
                 )
-            ).toBe(false);
+            ).toBeNull();
 
             const uploadUrl =
                 await videoStorageProvider.createVideoUploadUrl({
@@ -33,15 +34,15 @@ describe("S3 video storage integration", () => {
                 headers: {
                     "content-type": "video/mp4",
                 },
-                body: new TextEncoder().encode(objectContents),
+                body: objectBytes,
             });
 
             expect(uploadResponse.status).toBe(200);
             expect(
-                await videoStorageProvider.videoObjectExists(
+                await videoStorageProvider.getVideoObjectSizeBytes(
                     storageKey
                 )
-            ).toBe(true);
+            ).toBe(objectBytes.byteLength);
 
             const playbackUrl =
                 await videoStorageProvider.createVideoPlaybackUrl(
@@ -57,10 +58,10 @@ describe("S3 video storage integration", () => {
             );
 
             expect(
-                await videoStorageProvider.videoObjectExists(
+                await videoStorageProvider.getVideoObjectSizeBytes(
                     storageKey
                 )
-            ).toBe(false);
+            ).toBeNull();
         } finally {
             await videoStorageProvider.deleteVideoObject(
                 storageKey

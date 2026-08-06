@@ -7,6 +7,8 @@ import type {
 import { addAuthenticationHeaders } from "./auth/authentication";
 import { runtime } from "./runtime";
 
+const maxVideoUploadSizeBytes: number = 500_000_000;
+
 type ApiErrorBody = {
     error?: {
         message?: string;
@@ -110,6 +112,16 @@ export async function uploadVideo(
     title: string,
     file: File
 ): Promise<Video> {
+    if (file.size > maxVideoUploadSizeBytes) {
+        throw new Error(
+            "Video files must be 500 MB or smaller"
+        );
+    }
+
+    if (file.size === 0) {
+        throw new Error("The selected video file is empty");
+    }
+
     const initialized = await requestJson<{
         video: Video;
         uploadUrl: string;
@@ -119,6 +131,7 @@ export async function uploadVideo(
             title,
             fileName: file.name,
             contentType: "video/mp4",
+            fileSizeBytes: file.size,
         }),
     });
 

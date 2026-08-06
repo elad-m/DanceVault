@@ -28,7 +28,7 @@ export function UploadDialog({ open, uploading, onClose, onUpload }: UploadDialo
                 <div className="modal-header">
                     <div>
                         <h2>Upload lesson video</h2>
-                        <p>MP4 files only</p>
+                        <p>MP4 files only, up to 500 MB</p>
                     </div>
                     <button type="button" className="icon-button" onClick={onClose} disabled={uploading} aria-label="Close">
                         <X size={18} />

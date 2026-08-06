@@ -11,6 +11,7 @@ import {
     initializeVideoUpload,
 } from "../services/videoService";
 import {
+    maxVideoUploadSizeBytes,
     supportedVideoContentTypeSchema,
     type SupportedVideoContentType,
 } from "../domain/video";
@@ -23,6 +24,7 @@ type CreateVideoUploadRequest = {
         title: string;
         fileName: string;
         contentType: SupportedVideoContentType;
+        fileSizeBytes: number;
     };
 };
 
@@ -50,7 +52,12 @@ const createVideoUploadRouteOptions = {
         body: {
             type: "object",
             additionalProperties: false,
-            required: ["title", "fileName", "contentType"],
+            required: [
+                "title",
+                "fileName",
+                "contentType",
+                "fileSizeBytes",
+            ],
             properties: {
                 title: videoProperties.title,
                 fileName: {
@@ -60,6 +67,11 @@ const createVideoUploadRouteOptions = {
                     pattern: "^[^/\\\\]+\\.[mM][pP]4$",
                 },
                 contentType: supportedVideoContentTypeSchema,
+                fileSizeBytes: {
+                    type: "integer",
+                    minimum: 1,
+                    maximum: maxVideoUploadSizeBytes,
+                },
             },
         },
     },
@@ -130,6 +142,13 @@ async function completeVideoUploadHandler(
         return sendApiError(reply, {
             statusCode: 409,
             code: ApiErrorCode.VideoUploadNotFound,
+        });
+    }
+
+    if (result.kind === "upload_too_large") {
+        return sendApiError(reply, {
+            statusCode: 413,
+            code: ApiErrorCode.VideoUploadTooLarge,
         });
     }
 

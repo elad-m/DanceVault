@@ -17,7 +17,10 @@ import type {
     CreateVideoUploadUrlInput,
     VideoStorageProvider,
 } from "../storage";
-import type { VideoStorageProviderName } from "../domain/video";
+import {
+    maxVideoUploadSizeBytes,
+    type VideoStorageProviderName,
+} from "../domain/video";
 import { resetRuntimeForTest } from "../runtime";
 import type { PersistenceProvider } from "../persistence";
 import type { VideoDataAccess } from "../persistence/videoDataAccess";
@@ -29,6 +32,8 @@ import {
     resetDynamoDBTestDatabase,
 } from "../test/dynamoDBTestDatabase";
 
+const TEST_VIDEO_FILE_SIZE_BYTES: number = 100_000_000;
+
 const createVideoUploadUrlMock = vi.fn(
     async ({
         storageKey,
@@ -39,8 +44,8 @@ const createVideoPlaybackUrlMock = vi.fn(
     async (storageKey: string): Promise<string> =>
         `http://storage.test/${storageKey}?X-Amz-Signature=playback-test`
 );
-const videoObjectExistsMock = vi.fn(
-    async (_storageKey: string): Promise<boolean> => false
+const getVideoObjectSizeBytesMock = vi.fn(
+    async (_storageKey: string): Promise<number | null> => null
 );
 const deleteVideoObjectMock = vi.fn(
     async (_storageKey: string): Promise<void> => { }
@@ -51,7 +56,7 @@ const fakeVideoStorageProvider: VideoStorageProvider = {
     createVideoPlaybackUrl: createVideoPlaybackUrlMock,
     createVideoUploadUrl: createVideoUploadUrlMock,
     deleteVideoObject: deleteVideoObjectMock,
-    videoObjectExists: videoObjectExistsMock,
+    getVideoObjectSizeBytes: getVideoObjectSizeBytesMock,
     listVideoObjectKeys: async () => [],
     close: () => { },
 };
@@ -131,8 +136,8 @@ beforeEach(async () => {
     createVideoPlaybackUrlMock.mockClear();
     createVideoUploadUrlMock.mockClear();
     deleteVideoObjectMock.mockClear();
-    videoObjectExistsMock.mockClear();
-    videoObjectExistsMock.mockResolvedValue(false);
+    getVideoObjectSizeBytesMock.mockClear();
+    getVideoObjectSizeBytesMock.mockResolvedValue(null);
     await resetDynamoDBTestDatabase({
         persistenceProvider,
     });
@@ -280,6 +285,7 @@ describe("video data access injection", () => {
                     title: "Injected upload",
                     fileName: "lesson.mp4",
                     contentType: "video/mp4",
+                    fileSizeBytes: TEST_VIDEO_FILE_SIZE_BYTES,
                 },
             });
 
@@ -312,6 +318,7 @@ describe("POST /video-uploads", () => {
                 title: "Uploaded salsa lesson",
                 fileName: "lesson.mp4",
                 contentType: "video/mp4",
+                fileSizeBytes: TEST_VIDEO_FILE_SIZE_BYTES,
             },
         });
 
@@ -352,6 +359,7 @@ describe("POST /video-uploads", () => {
                 title: "Invalid upload",
                 fileName: "lesson.avi",
                 contentType: "video/x-msvideo",
+                fileSizeBytes: TEST_VIDEO_FILE_SIZE_BYTES,
             },
         });
 
@@ -366,10 +374,43 @@ describe("POST /video-uploads", () => {
                 title: "Mismatched upload",
                 fileName: "lesson.mov",
                 contentType: "video/mp4",
+                fileSizeBytes: TEST_VIDEO_FILE_SIZE_BYTES,
             },
         });
 
         expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects a video larger than the upload-size limit", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/video-uploads",
+            payload: {
+                title: "Oversized upload",
+                fileName: "lesson.mp4",
+                contentType: "video/mp4",
+                fileSizeBytes: maxVideoUploadSizeBytes + 1,
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(createVideoUploadUrlMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects an empty video file", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/video-uploads",
+            payload: {
+                title: "Empty upload",
+                fileName: "lesson.mp4",
+                contentType: "video/mp4",
+                fileSizeBytes: 0,
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(createVideoUploadUrlMock).not.toHaveBeenCalled();
     });
 });
 
@@ -398,7 +439,7 @@ describe("POST /video-uploads/:videoId/complete", () => {
                 code: "VIDEO_UPLOAD_NOT_FOUND",
             },
         });
-        expect(videoObjectExistsMock).toHaveBeenCalledWith(
+        expect(getVideoObjectSizeBytesMock).toHaveBeenCalledWith(
             video.storageKey
         );
 
@@ -410,9 +451,11 @@ describe("POST /video-uploads/:videoId/complete", () => {
         expect(storedVideo?.status).toBe("pending_upload");
     });
 
-    it("marks the video ready when its storage object exists", async () => {
+    it("marks the video ready when its storage object is within the size limit", async () => {
         const video = await createPendingUploadTestVideo();
-        videoObjectExistsMock.mockResolvedValueOnce(true);
+        getVideoObjectSizeBytesMock.mockResolvedValueOnce(
+            maxVideoUploadSizeBytes
+        );
 
         const response = await app.inject({
             method: "POST",
@@ -424,7 +467,7 @@ describe("POST /video-uploads/:videoId/complete", () => {
             id: video.id,
             status: "ready",
         });
-        expect(videoObjectExistsMock).toHaveBeenCalledWith(
+        expect(getVideoObjectSizeBytesMock).toHaveBeenCalledWith(
             video.storageKey
         );
 
@@ -434,6 +477,36 @@ describe("POST /video-uploads/:videoId/complete", () => {
                 videoID: video.id,
             });
         expect(storedVideo?.status).toBe("ready");
+    });
+
+    it("rejects and deletes a stored video above the size limit", async () => {
+        const video = await createPendingUploadTestVideo();
+        getVideoObjectSizeBytesMock.mockResolvedValueOnce(
+            maxVideoUploadSizeBytes + 1
+        );
+
+        const response = await app.inject({
+            method: "POST",
+            url: `/video-uploads/${video.id}/complete`,
+        });
+
+        expect(response.statusCode).toBe(413);
+        expect(response.json()).toMatchObject({
+            error: {
+                code: "VIDEO_UPLOAD_TOO_LARGE",
+            },
+        });
+        expect(deleteVideoObjectMock).toHaveBeenCalledExactlyOnceWith(
+            video.storageKey
+        );
+
+        const storedVideo =
+            await persistenceProvider.videoDataAccess.getVideoByID({
+                userID: TEST_USER_ID,
+                videoID: video.id,
+            });
+
+        expect(storedVideo?.status).toBe("upload_failed");
     });
 
     it("returns an already-ready video without checking storage again", async () => {
@@ -454,7 +527,7 @@ describe("POST /video-uploads/:videoId/complete", () => {
             id: video.id,
             status: "ready",
         });
-        expect(videoObjectExistsMock).not.toHaveBeenCalled();
+        expect(getVideoObjectSizeBytesMock).not.toHaveBeenCalled();
     });
 
     it("does not complete another user's video", async () => {
@@ -468,7 +541,35 @@ describe("POST /video-uploads/:videoId/complete", () => {
         });
 
         expect(response.statusCode).toBe(404);
-        expect(videoObjectExistsMock).not.toHaveBeenCalled();
+        expect(getVideoObjectSizeBytesMock).not.toHaveBeenCalled();
+    });
+
+    it("fails completion when oversized-object cleanup fails", async () => {
+        const video = await createPendingUploadTestVideo();
+        getVideoObjectSizeBytesMock.mockResolvedValueOnce(
+            maxVideoUploadSizeBytes + 1
+        );
+        deleteVideoObjectMock.mockRejectedValueOnce(
+            new Error("Storage deletion failed")
+        );
+
+        const response = await app.inject({
+            method: "POST",
+            url: `/video-uploads/${video.id}/complete`,
+        });
+
+        expect(response.statusCode).toBe(500);
+        expect(deleteVideoObjectMock).toHaveBeenCalledExactlyOnceWith(
+            video.storageKey
+        );
+
+        const storedVideo =
+            await persistenceProvider.videoDataAccess.getVideoByID({
+                userID: TEST_USER_ID,
+                videoID: video.id,
+            });
+
+        expect(storedVideo?.status).toBe("upload_failed");
     });
 });
 

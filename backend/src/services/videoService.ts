@@ -1,6 +1,7 @@
 // Contains business rules and application workflows for videos.
 import {
     createVideoStorageKey,
+    maxVideoUploadSizeBytes,
     type SupportedVideoContentType,
 } from "../domain/video";
 import { randomUUID } from "node:crypto";
@@ -76,6 +77,9 @@ export type VideoUploadCompletionResult =
         kind: "upload_object_missing";
     }
     | {
+        kind: "upload_too_large";
+    }
+    | {
         kind: "ready";
         video: VideoDataAccessItem;
     };
@@ -114,12 +118,27 @@ export async function completeVideoUpload({
         };
     }
 
-    const objectExists = await videoStorageProvider.videoObjectExists(
-        video.storageKey
-    );
+    const objectSizeBytes =
+        await videoStorageProvider.getVideoObjectSizeBytes(
+            video.storageKey
+        );
 
-    if (!objectExists) {
+    if (objectSizeBytes === null) {
         return { kind: "upload_object_missing" };
+    }
+
+    if (objectSizeBytes > maxVideoUploadSizeBytes) {
+        await videoDataAccess.updateVideoStatus({
+            videoID: video.id,
+            userID: userId,
+            status: "upload_failed",
+        });
+
+        await videoStorageProvider.deleteVideoObject(
+            video.storageKey
+        );
+
+        return { kind: "upload_too_large" };
     }
 
     const readyVideo = await videoDataAccess.updateVideoStatus({
