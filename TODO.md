@@ -40,6 +40,18 @@
 - Add a CloudWatch dashboard and alarms for Lambda errors, API failures,
   DynamoDB throttling, and media-job failures.
 - Add structured logs containing request ID, user ID, video ID, and job ID.
+- Before deploying observability, choose the private operations-alert email and
+  pass it as the `MonitoringAlertEmail` CloudFormation parameter. Confirm the
+  SNS subscription from that mailbox after deployment.
+
+### Deferred until self-service registration
+
+- Add registration and email-verification metrics.
+- Add signup-abuse monitoring and public-user rate-limit alarms.
+- Add per-user usage anomaly alerts and a registration-funnel dashboard.
+- Add frontend real-user monitoring after there is meaningful external usage.
+- Add media-job failure alarms and `jobId` log fields when asynchronous media
+  jobs are introduced.
 
 ## 4. Reliable Deletion
 

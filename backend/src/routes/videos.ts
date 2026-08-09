@@ -96,14 +96,41 @@ async function createVideoUploadHandler(
     videoStorageProvider: VideoStorageProvider,
     videoDataAccess: VideoDataAccess
 ) {
-    const upload = await initializeVideoUpload({
-        userId: request.userId,
-        title: request.body.title,
-        fileName: request.body.fileName,
-        contentType: request.body.contentType,
-        videoStorageProvider,
-        videoDataAccess,
-    });
+    let upload;
+
+    try {
+        upload = await initializeVideoUpload({
+            userId: request.userId,
+            title: request.body.title,
+            fileName: request.body.fileName,
+            contentType: request.body.contentType,
+            videoStorageProvider,
+            videoDataAccess,
+        });
+    } catch (error) {
+        request.log.error(
+            {
+                event: "video_upload_initialization_failed",
+                userId: request.userId,
+                storageProvider: videoStorageProvider.name,
+                fileSizeBytes: request.body.fileSizeBytes,
+                err: error,
+            },
+            "Video upload initialization failed"
+        );
+        throw error;
+    }
+
+    request.log.info(
+        {
+            event: "video_upload_initialized",
+            userId: request.userId,
+            videoId: upload.video.id,
+            storageProvider: videoStorageProvider.name,
+            fileSizeBytes: request.body.fileSizeBytes,
+        },
+        "Video upload initialized"
+    );
 
     return reply.status(201).send({
         video: upload.video,
@@ -117,12 +144,28 @@ async function completeVideoUploadHandler(
     videoStorageProvider: VideoStorageProvider,
     videoDataAccess: VideoDataAccess
 ) {
-    const result = await completeVideoUpload({
-        videoId: request.params.videoId,
-        userId: request.userId,
-        videoStorageProvider,
-        videoDataAccess,
-    });
+    let result;
+
+    try {
+        result = await completeVideoUpload({
+            videoId: request.params.videoId,
+            userId: request.userId,
+            videoStorageProvider,
+            videoDataAccess,
+        });
+    } catch (error) {
+        request.log.error(
+            {
+                event: "video_upload_completion_failed",
+                userId: request.userId,
+                videoId: request.params.videoId,
+                storageProvider: videoStorageProvider.name,
+                err: error,
+            },
+            "Video upload completion failed"
+        );
+        throw error;
+    }
 
     if (result.kind === "not_found") {
         return sendApiError(reply, {
@@ -132,6 +175,16 @@ async function completeVideoUploadHandler(
     }
 
     if (result.kind === "invalid_upload_state") {
+        request.log.warn(
+            {
+                event: "video_upload_completion_rejected",
+                reason: result.kind,
+                userId: request.userId,
+                videoId: request.params.videoId,
+                storageProvider: videoStorageProvider.name,
+            },
+            "Video upload completion rejected"
+        );
         return sendApiError(reply, {
             statusCode: 409,
             code: ApiErrorCode.InvalidVideoUploadState,
@@ -139,6 +192,16 @@ async function completeVideoUploadHandler(
     }
 
     if (result.kind === "upload_object_missing") {
+        request.log.warn(
+            {
+                event: "video_upload_completion_rejected",
+                reason: result.kind,
+                userId: request.userId,
+                videoId: request.params.videoId,
+                storageProvider: videoStorageProvider.name,
+            },
+            "Video upload completion rejected"
+        );
         return sendApiError(reply, {
             statusCode: 409,
             code: ApiErrorCode.VideoUploadNotFound,
@@ -146,11 +209,31 @@ async function completeVideoUploadHandler(
     }
 
     if (result.kind === "upload_too_large") {
+        request.log.warn(
+            {
+                event: "video_upload_completion_rejected",
+                reason: result.kind,
+                userId: request.userId,
+                videoId: request.params.videoId,
+                storageProvider: videoStorageProvider.name,
+            },
+            "Video upload completion rejected"
+        );
         return sendApiError(reply, {
             statusCode: 413,
             code: ApiErrorCode.VideoUploadTooLarge,
         });
     }
+
+    request.log.info(
+        {
+            event: "video_upload_completed",
+            userId: request.userId,
+            videoId: result.video.id,
+            storageProvider: videoStorageProvider.name,
+        },
+        "Video upload completed"
+    );
 
     return result.video;
 }
@@ -286,13 +369,29 @@ async function deleteVideoHandler(
     videoDataAccess: VideoDataAccess,
     segmentDataAccess: SegmentDataAccess
 ) {
-    const result = await deleteVideoWithStorage({
-        videoId: request.params.videoId,
-        userId: request.userId,
-        videoStorageProvider,
-        videoDataAccess,
-        segmentDataAccess,
-    });
+    let result;
+
+    try {
+        result = await deleteVideoWithStorage({
+            videoId: request.params.videoId,
+            userId: request.userId,
+            videoStorageProvider,
+            videoDataAccess,
+            segmentDataAccess,
+        });
+    } catch (error) {
+        request.log.error(
+            {
+                event: "video_deletion_failed",
+                userId: request.userId,
+                videoId: request.params.videoId,
+                storageProvider: videoStorageProvider.name,
+                err: error,
+            },
+            "Video deletion failed"
+        );
+        throw error;
+    }
 
     if (result.kind === "not_found") {
         return sendApiError(reply, {
@@ -307,6 +406,16 @@ async function deleteVideoHandler(
             code: ApiErrorCode.InvalidVideoUploadState,
         });
     }
+
+    request.log.info(
+        {
+            event: "video_deleted",
+            userId: request.userId,
+            videoId: request.params.videoId,
+            storageProvider: videoStorageProvider.name,
+        },
+        "Video deleted"
+    );
 
     return reply.status(204).send();
 }

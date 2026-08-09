@@ -213,6 +213,16 @@ async function createSegmentHandler(
         segmentDataAccess,
     });
 
+    request.log.info(
+        {
+            event: "segment_created",
+            userId: request.userId,
+            videoId: video.id,
+            segmentId: segment.id,
+        },
+        "Segment created"
+    );
+
     return reply.status(201).send(segment);
 }
 
@@ -302,11 +312,23 @@ async function updateSegmentHandler(
         });
     }
 
-    return segmentDataAccess.updateSegmentMetadata({
+    const updatedSegment = await segmentDataAccess.updateSegmentMetadata({
         segmentID: existingSegment.id,
         userID: request.userId,
         ...request.body,
     });
+
+    request.log.info(
+        {
+            event: "segment_updated",
+            userId: request.userId,
+            videoId: existingSegment.videoId,
+            segmentId: existingSegment.id,
+        },
+        "Segment updated"
+    );
+
+    return updatedSegment;
 }
 
 async function deleteSegmentHandler(
@@ -331,6 +353,16 @@ async function deleteSegmentHandler(
         videoID: existingSegment.videoId,
         userID: request.userId,
     });
+
+    request.log.info(
+        {
+            event: "segment_deleted",
+            userId: request.userId,
+            videoId: existingSegment.videoId,
+            segmentId: existingSegment.id,
+        },
+        "Segment deleted"
+    );
 
     return reply.status(204).send();
 }

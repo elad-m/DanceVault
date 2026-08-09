@@ -52,7 +52,14 @@ export function buildApp({
             });
         }
 
-        request.log.error(error);
+        request.log.error(
+            {
+                event: "request_failed",
+                userId: request.userId || undefined,
+                err: error,
+            },
+            "Unhandled request failure"
+        );
 
         return sendApiError(reply, {
             statusCode: 500,

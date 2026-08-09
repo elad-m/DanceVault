@@ -15,6 +15,10 @@ import * as apiGatewayAuthorizers from
 import * as cloudFront from "aws-cdk-lib/aws-cloudfront";
 import * as cloudFrontOrigins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as s3Deployment from "aws-cdk-lib/aws-s3-deployment";
+import * as cloudWatch from "aws-cdk-lib/aws-cloudwatch";
+import * as cloudWatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
+import * as sns from "aws-cdk-lib/aws-sns";
+import * as snsSubscriptions from "aws-cdk-lib/aws-sns-subscriptions";
 
 export class InfrastructureStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -22,6 +26,18 @@ export class InfrastructureStack extends cdk.Stack {
 
     cdk.Tags.of(this).add('Project', 'DanceVault');
     cdk.Tags.of(this).add('Environment', 'Development');
+
+    const monitoringAlertEmail = new cdk.CfnParameter(
+      this,
+      "MonitoringAlertEmail",
+      {
+        type: "String",
+        description:
+          "Email address that receives DanceVault development operation alarms.",
+        allowedPattern: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+        constraintDescription: "Must be a valid email address.",
+      },
+    );
 
     const dataTable = new dynamodb.Table(
       this,
@@ -367,6 +383,202 @@ export class InfrastructureStack extends cdk.Stack {
       authorizer:
         new apiGateway.HttpNoneAuthorizer(),
     });
+
+    const monitoringPeriod = cdk.Duration.minutes(5);
+    const lambdaInvocations = backendFunction.metricInvocations({
+      period: monitoringPeriod,
+      statistic: "Sum",
+    });
+    const lambdaErrors = backendFunction.metricErrors({
+      period: monitoringPeriod,
+      statistic: "Sum",
+    });
+    const lambdaThrottles = backendFunction.metricThrottles({
+      period: monitoringPeriod,
+      statistic: "Sum",
+    });
+    const lambdaDuration = backendFunction.metricDuration({
+      period: monitoringPeriod,
+      statistic: "p95",
+    });
+    const apiRequestCount = backendAPI.metricCount({
+      period: monitoringPeriod,
+      statistic: "Sum",
+    });
+    const apiServerErrors = backendAPI.metricServerError({
+      period: monitoringPeriod,
+      statistic: "Sum",
+    });
+    const apiLatency = backendAPI.metricLatency({
+      period: monitoringPeriod,
+      statistic: "p95",
+    });
+    const dynamoDBReadThrottles = dataTable.metric(
+      "ReadThrottleEvents",
+      {
+        period: monitoringPeriod,
+        statistic: "Sum",
+      },
+    );
+    const dynamoDBWriteThrottles = dataTable.metric(
+      "WriteThrottleEvents",
+      {
+        period: monitoringPeriod,
+        statistic: "Sum",
+      },
+    );
+    const dynamoDBThrottles = new cloudWatch.MathExpression({
+      expression: "readThrottles + writeThrottles",
+      usingMetrics: {
+        readThrottles: dynamoDBReadThrottles,
+        writeThrottles: dynamoDBWriteThrottles,
+      },
+      period: monitoringPeriod,
+      label: "Total throttled requests",
+    });
+    const dynamoDBSystemErrors =
+      dataTable.metricSystemErrorsForOperations({
+        period: monitoringPeriod,
+        statistic: "Sum",
+      });
+
+    const operationsAlertTopic = new sns.Topic(
+      this,
+      "OperationsAlertTopic",
+      {
+        topicName: "DanceVaultDevelopmentOperationsAlerts",
+        displayName: "DanceVault development operations alerts",
+      },
+    );
+
+    operationsAlertTopic.addSubscription(
+      new snsSubscriptions.EmailSubscription(
+        monitoringAlertEmail.valueAsString,
+      ),
+    );
+
+    const lambdaErrorAlarm = new cloudWatch.Alarm(
+      this,
+      "LambdaErrorAlarm",
+      {
+        alarmName: "DanceVaultDevelopment-LambdaErrors",
+        alarmDescription:
+          "The development backend Lambda returned at least one error.",
+        metric: lambdaErrors,
+        threshold: 1,
+        evaluationPeriods: 1,
+        datapointsToAlarm: 1,
+        comparisonOperator:
+          cloudWatch.ComparisonOperator
+            .GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudWatch.TreatMissingData.NOT_BREACHING,
+      },
+    );
+
+    const lambdaThrottleAlarm = new cloudWatch.Alarm(
+      this,
+      "LambdaThrottleAlarm",
+      {
+        alarmName: "DanceVaultDevelopment-LambdaThrottles",
+        alarmDescription:
+          "The development backend Lambda throttled at least one invocation.",
+        metric: lambdaThrottles,
+        threshold: 1,
+        evaluationPeriods: 1,
+        datapointsToAlarm: 1,
+        comparisonOperator:
+          cloudWatch.ComparisonOperator
+            .GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudWatch.TreatMissingData.NOT_BREACHING,
+      },
+    );
+
+    const apiServerErrorAlarm = new cloudWatch.Alarm(
+      this,
+      "APIServerErrorAlarm",
+      {
+        alarmName: "DanceVaultDevelopment-APIServerErrors",
+        alarmDescription:
+          "The development API returned at least one 5xx response.",
+        metric: apiServerErrors,
+        threshold: 1,
+        evaluationPeriods: 1,
+        datapointsToAlarm: 1,
+        comparisonOperator:
+          cloudWatch.ComparisonOperator
+            .GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudWatch.TreatMissingData.NOT_BREACHING,
+      },
+    );
+
+    const dynamoDBThrottleAlarm = new cloudWatch.Alarm(
+      this,
+      "DynamoDBThrottleAlarm",
+      {
+        alarmName: "DanceVaultDevelopment-DynamoDBThrottles",
+        alarmDescription:
+          "The development DynamoDB table throttled at least one request.",
+        metric: dynamoDBThrottles,
+        threshold: 1,
+        evaluationPeriods: 1,
+        datapointsToAlarm: 1,
+        comparisonOperator:
+          cloudWatch.ComparisonOperator
+            .GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudWatch.TreatMissingData.NOT_BREACHING,
+      },
+    );
+
+    for (const alarm of [
+      lambdaErrorAlarm,
+      lambdaThrottleAlarm,
+      apiServerErrorAlarm,
+      dynamoDBThrottleAlarm,
+    ]) {
+      alarm.addAlarmAction(
+        new cloudWatchActions.SnsAction(operationsAlertTopic),
+      );
+    }
+
+    const operationsDashboard = new cloudWatch.Dashboard(
+      this,
+      "OperationsDashboard",
+      {
+        dashboardName: "DanceVaultDevelopmentOperations",
+      },
+    );
+
+    operationsDashboard.addWidgets(
+      new cloudWatch.GraphWidget({
+        title: "Backend Lambda",
+        left: [lambdaInvocations, lambdaErrors, lambdaThrottles],
+        right: [lambdaDuration],
+        width: 12,
+      }),
+      new cloudWatch.GraphWidget({
+        title: "Backend API",
+        left: [apiRequestCount, apiServerErrors],
+        right: [apiLatency],
+        width: 12,
+      }),
+      new cloudWatch.GraphWidget({
+        title: "DynamoDB",
+        left: [dynamoDBThrottles, dynamoDBSystemErrors],
+        width: 12,
+      }),
+      new cloudWatch.LogQueryWidget({
+        title: "Recent backend errors",
+        logGroupNames: [backendLogGroup.logGroupName],
+        queryString: [
+          "fields @timestamp, level, event, reqId, userId, videoId, segmentId, msg",
+          "| filter level >= 50",
+          "| sort @timestamp desc",
+          "| limit 50",
+        ].join("\n"),
+        view: cloudWatch.LogQueryVisualizationType.TABLE,
+        width: 12,
+      }),
+    );
 
     new cdk.CfnOutput(this, "BackendAPIURL", {
       value: backendAPI.apiEndpoint,

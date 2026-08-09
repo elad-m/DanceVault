@@ -408,6 +408,74 @@ test("creates an HTTP API connected to the backend Lambda", () => {
   template.hasOutput("BackendAPIURL", {});
 });
 
+test("monitors development backend failures and emails operations alerts", () => {
+  const app = new cdk.App();
+  const stack = new InfrastructureStack(app, "TestStack");
+  const template = Template.fromStack(stack);
+
+  template.hasParameter("MonitoringAlertEmail", {
+    Type: "String",
+    AllowedPattern: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+  });
+
+  template.hasResourceProperties("AWS::SNS::Topic", {
+    TopicName: "DanceVaultDevelopmentOperationsAlerts",
+  });
+
+  template.hasResourceProperties("AWS::SNS::Subscription", {
+    Protocol: "email",
+    Endpoint: {
+      Ref: "MonitoringAlertEmail",
+    },
+  });
+
+  template.resourceCountIs("AWS::CloudWatch::Alarm", 4);
+
+  for (const alarmName of [
+    "DanceVaultDevelopment-LambdaErrors",
+    "DanceVaultDevelopment-LambdaThrottles",
+    "DanceVaultDevelopment-APIServerErrors",
+    "DanceVaultDevelopment-DynamoDBThrottles",
+  ]) {
+    template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+      AlarmName: alarmName,
+      Threshold: 1,
+      EvaluationPeriods: 1,
+      DatapointsToAlarm: 1,
+      ComparisonOperator: "GreaterThanOrEqualToThreshold",
+      TreatMissingData: "notBreaching",
+      AlarmActions: Match.arrayWith([
+        {
+          Ref: Match.stringLikeRegexp("OperationsAlertTopic"),
+        },
+      ]),
+    });
+  }
+
+  template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+    AlarmName: "DanceVaultDevelopment-LambdaErrors",
+    Namespace: "AWS/Lambda",
+    MetricName: "Errors",
+  });
+
+  template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+    AlarmName: "DanceVaultDevelopment-APIServerErrors",
+    Namespace: "AWS/ApiGateway",
+    MetricName: "5xx",
+  });
+
+  template.hasResourceProperties("AWS::CloudWatch::Dashboard", {
+    DashboardName: "DanceVaultDevelopmentOperations",
+  });
+
+  const dashboards = template.findResources(
+    "AWS::CloudWatch::Dashboard",
+  );
+  expect(JSON.stringify(dashboards)).toContain(
+    "Recent backend errors",
+  );
+});
+
 test("hosts the frontend through CloudFront", () => {
   const app = new cdk.App();
   const stack = new InfrastructureStack(app, "TestStack");
