@@ -1,10 +1,13 @@
-import type { VideoStorageProviderName } from "./video";
+import type {
+    VideoStatus,
+    VideoStorageProviderName,
+} from "./video";
 
 export type AuditedVideo = {
     id: string;
     title: string;
     storageKey: string | null;
-    status: "pending_upload" | "ready" | "upload_failed";
+    status: VideoStatus;
     createdAt: Date;
 };
 

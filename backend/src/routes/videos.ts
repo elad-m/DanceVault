@@ -7,7 +7,7 @@ import { ApiErrorCode, sendApiError } from "../httpErrors";
 import {
     completeVideoUpload,
     createVideoPlaybackUrl,
-    deleteVideoWithStorage,
+    requestVideoDeletion,
     initializeVideoUpload,
 } from "../services/videoService";
 import {
@@ -18,6 +18,7 @@ import {
 import type { VideoStorageProvider } from "../storage";
 import type { VideoDataAccess } from "../persistence/videoDataAccess";
 import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
+import type { VideoDeletionQueue } from "../jobs/videoDeletionQueue";
 
 type CreateVideoUploadRequest = {
     Body: {
@@ -365,30 +366,27 @@ async function updateVideoHandler(
 async function deleteVideoHandler(
     request: FastifyRequest<VideoParams>,
     reply: FastifyReply,
-    videoStorageProvider: VideoStorageProvider,
-    videoDataAccess: VideoDataAccess,
-    segmentDataAccess: SegmentDataAccess
+    videoDeletionQueue: VideoDeletionQueue,
+    videoDataAccess: VideoDataAccess
 ) {
     let result;
 
     try {
-        result = await deleteVideoWithStorage({
+        result = await requestVideoDeletion({
             videoId: request.params.videoId,
             userId: request.userId,
-            videoStorageProvider,
             videoDataAccess,
-            segmentDataAccess,
+            videoDeletionQueue,
         });
     } catch (error) {
         request.log.error(
             {
-                event: "video_deletion_failed",
+                event: "video_deletion_queueing_failed",
                 userId: request.userId,
                 videoId: request.params.videoId,
-                storageProvider: videoStorageProvider.name,
                 err: error,
             },
-            "Video deletion failed"
+            "Video deletion could not be queued"
         );
         throw error;
     }
@@ -400,29 +398,25 @@ async function deleteVideoHandler(
         });
     }
 
-    if (result.kind === "invalid_upload_state") {
-        return sendApiError(reply, {
-            statusCode: 409,
-            code: ApiErrorCode.InvalidVideoUploadState,
-        });
-    }
-
     request.log.info(
         {
-            event: "video_deleted",
+            event: "video_deletion_queued",
             userId: request.userId,
             videoId: request.params.videoId,
-            storageProvider: videoStorageProvider.name,
+            jobId: result.job.jobID,
         },
-        "Video deleted"
+        "Video deletion queued"
     );
 
-    return reply.status(204).send();
+    return reply.status(202).send({
+        jobID: result.job.jobID,
+    });
 }
 
 export function registerVideoRoutes(
     app: FastifyInstance,
     videoStorageProvider: VideoStorageProvider,
+    videoDeletionQueue: VideoDeletionQueue,
     videoDataAccess: VideoDataAccess,
     segmentDataAccess: SegmentDataAccess
 ) {
@@ -494,15 +488,15 @@ export function registerVideoRoutes(
                 videoDataAccess
             )
     );
+
     app.delete<VideoParams>(
         "/videos/:videoId",
         (request, reply) =>
             deleteVideoHandler(
                 request,
                 reply,
-                videoStorageProvider,
-                videoDataAccess,
-                segmentDataAccess
+                videoDeletionQueue,
+                videoDataAccess
             )
     );
 }

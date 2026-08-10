@@ -31,6 +31,10 @@ import {
     createOtherUserDynamoDBTestData,
     resetDynamoDBTestDatabase,
 } from "../test/dynamoDBTestDatabase";
+import type {
+    VideoDeletionJob,
+    VideoDeletionQueue,
+} from "../jobs/videoDeletionQueue";
 
 const TEST_VIDEO_FILE_SIZE_BYTES: number = 100_000_000;
 
@@ -85,9 +89,23 @@ const unusedSegmentDataAccess: SegmentDataAccess = {
 const persistenceProvider =
     createDynamoDBTestPersistenceProvider();
 
+const queuedVideoDeletionJobs: VideoDeletionJob[] = [];
+
+const enqueueVideoDeletionMock = vi.fn(
+    async (job: VideoDeletionJob): Promise<void> => {
+        queuedVideoDeletionJobs.push(job);
+    }
+);
+
+const fakeVideoDeletionQueue: VideoDeletionQueue = {
+    enqueue: enqueueVideoDeletionMock,
+    close(): void { },
+};
+
 const app = buildApp({
     videoStorageProvider: fakeVideoStorageProvider,
     persistenceProvider,
+    videoDeletionQueue: fakeVideoDeletionQueue,
 });
 registerTestAuthentication(app);
 
@@ -138,9 +156,11 @@ beforeEach(async () => {
     deleteVideoObjectMock.mockClear();
     getVideoObjectSizeBytesMock.mockClear();
     getVideoObjectSizeBytesMock.mockResolvedValue(null);
+    enqueueVideoDeletionMock.mockClear();
     await resetDynamoDBTestDatabase({
         persistenceProvider,
     });
+    queuedVideoDeletionJobs.length = 0;
 });
 
 afterAll(async () => {
@@ -793,7 +813,7 @@ describe("PATCH /videos/:videoId", () => {
 });
 
 describe("DELETE /videos/:videoId", () => {
-    it("deletes a MinIO uploaded video's storage object and database record", async () => {
+    it("queues a MinIO video deletion without deleting it during the HTTP request", async () => {
         const video = await createTestVideo({
             videoID: "uploaded-video-to-delete",
             title: "Uploaded video to delete",
@@ -806,68 +826,18 @@ describe("DELETE /videos/:videoId", () => {
             url: `/videos/${video.id}`,
         });
 
-        expect(response.statusCode).toBe(204);
-        expect(deleteVideoObjectMock).toHaveBeenCalledExactlyOnceWith(
-            video.storageKey
-        );
-
-        const deletedVideo =
-            await persistenceProvider.videoDataAccess.getVideoByID({
+        expect(response.statusCode).toBe(202);
+        expect(response.json()).toEqual({
+            jobID: expect.any(String),
+        });
+        expect(queuedVideoDeletionJobs).toEqual([
+            {
+                schemaVersion: 1,
+                jobID: response.json().jobID,
                 userID: TEST_USER_ID,
                 videoID: video.id,
-            });
-
-        expect(deletedVideo).toBeNull();
-    });
-
-    it("keeps the database record when storage deletion fails", async () => {
-        const video = await createTestVideo({
-            videoID: "storage-failure-video",
-            title: "Uploaded video with storage failure",
-            storageKey:
-                "users/test-user-1/videos/storage-failure.mp4",
-        });
-
-        deleteVideoObjectMock.mockRejectedValueOnce(
-            new Error("Storage deletion failed")
-        );
-
-        const response = await app.inject({
-            method: "DELETE",
-            url: `/videos/${video.id}`,
-        });
-
-        expect(response.statusCode).toBe(500);
-
-        const retainedVideo =
-            await persistenceProvider.videoDataAccess.getVideoByID({
-                userID: TEST_USER_ID,
-                videoID: video.id,
-            });
-
-        expect(retainedVideo).not.toBeNull();
-    });
-
-    it("rejects a video stored by a different provider", async () => {
-        const video = await createTestVideo({
-            videoID: "aws-video-to-delete",
-            title: "AWS uploaded video to delete",
-            storageKey:
-                "users/test-user-1/videos/aws-video-to-delete.mp4",
-            storageProvider: "awsS3",
-        });
-
-        const response = await app.inject({
-            method: "DELETE",
-            url: `/videos/${video.id}`,
-        });
-
-        expect(response.statusCode).toBe(409);
-        expect(response.json()).toMatchObject({
-            error: {
-                code: "INVALID_VIDEO_UPLOAD_STATE",
             },
-        });
+        ]);
         expect(deleteVideoObjectMock).not.toHaveBeenCalled();
 
         const retainedVideo =
@@ -879,7 +849,36 @@ describe("DELETE /videos/:videoId", () => {
         expect(retainedVideo).not.toBeNull();
     });
 
-    it("deletes an uploaded video and its segments", async () => {
+    it("keeps the video when its deletion job cannot be queued", async () => {
+        const video = await createTestVideo({
+            videoID: "queue-failure-video",
+            title: "Video with queue failure",
+            storageKey:
+                "users/test-user-1/videos/queue-failure.mp4",
+        });
+
+        enqueueVideoDeletionMock.mockRejectedValueOnce(
+            new Error("Queue submission failed")
+        );
+
+        const response = await app.inject({
+            method: "DELETE",
+            url: `/videos/${video.id}`,
+        });
+
+        expect(response.statusCode).toBe(500);
+        expect(deleteVideoObjectMock).not.toHaveBeenCalled();
+
+        const retainedVideo =
+            await persistenceProvider.videoDataAccess.getVideoByID({
+                userID: TEST_USER_ID,
+                videoID: video.id,
+            });
+
+        expect(retainedVideo).not.toBeNull();
+    });
+
+    it("queues deletion of a video with segments without deleting records immediately", async () => {
         const video = await createTestVideo({
             videoID: "video-with-segments",
             title: "Video to delete",
@@ -893,13 +892,15 @@ describe("DELETE /videos/:videoId", () => {
                 userID: TEST_USER_ID,
                 name: "Dependent segment",
                 description: null,
-                startMilliseconds: 10000,
-                endMilliseconds: 20000,
+                startMilliseconds: 10_000,
+                endMilliseconds: 20_000,
                 tags: [],
                 difficulty: "medium",
                 confidence: "medium",
                 practicePriority: "medium",
-                createdAt: new Date("2026-07-30T14:01:00.000Z"),
+                createdAt: new Date(
+                    "2026-07-30T14:01:00.000Z"
+                ),
             });
 
         const response = await app.inject({
@@ -907,25 +908,23 @@ describe("DELETE /videos/:videoId", () => {
             url: `/videos/${video.id}`,
         });
 
-        expect(response.statusCode).toBe(204);
-        expect(response.body).toBe("");
-        expect(deleteVideoObjectMock).toHaveBeenCalledExactlyOnceWith(
-            video.storageKey
-        );
+        expect(response.statusCode).toBe(202);
+        expect(queuedVideoDeletionJobs).toHaveLength(1);
+        expect(deleteVideoObjectMock).not.toHaveBeenCalled();
 
-        const deletedVideo =
+        const retainedVideo =
             await persistenceProvider.videoDataAccess.getVideoByID({
                 userID: TEST_USER_ID,
                 videoID: video.id,
             });
-        const deletedSegment =
+        const retainedSegment =
             await persistenceProvider.segmentDataAccess.getSegmentByID({
                 userID: TEST_USER_ID,
                 segmentID: segment.id,
             });
 
-        expect(deletedVideo).toBeNull();
-        expect(deletedSegment).toBeNull();
+        expect(retainedVideo).not.toBeNull();
+        expect(retainedSegment).not.toBeNull();
     });
 
     it("returns 404 for a video that does not exist", async () => {

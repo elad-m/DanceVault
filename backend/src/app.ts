@@ -16,18 +16,39 @@ import {
     getActiveVideoStorageProviderName,
     type VideoStorageProvider,
 } from "./storage";
+import {
+    createVideoDeletionQueue,
+} from "./jobs/createVideoDeletionQueue";
+import type {
+    VideoDeletionQueue,
+} from "./jobs/videoDeletionQueue";
 
 type BuildAppOptions = {
     videoStorageProvider?: VideoStorageProvider;
     persistenceProvider?: PersistenceProvider;
+    videoDeletionQueue?: VideoDeletionQueue;
 };
 
-export function buildApp({
-    videoStorageProvider = createVideoStorageProvider(
-        getActiveVideoStorageProviderName()
-    ),
-    persistenceProvider = createPersistenceProvider(),
-}: BuildAppOptions = {}) {
+export function buildApp(
+    options: BuildAppOptions = {}
+) {
+    const videoStorageProvider =
+        options.videoStorageProvider ??
+        createVideoStorageProvider(
+            getActiveVideoStorageProviderName()
+        );
+
+    const persistenceProvider =
+        options.persistenceProvider ??
+        createPersistenceProvider();
+
+    const videoDeletionQueue =
+        options.videoDeletionQueue ??
+        createVideoDeletionQueue({
+            videoStorageProvider,
+            persistenceProvider,
+        });
+
     const app = Fastify({
         logger: true,
         ajv: {
@@ -39,6 +60,7 @@ export function buildApp({
     });
 
     app.addHook("onClose", async () => {
+        videoDeletionQueue.close();
         videoStorageProvider.close();
         await persistenceProvider.close();
     });
@@ -82,6 +104,7 @@ export function buildApp({
     registerVideoRoutes(
         app,
         videoStorageProvider,
+        videoDeletionQueue,
         persistenceProvider.videoDataAccess,
         persistenceProvider.segmentDataAccess
     );

@@ -19,6 +19,9 @@ import * as cloudWatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cloudWatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as snsSubscriptions from "aws-cdk-lib/aws-sns-subscriptions";
+import * as sqs from "aws-cdk-lib/aws-sqs";
+import * as lambdaEventSources from
+  "aws-cdk-lib/aws-lambda-event-sources";
 
 export class InfrastructureStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -88,6 +91,34 @@ export class InfrastructureStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'DataTableName', {
       value: dataTable.tableName,
     });
+
+    const videoDeletionDeadLetterQueue = new sqs.Queue(
+      this,
+      "VideoDeletionDeadLetterQueue",
+      {
+        queueName:
+          "DanceVaultDevelopmentVideoDeletionDeadLetters",
+        encryption: sqs.QueueEncryption.SQS_MANAGED,
+        retentionPeriod: cdk.Duration.days(14),
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
+
+    const videoDeletionQueue = new sqs.Queue(
+      this,
+      "VideoDeletionQueue",
+      {
+        queueName: "DanceVaultDevelopmentVideoDeletionJobs",
+        encryption: sqs.QueueEncryption.SQS_MANAGED,
+        retentionPeriod: cdk.Duration.days(4),
+        visibilityTimeout: cdk.Duration.minutes(6),
+        deadLetterQueue: {
+          queue: videoDeletionDeadLetterQueue,
+          maxReceiveCount: 5,
+        },
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
 
     const userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: 'DanceVaultDevelopmentUsers',
@@ -325,8 +356,89 @@ export class InfrastructureStack extends cdk.Stack {
           AWS_S3_BUCKET: videoBucket.bucketName,
           COGNITO_USER_POOL_ID: userPool.userPoolId,
           COGNITO_CLIENT_ID: userPoolClient.userPoolClientId,
+          VIDEO_DELETION_QUEUE_URL: videoDeletionQueue.queueUrl,
+          AWS_SQS_REGION: this.region,
         },
       },
+    );
+
+    videoDeletionQueue.grantSendMessages(backendFunction);
+
+    const videoDeletionWorkerFunctionName =
+      "DanceVaultDevelopmentVideoDeletionWorker";
+
+    const videoDeletionWorkerLogGroup = new logs.LogGroup(
+      this,
+      "VideoDeletionWorkerLogGroup",
+      {
+        logGroupName:
+          `/aws/lambda/${videoDeletionWorkerFunctionName}`,
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
+
+    const videoDeletionWorkerFunction =
+      new lambdaNodejs.NodejsFunction(
+        this,
+        "VideoDeletionWorkerFunction",
+        {
+          functionName: videoDeletionWorkerFunctionName,
+          logGroup: videoDeletionWorkerLogGroup,
+          entry: path.join(
+            __dirname,
+            "../../backend/src/jobs/videoDeletionWorkerHandler.ts",
+          ),
+          projectRoot: path.join(
+            __dirname,
+            "../../backend",
+          ),
+          depsLockFilePath: path.join(
+            __dirname,
+            "../../backend/package-lock.json",
+          ),
+          handler: "handler",
+          runtime: lambda.Runtime.NODEJS_24_X,
+          architecture: lambda.Architecture.ARM_64,
+          memorySize: 512,
+          timeout: cdk.Duration.seconds(60),
+          bundling: {
+            bundleAwsSDK: true,
+            sourceMap: true,
+          },
+          environment: {
+            APP_ENVIRONMENT: "dev",
+            AWS_DYNAMODB_REGION: this.region,
+            DYNAMODB_TABLE_NAME: dataTable.tableName,
+            AWS_S3_REGION: this.region,
+            AWS_S3_BUCKET: videoBucket.bucketName,
+          },
+        },
+      );
+
+    videoDeletionWorkerFunction.addEventSource(
+      new lambdaEventSources.SqsEventSource(
+        videoDeletionQueue,
+        {
+          batchSize: 1,
+        },
+      ),
+    );
+
+    dataTable.grantReadWriteData(
+      videoDeletionWorkerFunction,
+    );
+    videoDeletionWorkerFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "dynamodb:TransactWriteItems",
+        ],
+        resources: [dataTable.tableArn],
+      }),
+    );
+    videoBucket.grantDelete(
+      videoDeletionWorkerFunction,
     );
 
     const backendIntegration =
@@ -442,6 +554,13 @@ export class InfrastructureStack extends cdk.Stack {
         statistic: "Sum",
       });
 
+    const failedVideoDeletionJobs =
+      videoDeletionDeadLetterQueue
+        .metricApproximateNumberOfMessagesVisible({
+          period: monitoringPeriod,
+          statistic: "Maximum",
+        });
+
     const operationsAlertTopic = new sns.Topic(
       this,
       "OperationsAlertTopic",
@@ -529,11 +648,33 @@ export class InfrastructureStack extends cdk.Stack {
       },
     );
 
+    const videoDeletionDeadLetterAlarm =
+      new cloudWatch.Alarm(
+        this,
+        "VideoDeletionDeadLetterAlarm",
+        {
+          alarmName:
+            "DanceVaultDevelopment-VideoDeletionDeadLetters",
+          alarmDescription:
+            "At least one video deletion job exhausted all retries.",
+          metric: failedVideoDeletionJobs,
+          threshold: 1,
+          evaluationPeriods: 1,
+          datapointsToAlarm: 1,
+          comparisonOperator:
+            cloudWatch.ComparisonOperator
+              .GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+          treatMissingData:
+            cloudWatch.TreatMissingData.NOT_BREACHING,
+        },
+      );
+
     for (const alarm of [
       lambdaErrorAlarm,
       lambdaThrottleAlarm,
       apiServerErrorAlarm,
       dynamoDBThrottleAlarm,
+      videoDeletionDeadLetterAlarm,
     ]) {
       alarm.addAlarmAction(
         new cloudWatchActions.SnsAction(operationsAlertTopic),
@@ -576,6 +717,11 @@ export class InfrastructureStack extends cdk.Stack {
           "| limit 50",
         ].join("\n"),
         view: cloudWatch.LogQueryVisualizationType.TABLE,
+        width: 12,
+      }),
+      new cloudWatch.GraphWidget({
+        title: "Failed video deletion jobs",
+        left: [failedVideoDeletionJobs],
         width: 12,
       }),
     );

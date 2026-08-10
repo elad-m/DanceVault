@@ -16,6 +16,7 @@ import {
 import {
     createVideo,
     getVideoByID,
+    updateVideoStatus,
 } from "./dynamoDBVideoDataAccess";
 import {
     createSegmentPrimaryKey,
@@ -206,6 +207,82 @@ describe("DynamoDB segment data access integration", () => {
                 new DeleteCommand({
                     TableName: connection.tableName,
                     Key: segmentKey,
+                })
+            );
+        }
+    });
+
+    it("does not create a segment while its parent video is deleting", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+        const segmentID = `integration-segment-${randomUUID()}`;
+
+        const videoKey = createVideoPrimaryKey({
+            userID,
+            videoID,
+        });
+        const segmentKey = createSegmentPrimaryKey({
+            userID,
+            segmentID,
+        });
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Deleting parent video",
+                storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
+                status: "ready",
+                createdAt: new Date(),
+            });
+
+            await updateVideoStatus(connection, {
+                userID,
+                videoID,
+                status: "deleting",
+            });
+
+            await expect(
+                createSegment(connection, {
+                    segmentID,
+                    videoID,
+                    userID,
+                    name: "Segment created during deletion",
+                    description: null,
+                    startMilliseconds: 1_000,
+                    endMilliseconds: 2_000,
+                    tags: [],
+                    difficulty: "easy",
+                    confidence: "low",
+                    practicePriority: "high",
+                    createdAt: new Date(),
+                })
+            ).rejects.toBeInstanceOf(TransactionCanceledException);
+
+            const storedSegment = await getSegmentByID(connection, {
+                userID,
+                segmentID,
+            });
+            expect(storedSegment).toBeNull();
+
+            const parentVideo = await getVideoByID(connection, {
+                userID,
+                videoID,
+            });
+            expect(parentVideo?.segmentCount).toBe(0);
+        } finally {
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: segmentKey,
+                })
+            );
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: videoKey,
                 })
             );
         }

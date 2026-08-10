@@ -153,17 +153,20 @@ export async function createSegment(
                             "attribute_exists(PK) " +
                             "AND attribute_exists(SK) " +
                             "AND #entityType = :videoEntityType " +
-                            "AND #schemaVersion = :videoSchemaVersion",
+                            "AND #schemaVersion = :videoSchemaVersion " +
+                            "AND #status = :readyStatus",
                         ExpressionAttributeNames: {
                             "#entityType": "entityType",
                             "#schemaVersion": "schemaVersion",
                             "#segmentCount": "segmentCount",
+                            "#status": "status",
                         },
                         ExpressionAttributeValues: {
                             ":videoEntityType": "video",
                             ":videoSchemaVersion":
                                 CURRENT_VIDEO_SCHEMA_VERSION,
                             ":segmentCountIncrement": 1,
+                            ":readyStatus": "ready",
                         },
                     },
                 },

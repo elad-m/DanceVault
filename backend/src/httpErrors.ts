@@ -11,6 +11,7 @@ export const ApiErrorCode = {
     VideoNotReady: "VIDEO_NOT_READY",
     VideoUploadNotFound: "VIDEO_UPLOAD_NOT_FOUND",
     VideoUploadTooLarge: "VIDEO_UPLOAD_TOO_LARGE",
+    VideoDeleting: "VIDEO_DELETING",
 } as const;
 
 export type ApiErrorCode =
@@ -32,6 +33,7 @@ export const ApiErrorMessage: ApiErrorMessageMap = {
         "Uploaded video file was not found",
     [ApiErrorCode.VideoUploadTooLarge]:
         "Video file exceeds the upload-size limit",
+    [ApiErrorCode.VideoDeleting]: "Video is being deleted",
 };
 
 type SendApiErrorOptions = {

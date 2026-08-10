@@ -88,6 +88,32 @@ describe("POST /videos/:videoId/segments", () => {
         });
     });
 
+    it("rejects a new segment while its video is deleting", async () => {
+        await persistenceProvider.videoDataAccess.updateVideoStatus({
+            userID: TEST_USER_ID,
+            videoID: "sample-video-1",
+            status: "deleting",
+        });
+
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/sample-video-1/segments",
+            payload: {
+                name: "Too late segment",
+                startMilliseconds: 10_000,
+                endMilliseconds: 20_000,
+            },
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toEqual({
+            error: {
+                code: "VIDEO_DELETING",
+                message: "Video is being deleted",
+            },
+        });
+    });
+
     it("rejects a segment whose end is not after its start", async () => {
         const response = await app.inject({
             method: "POST",

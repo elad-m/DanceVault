@@ -190,6 +190,13 @@ async function createSegmentHandler(
         });
     }
 
+    if (video.status === "deleting") {
+        return sendApiError(reply, {
+            statusCode: 409,
+            code: ApiErrorCode.VideoDeleting,
+        });
+    }
+
     const { name, startMilliseconds, endMilliseconds } = request.body;
 
     if (!areSegmentTimestampsValid(startMilliseconds, endMilliseconds)) {

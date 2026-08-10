@@ -1,7 +1,8 @@
 export type VideoStatus =
     | "pending_upload"
     | "ready"
-    | "upload_failed";
+    | "upload_failed"
+    | "deleting";
 
 export type VideoStorageProviderName = "minio" | "awsS3";
 

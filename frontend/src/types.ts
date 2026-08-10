@@ -1,4 +1,8 @@
-export type VideoStatus = "pending_upload" | "ready" | "upload_failed";
+export type VideoStatus =
+    | "pending_upload"
+    | "ready"
+    | "upload_failed"
+    | "deleting";
 
 export type Video = {
     id: string;

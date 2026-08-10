@@ -14,6 +14,11 @@ import type {
     VideoDataAccessItem,
 } from "../persistence/videoDataAccess";
 import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
+import {
+    CURRENT_VIDEO_DELETION_JOB_SCHEMA_VERSION,
+    type VideoDeletionJob,
+    type VideoDeletionQueue,
+} from "../jobs/videoDeletionQueue";
 
 type UserScope = {
     userId: string;
@@ -208,13 +213,60 @@ export async function createVideoPlaybackUrl({
     };
 }
 
-type DeleteVideoWithStorageInput =
+type RequestVideoDeletionInput = VideoScope & {
+    videoDataAccess: VideoDataAccess;
+    videoDeletionQueue: VideoDeletionQueue;
+};
+
+export type RequestVideoDeletionResult =
+    | {
+        kind: "not_found";
+    }
+    | {
+        kind: "queued";
+        job: VideoDeletionJob;
+    };
+
+export async function requestVideoDeletion({
+    videoId,
+    userId,
+    videoDataAccess,
+    videoDeletionQueue,
+}: RequestVideoDeletionInput): Promise<RequestVideoDeletionResult> {
+    const video = await videoDataAccess.getVideoByID({
+        videoID: videoId,
+        userID: userId,
+    });
+
+    if (!video) {
+        return {
+            kind: "not_found",
+        };
+    }
+
+    const job: VideoDeletionJob = {
+        schemaVersion:
+            CURRENT_VIDEO_DELETION_JOB_SCHEMA_VERSION,
+        jobID: randomUUID(),
+        userID: userId,
+        videoID: video.id,
+    };
+
+    await videoDeletionQueue.enqueue(job);
+
+    return {
+        kind: "queued",
+        job,
+    };
+}
+
+type ExecuteVideoDeletionInput =
     VideoStorageOperationInput & {
         videoDataAccess: VideoDataAccess;
         segmentDataAccess: SegmentDataAccess;
     };
 
-export type DeleteVideoWithStorageResult =
+export type ExecuteVideoDeletionResult =
     | {
         kind: "not_found";
     }
@@ -225,13 +277,13 @@ export type DeleteVideoWithStorageResult =
         kind: "deleted";
     };
 
-export async function deleteVideoWithStorage({
+export async function executeVideoDeletion({
     videoId,
     userId,
     videoStorageProvider,
     videoDataAccess,
     segmentDataAccess,
-}: DeleteVideoWithStorageInput): Promise<DeleteVideoWithStorageResult> {
+}: ExecuteVideoDeletionInput): Promise<ExecuteVideoDeletionResult> {
     const video = await videoDataAccess.getVideoByID({
         videoID: videoId,
         userID: userId,
@@ -244,6 +296,12 @@ export async function deleteVideoWithStorage({
     if (video.storageProvider !== videoStorageProvider.name) {
         return { kind: "invalid_upload_state" };
     }
+
+    await videoDataAccess.updateVideoStatus({
+        videoID: video.id,
+        userID: userId,
+        status: "deleting",
+    });
 
     await videoStorageProvider.deleteVideoObject(
         video.storageKey

@@ -322,7 +322,34 @@ test("creates the development backend Lambda", () => {
         AWS_S3_BUCKET: {
           Ref: Match.stringLikeRegexp("VideoBucket"),
         },
+        VIDEO_DELETION_QUEUE_URL: {
+          Ref: Match.stringLikeRegexp("VideoDeletionQueue"),
+        },
+        AWS_SQS_REGION: {
+          Ref: "AWS::Region",
+        },
       }),
+    },
+  });
+
+  template.hasResourceProperties("AWS::IAM::Policy", {
+    PolicyDocument: {
+      Statement: Match.arrayWith([
+        Match.objectLike({
+          Effect: "Allow",
+          Action: Match.arrayWith([
+            "sqs:SendMessage",
+          ]),
+          Resource: {
+            "Fn::GetAtt": [
+              Match.stringLikeRegexp(
+                "VideoDeletionQueue",
+              ),
+              "Arn",
+            ],
+          },
+        }),
+      ]),
     },
   });
 
@@ -331,6 +358,148 @@ test("creates the development backend Lambda", () => {
       "/aws/lambda/DanceVaultDevelopmentBackend",
     RetentionInDays: 7,
   });
+});
+
+test("creates the video deletion worker Lambda", () => {
+  const app = new cdk.App();
+  const stack = new InfrastructureStack(
+    app,
+    "TestStack",
+  );
+  const template = Template.fromStack(stack);
+
+  template.hasResourceProperties(
+    "AWS::Lambda::Function",
+    {
+      FunctionName:
+        "DanceVaultDevelopmentVideoDeletionWorker",
+      Runtime: "nodejs24.x",
+      Architectures: ["arm64"],
+      Handler: "index.handler",
+      MemorySize: 512,
+      Timeout: 60,
+      Environment: {
+        Variables: Match.objectLike({
+          APP_ENVIRONMENT: "dev",
+          AWS_DYNAMODB_REGION: {
+            Ref: "AWS::Region",
+          },
+          DYNAMODB_TABLE_NAME: {
+            Ref: Match.stringLikeRegexp(
+              "DataTable",
+            ),
+          },
+          AWS_S3_REGION: {
+            Ref: "AWS::Region",
+          },
+          AWS_S3_BUCKET: {
+            Ref: Match.stringLikeRegexp(
+              "VideoBucket",
+            ),
+          },
+        }),
+      },
+    },
+  );
+
+  template.hasResourceProperties(
+    "AWS::Lambda::EventSourceMapping",
+    {
+      BatchSize: 1,
+      EventSourceArn: {
+        "Fn::GetAtt": [
+          Match.stringLikeRegexp(
+            "VideoDeletionQueue",
+          ),
+          "Arn",
+        ],
+      },
+      FunctionName: {
+        Ref: Match.stringLikeRegexp(
+          "VideoDeletionWorkerFunction",
+        ),
+      },
+    },
+  );
+
+  template.hasResourceProperties(
+    "AWS::Logs::LogGroup",
+    {
+      LogGroupName:
+        "/aws/lambda/DanceVaultDevelopmentVideoDeletionWorker",
+      RetentionInDays: 7,
+    },
+  );
+
+  const functions = template.findResources(
+    "AWS::Lambda::Function",
+  );
+  const workerFunction = Object.values(functions).find(
+    (resource) =>
+      resource.Properties?.FunctionName ===
+      "DanceVaultDevelopmentVideoDeletionWorker",
+  );
+
+  if (!workerFunction) {
+    throw new Error(
+      "Video deletion worker Lambda was not found",
+    );
+  }
+
+  const workerRoleLogicalID =
+    workerFunction.Properties.Role["Fn::GetAtt"][0];
+  const policies = template.findResources(
+    "AWS::IAM::Policy",
+  );
+  const workerPolicy = Object.values(policies).find(
+    (resource) =>
+      JSON.stringify(resource.Properties?.Roles).includes(
+        workerRoleLogicalID,
+      ),
+  );
+
+  if (!workerPolicy) {
+    throw new Error(
+      "Video deletion worker IAM policy was not found",
+    );
+  }
+
+  const statements =
+    workerPolicy.Properties.PolicyDocument.Statement;
+
+  expect(statements).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        Effect: "Allow",
+        Action: expect.arrayContaining([
+          "sqs:ReceiveMessage",
+          "sqs:ChangeMessageVisibility",
+          "sqs:GetQueueUrl",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes",
+        ]),
+      }),
+      expect.objectContaining({
+        Effect: "Allow",
+        Action: expect.arrayContaining([
+          "dynamodb:GetItem",
+          "dynamodb:Query",
+          "dynamodb:ConditionCheckItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+        ]),
+      }),
+      expect.objectContaining({
+        Effect: "Allow",
+        Action: "dynamodb:TransactWriteItems",
+      }),
+      expect.objectContaining({
+        Effect: "Allow",
+        Action: "s3:DeleteObject*",
+      }),
+    ]),
+  );
+
 });
 
 test("creates an HTTP API connected to the backend Lambda", () => {
@@ -429,13 +598,14 @@ test("monitors development backend failures and emails operations alerts", () =>
     },
   });
 
-  template.resourceCountIs("AWS::CloudWatch::Alarm", 4);
+  template.resourceCountIs("AWS::CloudWatch::Alarm", 5);
 
   for (const alarmName of [
     "DanceVaultDevelopment-LambdaErrors",
     "DanceVaultDevelopment-LambdaThrottles",
     "DanceVaultDevelopment-APIServerErrors",
     "DanceVaultDevelopment-DynamoDBThrottles",
+    "DanceVaultDevelopment-VideoDeletionDeadLetters",
   ]) {
     template.hasResourceProperties("AWS::CloudWatch::Alarm", {
       AlarmName: alarmName,
@@ -464,6 +634,28 @@ test("monitors development backend failures and emails operations alerts", () =>
     MetricName: "5xx",
   });
 
+  template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+    AlarmName:
+      "DanceVaultDevelopment-VideoDeletionDeadLetters",
+    Namespace: "AWS/SQS",
+    MetricName:
+      "ApproximateNumberOfMessagesVisible",
+    Statistic: "Maximum",
+    Dimensions: Match.arrayWith([
+      Match.objectLike({
+        Name: "QueueName",
+        Value: {
+          "Fn::GetAtt": [
+            Match.stringLikeRegexp(
+              "VideoDeletionDeadLetterQueue",
+            ),
+            "QueueName",
+          ],
+        },
+      }),
+    ]),
+  });
+
   template.hasResourceProperties("AWS::CloudWatch::Dashboard", {
     DashboardName: "DanceVaultDevelopmentOperations",
   });
@@ -473,6 +665,9 @@ test("monitors development backend failures and emails operations alerts", () =>
   );
   expect(JSON.stringify(dashboards)).toContain(
     "Recent backend errors",
+  );
+  expect(JSON.stringify(dashboards)).toContain(
+    "Failed video deletion jobs",
   );
 });
 
@@ -543,4 +738,37 @@ test("hosts the frontend through CloudFront", () => {
       Prune: true,
     },
   );
+});
+
+test("creates retryable video deletion queues", () => {
+  const app = new cdk.App();
+  const stack = new InfrastructureStack(app, "TestStack");
+  const template = Template.fromStack(stack);
+
+  template.resourceCountIs("AWS::SQS::Queue", 2);
+
+  template.hasResourceProperties("AWS::SQS::Queue", {
+    QueueName:
+      "DanceVaultDevelopmentVideoDeletionDeadLetters",
+    MessageRetentionPeriod: 1_209_600,
+    SqsManagedSseEnabled: true,
+  });
+
+  template.hasResourceProperties("AWS::SQS::Queue", {
+    QueueName: "DanceVaultDevelopmentVideoDeletionJobs",
+    MessageRetentionPeriod: 345_600,
+    VisibilityTimeout: 360,
+    SqsManagedSseEnabled: true,
+    RedrivePolicy: {
+      deadLetterTargetArn: {
+        "Fn::GetAtt": [
+          Match.stringLikeRegexp(
+            "VideoDeletionDeadLetterQueue",
+          ),
+          "Arn",
+        ],
+      },
+      maxReceiveCount: 5,
+    },
+  });
 });
