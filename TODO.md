@@ -58,6 +58,8 @@
 - Retry partial S3 and DynamoDB deletion failures.
 - Add complete account deletion covering videos, thumbnails, segments,
   DynamoDB records, and the Cognito user.
+- Before inviting real users, enable DynamoDB table deletion protection and
+  change its CloudFormation removal policy from `DESTROY` to `RETAIN`.
 
 ## 5. iPhone MOV Support and Media Normalization
 

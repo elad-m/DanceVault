@@ -250,6 +250,10 @@ test('creates an encrypted on-demand DanceVault data table', () => {
     SSESpecification: {
       SSEEnabled: true,
     },
+    PointInTimeRecoverySpecification: {
+      PointInTimeRecoveryEnabled: true,
+      RecoveryPeriodInDays: 35,
+    },
   });
 
   template.hasResource('AWS::DynamoDB::Table', {
