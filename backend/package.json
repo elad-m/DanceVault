@@ -10,8 +10,9 @@
     "db:test:init": "cross-env DYNAMODB_ENDPOINT=http://127.0.0.1:8000 AWS_DYNAMODB_REGION=us-east-1 DYNAMODB_TABLE_NAME=DanceVaultTestData tsx src/scripts/initializeLocalDynamoDB.ts",
     "dev": "cross-env APP_ENVIRONMENT=dev tsx src/index.ts",
     "local": "cross-env APP_ENVIRONMENT=local DYNAMODB_ENDPOINT=http://127.0.0.1:8000 AWS_DYNAMODB_REGION=us-east-1 DYNAMODB_TABLE_NAME=DanceVaultLocalData tsx src/index.ts",
-    "test": "npm run db:test:init && cross-env DYNAMODB_ENDPOINT=http://127.0.0.1:8000 AWS_DYNAMODB_REGION=us-east-1 DYNAMODB_TABLE_NAME=DanceVaultTestData vitest run",
-    "test:storage:integration": "cross-env APP_ENVIRONMENT=local S3_ENDPOINT=http://127.0.0.1:9000 vitest run --config vitest.integration.config.ts src/storage/videoStorageProvider.integration.test.ts"
+    "test": "npm run db:test:init && vitest run",
+    "test:integration": "npm run db:test:init && vitest run --config vitest.integration.config.ts",
+    "test:storage:integration": "vitest run --config vitest.integration.config.ts src/storage/videoStorageProvider.integration.test.ts"
   },
   "keywords": [],
   "author": "",

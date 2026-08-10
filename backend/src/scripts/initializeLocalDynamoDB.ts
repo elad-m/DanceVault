@@ -6,6 +6,7 @@ import {
     waitUntilTableExists,
 } from "@aws-sdk/client-dynamodb";
 import { createDynamoDBClientConfiguration } from "../persistence/dynamoDBConnection";
+import { assertLocalServiceEndpoint } from "../testEnvironmentSafety";
 
 function requireTableName(): string {
     const tableName = process.env.DYNAMODB_TABLE_NAME;
@@ -41,6 +42,11 @@ async function tableExists(
 }
 
 async function main() {
+    assertLocalServiceEndpoint({
+        serviceName: "Local DynamoDB initialization",
+        endpoint: process.env.DYNAMODB_ENDPOINT,
+    });
+
     const tableName = requireTableName();
     const client = new DynamoDBClient(
         createDynamoDBClientConfiguration()

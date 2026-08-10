@@ -7,6 +7,7 @@ import type {
     VideoDeletionJob,
     VideoDeletionQueue,
 } from "./videoDeletionQueue";
+import { isRunningUnderVitest } from "../testEnvironmentSafety";
 
 function requireEnvironmentVariable(
     variableName: string
@@ -24,6 +25,12 @@ function requireEnvironmentVariable(
 
 export function createSQSVideoDeletionQueue():
     VideoDeletionQueue {
+    if (isRunningUnderVitest()) {
+        throw new Error(
+            "Tests must inject a fake video deletion queue"
+        );
+    }
+
     const queueURL = requireEnvironmentVariable(
         "VIDEO_DELETION_QUEUE_URL"
     );

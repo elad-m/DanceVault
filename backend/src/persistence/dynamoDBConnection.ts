@@ -6,6 +6,10 @@ import {
 import {
     DynamoDBDocumentClient,
 } from "@aws-sdk/lib-dynamodb";
+import {
+    assertSafeDynamoDBTestTarget,
+    isRunningUnderVitest,
+} from "../testEnvironmentSafety";
 
 export type DynamoDBConnection = {
     tableName: string;
@@ -33,6 +37,13 @@ export function createDynamoDBClientConfiguration(): DynamoDBClientConfig {
     );
     const localEndpoint = process.env.DYNAMODB_ENDPOINT;
 
+    if (isRunningUnderVitest()) {
+        assertSafeDynamoDBTestTarget({
+            endpoint: localEndpoint,
+            tableName: process.env.DYNAMODB_TABLE_NAME,
+        });
+    }
+
     if (localEndpoint) {
         return {
             region,
@@ -52,6 +63,10 @@ export function createDynamoDBClientConfiguration(): DynamoDBClientConfig {
 }
 
 export function createDynamoDBConnection(): DynamoDBConnection {
+    const tableName = requireEnvironmentVariable(
+        "DYNAMODB_TABLE_NAME"
+    );
+
     const serviceClient = new DynamoDBClient(
         createDynamoDBClientConfiguration()
     );
@@ -64,9 +79,7 @@ export function createDynamoDBConnection(): DynamoDBConnection {
         });
 
     return {
-        tableName: requireEnvironmentVariable(
-            "DYNAMODB_TABLE_NAME"
-        ),
+        tableName,
         documentClient,
 
         close() {

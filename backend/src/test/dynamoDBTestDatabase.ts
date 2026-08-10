@@ -12,6 +12,7 @@ import {
     OTHER_TEST_VIDEO_ID,
     TEST_USER_ID,
 } from "./routeTestSupport";
+import { assertSafeDynamoDBTestTarget } from "../testEnvironmentSafety";
 
 type ResetDynamoDBTestDatabaseInput = {
     persistenceProvider: PersistenceProvider;
@@ -139,6 +140,11 @@ export function createDynamoDBTestPersistenceProvider(): PersistenceProvider {
 }
 
 export async function clearDynamoDBTestDatabase(): Promise<void> {
+    assertSafeDynamoDBTestTarget({
+        endpoint: process.env.DYNAMODB_ENDPOINT,
+        tableName: process.env.DYNAMODB_TABLE_NAME,
+    });
+
     const connection = createDynamoDBConnection();
     let exclusiveStartKey:
         | Record<string, string>

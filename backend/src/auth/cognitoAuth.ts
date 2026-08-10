@@ -2,12 +2,19 @@ import "dotenv/config";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import type { FastifyInstance } from "fastify";
 import { ApiErrorCode, sendApiError } from "../httpErrors";
+import { isRunningUnderVitest } from "../testEnvironmentSafety";
 
 export type CognitoAccessTokenVerifier = {
     verify(accessToken: string): Promise<{ sub: string }>;
 };
 
 export function createCognitoAccessTokenVerifier(): CognitoAccessTokenVerifier {
+    if (isRunningUnderVitest()) {
+        throw new Error(
+            "Tests must inject a fake Cognito access token verifier"
+        );
+    }
+
     const userPoolId = process.env.COGNITO_USER_POOL_ID;
     const clientId = process.env.COGNITO_CLIENT_ID;
 
