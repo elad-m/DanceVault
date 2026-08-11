@@ -92,6 +92,19 @@ export async function getPracticeQueue(cursor?: string): Promise<{
     }>(`/practice-queue?${query.toString()}`);
 }
 
+export async function getAllSegments(cursor?: string): Promise<{
+    segments: Segment[];
+    nextCursor: string | null;
+}> {
+    const query = new URLSearchParams({ limit: "20" });
+    if (cursor) query.set("cursor", cursor);
+
+    return requestJson<{
+        segments: Segment[];
+        nextCursor: string | null;
+    }>(`/segments?${query.toString()}`);
+}
+
 export async function getPlaybackUrl(videoId: string): Promise<string> {
     const response = await requestJson<{
         playbackUrl: string;

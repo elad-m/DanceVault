@@ -80,7 +80,58 @@
 - Implement previous-frame and next-frame controls for segments and full
   videos.
 
-## 7. Persistent Thumbnails
+## 7. UI Improvements
+
+1. **Done:** Show the signed-in user's email in the top-left account area. Replace or
+   supplement it with a display name or nickname when user profiles exist.
+2. **Done:** Hide segment description, tags, and difficulty from the create and edit
+   interfaces for now. Keep the underlying data until a separate decision is
+   made about removing it.
+3. **Done:** Make the new-segment editor collapsible instead of keeping it permanently
+   visible while watching a video.
+4. **Done:** Keep a stable player box for videos of every aspect ratio, and ensure
+   fullscreen centers and contains the complete video instead of focusing on
+   its top.
+5. **Done:** Keep the practice-list edit and delete icon buttons beside each other on
+   one row at every supported viewport width.
+6. **Done:** Add an All segments view so every saved segment remains accessible,
+   including segments excluded from the practice queue. Keep the existing
+   segment terminology until the product has a clearer user-facing name for
+   the concept.
+7. **Done:** Evaluate a black-and-bright-yellow visual direction inspired by the dance
+   club reference, including accessibility, contrast, and whether it fits the
+   working application rather than only the club logo.
+8. Allow users to correct a segment's start and end timestamps after creation.
+   Validate the new range and preserve chronological segment ordering in
+   DynamoDB.
+9. **Done:** Improve the mobile practice view so the player and practice list remain
+    conveniently accessible without excessive scrolling or losing the
+    selected movement.
+10. **Done:** Improve video-title entry during upload. Label the field "Video title"
+    and, after a file is selected, prefill it with the filename without its
+    extension as selected text. Preserve a title the user has already edited.
+11. Replace the technical name "Practice queue" with a clearer user-facing
+    name. Keep the current wording until a final choice is made.
+
+### Practice queue naming candidates
+
+- **Practice List:** Clearest and least technical.
+- **Practice Set:** Compact; suggests a selected group of movements.
+- **Practice Plan:** Implies intentional organization.
+- **Practice Playlist:** Works especially well with sequential video playback.
+- **Practice Lineup:** Casual and ordered.
+- **Practice Rotation:** Suggests recurring items.
+- **Rehearsal List:** More dance-oriented.
+- **Rehearsal Set:** Concise and domain-specific.
+- **Training Set:** Slightly athletic.
+- **Review List:** Emphasizes revisiting material.
+- **Movement Set:** Focuses on the dance content itself.
+- **Movement Playlist:** Expressive and clearly video-oriented.
+- **Session Plan:** Suggests what the user will practice now.
+- **Today's Practice:** Friendly, but implies daily scheduling.
+- **Up Next:** Strong as an interface label, but not a complete feature name.
+
+## 8. Persistent Thumbnails
 
 - Generate a thumbnail at the segment start time.
 - Store it under an S3 key such as
@@ -88,7 +139,7 @@
 - Store the thumbnail key on the segment record.
 - Generate thumbnails asynchronously through the media-processing pipeline.
 
-## 8. Self-Service User Registration
+## 9. Self-Service User Registration
 
 - Enable Cognito self-registration and email verification.
 - Require acceptance of the current legal documents.

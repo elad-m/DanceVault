@@ -2,7 +2,6 @@ import { LoaderCircle, Save, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type {
     Confidence,
-    Difficulty,
     PracticePriority,
     Segment,
     UpdateSegmentInput,
@@ -44,13 +43,6 @@ function EditSegmentForm({
     onSave,
 }: EditSegmentDialogProps & { segment: Segment }) {
     const [name, setName] = useState(segment.name);
-    const [description, setDescription] = useState(
-        segment.description ?? ""
-    );
-    const [tags, setTags] = useState(segment.tags.join(", "));
-    const [difficulty, setDifficulty] = useState<Difficulty>(
-        segment.difficulty
-    );
     const [confidence, setConfidence] = useState<Confidence>(
         segment.confidence
     );
@@ -62,12 +54,6 @@ function EditSegmentForm({
 
         await onSave(segment, {
             name: name.trim(),
-            description: description.trim(),
-            tags: tags
-                .split(",")
-                .map((tag) => tag.trim())
-                .filter(Boolean),
-            difficulty,
             confidence,
             practicePriority,
         });
@@ -107,43 +93,7 @@ function EditSegmentForm({
                     />
                 </label>
 
-                <label>
-                    Description
-                    <textarea
-                        value={description}
-                        onChange={(event) =>
-                            setDescription(event.target.value)
-                        }
-                        rows={2}
-                    />
-                </label>
-
-                <label>
-                    Tags
-                    <input
-                        value={tags}
-                        onChange={(event) => setTags(event.target.value)}
-                        placeholder="wave, open stance, solo"
-                    />
-                </label>
-
-                <div className="select-grid">
-                    <label>
-                        Difficulty
-                        <select
-                            value={difficulty}
-                            onChange={(event) =>
-                                setDifficulty(
-                                    event.target.value as Difficulty
-                                )
-                            }
-                        >
-                            <option value="easy">Easy</option>
-                            <option value="medium">Medium</option>
-                            <option value="hard">Hard</option>
-                            <option value="very_hard">Very hard</option>
-                        </select>
-                    </label>
+                <div className="select-grid segment-practice-fields">
                     <label>
                         Confidence
                         <select

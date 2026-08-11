@@ -1,6 +1,11 @@
 import { ListChecks, LoaderCircle, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { deleteSegment, getPracticeQueue, updateSegment } from "../api";
+import {
+    deleteSegment,
+    getAllSegments,
+    getPracticeQueue,
+    updateSegment,
+} from "../api";
 import { formatDuration } from "../format";
 import {
     deleteSegmentThumbnail,
@@ -15,10 +20,13 @@ import type {
     Video,
 } from "../types";
 import { DeleteSegmentDialog } from "./DeleteSegmentDialog";
-import { PracticePlayer } from "./PracticePlayer";
+import { SegmentPlayer } from "./SegmentPlayer";
 import { EditSegmentDialog } from "./EditSegmentDialog";
 
-type PracticeQueueProps = {
+export type SegmentBrowserMode = "practice" | "all";
+
+type SegmentBrowserProps = {
+    mode: SegmentBrowserMode;
     videos: Video[];
     initialSelectedSegmentId: string | null;
     onSelectSegment: (segmentId: string | null) => void;
@@ -50,13 +58,14 @@ function sortPracticeSegments(segments: Segment[]): Segment[] {
     );
 }
 
-export function PracticeQueue({
+export function SegmentBrowser({
+    mode,
     videos,
     initialSelectedSegmentId,
     onSelectSegment,
     onOpenFullVideo,
     onError,
-}: PracticeQueueProps) {
+}: SegmentBrowserProps) {
     const [segments, setSegments] = useState<Segment[]>([]);
     const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
     const [updatingSegmentId, setUpdatingSegmentId] = useState<string | null>(null);
@@ -74,7 +83,11 @@ export function PracticeQueue({
         let cancelled = false;
         setLoading(true);
 
-        getPracticeQueue()
+        const getSegments = mode === "practice"
+            ? getPracticeQueue
+            : getAllSegments;
+
+        getSegments()
             .then((response) => {
                 if (cancelled) return;
                 setSegments(response.segments);
@@ -87,7 +100,13 @@ export function PracticeQueue({
                 setNextCursor(response.nextCursor);
             })
             .catch((error: unknown) => {
-                if (!cancelled) onError(error instanceof Error ? error.message : "Could not load practice queue");
+                if (!cancelled) {
+                    onError(
+                        error instanceof Error
+                            ? error.message
+                            : `Could not load ${mode === "practice" ? "practice queue" : "segments"}`
+                    );
+                }
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);
@@ -96,7 +115,7 @@ export function PracticeQueue({
         return () => {
             cancelled = true;
         };
-    }, [onError, onSelectSegment]);
+    }, [mode, onError, onSelectSegment]);
 
     function selectSegment(segmentId: string | null) {
         setSelectedSegmentId(segmentId);
@@ -130,7 +149,9 @@ export function PracticeQueue({
         if (!nextCursor) return;
         setLoading(true);
         try {
-            const response = await getPracticeQueue(nextCursor);
+            const response = mode === "practice"
+                ? await getPracticeQueue(nextCursor)
+                : await getAllSegments(nextCursor);
             setSegments((current) => [...current, ...response.segments]);
             void loadStoredThumbnails(response.segments);
             setNextCursor(response.nextCursor);
@@ -148,13 +169,31 @@ export function PracticeQueue({
         setUpdatingSegmentId(segment.id);
         try {
             const updatedSegment = await updateSegment(segment.id, input);
-            const updatedSegments = sortPracticeSegments(belongsInPracticeQueue(updatedSegment)
-                ? segments.map((current) => current.id === updatedSegment.id ? updatedSegment : current)
-                : segments.filter((current) => current.id !== updatedSegment.id));
+            const updatedSegments = mode === "practice"
+                ? sortPracticeSegments(
+                    belongsInPracticeQueue(updatedSegment)
+                        ? segments.map((current) =>
+                            current.id === updatedSegment.id
+                                ? updatedSegment
+                                : current
+                        )
+                        : segments.filter(
+                            (current) => current.id !== updatedSegment.id
+                        )
+                )
+                : segments.map((current) =>
+                    current.id === updatedSegment.id
+                        ? updatedSegment
+                        : current
+                );
 
             setSegments(updatedSegments);
 
-            if (selectedSegmentId === segment.id && !belongsInPracticeQueue(updatedSegment)) {
+            if (
+                mode === "practice" &&
+                selectedSegmentId === segment.id &&
+                !belongsInPracticeQueue(updatedSegment)
+            ) {
                 const removedIndex = segments.findIndex((current) => current.id === segment.id);
                 selectSegment(updatedSegments[Math.min(removedIndex, updatedSegments.length - 1)]?.id ?? null);
             }
@@ -226,14 +265,25 @@ export function PracticeQueue({
         <main className="practice-workspace">
             <header className="practice-header">
                 <div>
-                    <span className="eyebrow">Training</span>
-                    <h1>Practice queue</h1>
+                    <span className="eyebrow">
+                        {mode === "practice" ? "Training" : "Browse"}
+                    </span>
+                    <h1>
+                        {mode === "practice"
+                            ? "Practice queue"
+                            : "All segments"}
+                    </h1>
                 </div>
                 <span className="queue-total"><ListChecks size={16} /> {segments.length}</span>
             </header>
 
             <div className="practice-layout">
-                <PracticePlayer
+                <SegmentPlayer
+                    selectionLabel={
+                        mode === "practice"
+                            ? "Now practicing"
+                            : "Selected segment"
+                    }
                     segment={selectedSegment}
                     video={selectedVideo}
                     hasPrevious={selectedIndex > 0}
@@ -245,9 +295,16 @@ export function PracticeQueue({
                     onError={onError}
                 />
 
-                <section className="practice-list-panel" aria-label="Practice queue segments">
+                <section
+                    className="practice-list-panel"
+                    aria-label={
+                        mode === "practice"
+                            ? "Practice queue segments"
+                            : "All segments"
+                    }
+                >
                     <div className="practice-list-heading">
-                        <span>Queue</span>
+                        <span>{mode === "practice" ? "Queue" : "Segments"}</span>
                         <strong>{segments.length}</strong>
                     </div>
 
@@ -331,7 +388,11 @@ export function PracticeQueue({
                             <div className="queue-state"><LoaderCircle className="spin" /> Loading queue...</div>
                         )}
                         {!loading && segments.length === 0 && (
-                            <div className="queue-state">Your practice queue is empty.</div>
+                            <div className="queue-state">
+                                {mode === "practice"
+                                    ? "Your practice queue is empty."
+                                    : "You have no segments yet."}
+                            </div>
                         )}
                     </div>
 

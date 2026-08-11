@@ -11,7 +11,8 @@ import { getPlaybackUrl } from "../api";
 import { formatDuration } from "../format";
 import type { Segment, Video } from "../types";
 
-type PracticePlayerProps = {
+type SegmentPlayerProps = {
+    selectionLabel: string;
     segment: Segment | null;
     video: Video | null;
     hasPrevious: boolean;
@@ -23,7 +24,8 @@ type PracticePlayerProps = {
     onError: (message: string) => void;
 };
 
-export function PracticePlayer({
+export function SegmentPlayer({
+    selectionLabel,
     segment,
     video,
     hasPrevious,
@@ -33,20 +35,18 @@ export function PracticePlayer({
     onOpenFullVideo,
     onThumbnailCaptured,
     onError,
-}: PracticePlayerProps) {
+}: SegmentPlayerProps) {
     const shellRef = useRef<HTMLDivElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const thumbnailCapturedForSegmentRef = useRef<string | null>(null);
     const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
     const [currentMilliseconds, setCurrentMilliseconds] = useState(0);
-    const [aspectRatio, setAspectRatio] = useState("16 / 9");
     const [playing, setPlaying] = useState(false);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         setPlaybackUrl(null);
         setPlaying(false);
-        setAspectRatio("16 / 9");
         setCurrentMilliseconds(segment?.startMilliseconds ?? 0);
         thumbnailCapturedForSegmentRef.current = null;
 
@@ -59,7 +59,7 @@ export function PracticePlayer({
                 if (!cancelled) setPlaybackUrl(url);
             })
             .catch((error: unknown) => {
-                if (!cancelled) onError(error instanceof Error ? error.message : "Could not load practice video");
+                if (!cancelled) onError(error instanceof Error ? error.message : "Could not load segment video");
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);
@@ -134,7 +134,7 @@ export function PracticePlayer({
         return (
             <section className="practice-player empty-practice-player">
                 <Play size={24} />
-                <span>Select a segment to practice.</span>
+                <span>Select a segment.</span>
             </section>
         );
     }
@@ -143,18 +143,19 @@ export function PracticePlayer({
         <section className="practice-player">
             <div className="practice-player-heading">
                 <div>
-                    <span className="eyebrow">Now practicing</span>
+                    <span className="eyebrow">{selectionLabel}</span>
                     <h2>{segment.name}</h2>
                     <p>{video.title}</p>
                 </div>
                 <button className="secondary-button" onClick={() => onOpenFullVideo(segment)}>
-                    <VideoIcon size={15} /> Go to full video
+                    <VideoIcon size={15} />
+                    <span className="full-video-label">Go to full video</span>
                 </button>
             </div>
 
             <div className="practice-player-shell" ref={shellRef}>
                 {playbackUrl ? (
-                    <div className="practice-video-stage" style={{ aspectRatio }}>
+                    <div className="practice-video-stage">
                         <video
                             ref={videoRef}
                             src={playbackUrl}
@@ -163,7 +164,6 @@ export function PracticePlayer({
                             onClick={togglePlayback}
                             onLoadedMetadata={(event) => {
                                 const player = event.currentTarget;
-                                setAspectRatio(`${player.videoWidth} / ${player.videoHeight}`);
                                 player.currentTime = segment.startMilliseconds / 1000;
                             }}
                             onLoadedData={(event) => captureSegmentThumbnail(event.currentTarget)}
@@ -206,7 +206,7 @@ export function PracticePlayer({
                             aria-label="Seek within segment"
                         />
                         <span className="player-control-time">{formatDuration(segment.endMilliseconds)}</span>
-                        <button className="player-control-button" onClick={() => void shellRef.current?.requestFullscreen()} aria-label="Enter practice fullscreen">
+                        <button className="player-control-button" onClick={() => void shellRef.current?.requestFullscreen()} aria-label="Enter segment fullscreen">
                             <Maximize2 size={17} />
                         </button>
                     </div>

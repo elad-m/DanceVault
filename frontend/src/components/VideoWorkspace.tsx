@@ -18,7 +18,10 @@ import {
     getVideoSegments,
     updateSegment,
 } from "../api";
-import { formatDuration } from "../format";
+import {
+    formatDuration,
+    getVisibleVideoStatusLabel,
+} from "../format";
 import type {
     CreateSegmentInput,
     Segment,
@@ -35,19 +38,21 @@ type VideoWorkspaceProps = {
         id: string;
         milliseconds: number;
     } | null;
-    onBackToPractice?: () => void;
+    backNavigation?: {
+        label: string;
+        onBack: () => void;
+    };
     onDelete: (video: Video) => void;
     onError: (message: string) => void;
 };
 
-export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete, onError }: VideoWorkspaceProps) {
+export function VideoWorkspace({ video, seekRequest, backNavigation, onDelete, onError }: VideoWorkspaceProps) {
     const playerShellRef = useRef<HTMLDivElement>(null);
     const playerRef = useRef<HTMLVideoElement>(null);
     const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
     const [segments, setSegments] = useState<Segment[]>([]);
     const [currentMilliseconds, setCurrentMilliseconds] = useState(0);
     const [durationMilliseconds, setDurationMilliseconds] = useState(0);
-    const [videoAspectRatio, setVideoAspectRatio] = useState("16 / 9");
     const [isPlaying, setIsPlaying] = useState(false);
     const [volume, setVolume] = useState(1);
     const [loading, setLoading] = useState(false);
@@ -64,7 +69,6 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
         setSegments([]);
         setCurrentMilliseconds(0);
         setDurationMilliseconds(0);
-        setVideoAspectRatio("16 / 9");
         setIsPlaying(false);
         setSegmentBeingEdited(null);
         setSegmentPendingDeletion(null);
@@ -222,17 +226,23 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
         );
     }
 
+    const statusLabel = getVisibleVideoStatusLabel(video.status);
+
     return (
         <main className="workspace">
             <header className="workspace-header">
-                <div>
-                    <span className="eyebrow">Uploaded video</span>
+                <div className="workspace-title">
                     <h1>{video.title}</h1>
+                    {statusLabel && (
+                        <span className={`status-badge ${video.status}`}>
+                            {statusLabel}
+                        </span>
+                    )}
                 </div>
                 <div className="workspace-header-actions">
-                    {onBackToPractice && (
-                        <button className="secondary-button" onClick={onBackToPractice}>
-                            <ArrowLeft size={16} /> Back to practice queue
+                    {backNavigation && (
+                        <button className="secondary-button" onClick={backNavigation.onBack}>
+                            <ArrowLeft size={16} /> {backNavigation.label}
                         </button>
                     )}
                     <button
@@ -241,7 +251,6 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
                     >
                         <Trash2 size={16} /> Delete video
                     </button>
-                    <span className={`status-badge ${video.status}`}>{video.status.replace("_", " ")}</span>
                 </div>
             </header>
 
@@ -252,7 +261,7 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
                             <div className="video-stage player-message"><LoaderCircle className="spin" /> Loading video...</div>
                         ) : playbackUrl ? (
                             <>
-                                <div className="video-stage" style={{ aspectRatio: videoAspectRatio }}>
+                                <div className="video-stage">
                                     <video
                                         ref={playerRef}
                                         src={playbackUrl}
@@ -262,7 +271,6 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
                                         onLoadedMetadata={(event) => {
                                             const player = event.currentTarget;
                                             setDurationMilliseconds(Math.round(player.duration * 1000));
-                                            setVideoAspectRatio(`${player.videoWidth} / ${player.videoHeight}`);
                                             if (seekRequest) {
                                                 player.currentTime = seekRequest.milliseconds / 1000;
                                                 setCurrentMilliseconds(seekRequest.milliseconds);
@@ -331,7 +339,6 @@ export function VideoWorkspace({ video, seekRequest, onBackToPractice, onDelete,
                                     <span className="segment-time">{formatDuration(segment.startMilliseconds)}</span>
                                     <span className="segment-copy">
                                         <strong>{segment.name}</strong>
-                                        <span>{segment.tags.length > 0 ? segment.tags.join(" / ") : "No tags"}</span>
                                     </span>
                                     <Play size={15} />
                                 </button>

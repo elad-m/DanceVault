@@ -1,14 +1,23 @@
 import { AlertCircle, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { deleteVideo, listVideos, uploadVideo } from "./api";
-import { signOutUser } from "./auth/authentication";
+import {
+    getSignedInUserLabel,
+    signOutUser,
+} from "./auth/authentication";
 import { DeleteVideoDialog } from "./components/DeleteVideoDialog";
 import { UploadDialog } from "./components/UploadDialog";
-import { PracticeQueue } from "./components/PracticeQueue";
+import { SegmentBrowser } from "./components/SegmentBrowser";
 import { VideoSidebar, type AppView } from "./components/VideoSidebar";
 import { VideoWorkspace } from "./components/VideoWorkspace";
 import { runtime } from "./runtime";
 import type { Segment, Video } from "./types";
+
+function getViewForPath(pathname: string): AppView {
+    if (pathname.startsWith("/videos")) return "videos";
+    if (pathname.startsWith("/segments")) return "segments";
+    return "practice";
+}
 
 export default function App() {
     const [videos, setVideos] = useState<Video[]>([]);
@@ -19,11 +28,15 @@ export default function App() {
     const [videoPendingDeletion, setVideoPendingDeletion] = useState<Video | null>(null);
     const [deletingVideo, setDeletingVideo] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [signedInUserLabel, setSignedInUserLabel] = useState("Signed-in user");
     const [activeView, setActiveView] = useState<AppView>(() =>
-        window.location.pathname.startsWith("/videos") ? "library" : "practice"
+        getViewForPath(window.location.pathname)
     );
     const [practiceSegmentId, setPracticeSegmentId] = useState<string | null>(null);
-    const [canReturnToPractice, setCanReturnToPractice] = useState(false);
+    const [allSegmentsSegmentId, setAllSegmentsSegmentId] =
+        useState<string | null>(null);
+    const [returnToView, setReturnToView] =
+        useState<"practice" | "segments" | null>(null);
     const [seekRequest, setSeekRequest] = useState<{
         id: string;
         milliseconds: number;
@@ -51,6 +64,12 @@ export default function App() {
     }, [refreshVideos]);
 
     useEffect(() => {
+        void getSignedInUserLabel()
+            .then(setSignedInUserLabel)
+            .catch(() => setSignedInUserLabel("Signed-in user"));
+    }, []);
+
+    useEffect(() => {
         if (window.location.pathname === "/") {
             window.history.replaceState({}, "", "/practice");
         }
@@ -58,8 +77,8 @@ export default function App() {
 
     useEffect(() => {
         function handleBrowserNavigation(event: PopStateEvent) {
-            setActiveView(window.location.pathname.startsWith("/videos") ? "library" : "practice");
-            setCanReturnToPractice(event.state?.fromPractice === true);
+            setActiveView(getViewForPath(window.location.pathname));
+            setReturnToView(event.state?.fromView ?? null);
         }
 
         window.addEventListener("popstate", handleBrowserNavigation);
@@ -67,9 +86,15 @@ export default function App() {
     }, []);
 
     function navigateToView(view: AppView) {
-        const path = view === "practice" ? "/practice" : selectedVideo ? `/videos/${selectedVideo.id}` : "/";
+        const path = view === "practice"
+            ? "/practice"
+            : view === "segments"
+                ? "/segments"
+                : selectedVideo
+                    ? `/videos/${selectedVideo.id}`
+                    : "/videos";
         window.history.pushState({}, "", path);
-        setCanReturnToPractice(false);
+        setReturnToView(null);
         setActiveView(view);
     }
 
@@ -81,7 +106,8 @@ export default function App() {
             setVideos((current) => [...current, video]);
             setSelectedVideo(video);
             window.history.pushState({}, "", `/videos/${video.id}`);
-            setCanReturnToPractice(false);
+            setReturnToView(null);
+            setActiveView("videos");
             setUploadOpen(false);
         } catch (caught) {
             showError(caught instanceof Error ? caught.message : "Could not upload video");
@@ -105,7 +131,7 @@ export default function App() {
             setVideos(remainingVideos);
             setSelectedVideo(nextVideo);
             setSeekRequest(null);
-            setCanReturnToPractice(false);
+            setReturnToView(null);
             setVideoPendingDeletion(null);
             window.history.pushState(
                 {},
@@ -131,7 +157,10 @@ export default function App() {
         }
     }
 
-    function handleOpenFullVideo(segment: Segment) {
+    function handleOpenFullVideo(
+        segment: Segment,
+        fromView: "practice" | "segments"
+    ) {
         const video = videos.find((candidate) => candidate.id === segment.videoId);
         if (!video) {
             showError("The source video is not available");
@@ -143,10 +172,18 @@ export default function App() {
             id: segment.id,
             milliseconds: segment.startMilliseconds,
         });
-        setPracticeSegmentId(segment.id);
-        window.history.pushState({ fromPractice: true }, "", `/videos/${video.id}`);
-        setCanReturnToPractice(true);
-        setActiveView("library");
+        if (fromView === "practice") {
+            setPracticeSegmentId(segment.id);
+        } else {
+            setAllSegmentsSegmentId(segment.id);
+        }
+        window.history.pushState(
+            { fromView },
+            "",
+            `/videos/${video.id}`
+        );
+        setReturnToView(fromView);
+        setActiveView("videos");
     }
 
     return (
@@ -161,30 +198,50 @@ export default function App() {
                     setSelectedVideo(video);
                     setSeekRequest(null);
                     window.history.pushState({}, "", `/videos/${video.id}`);
-                    setCanReturnToPractice(false);
+                    setReturnToView(null);
                 }}
                 onRefresh={() => void refreshVideos()}
                 onUpload={() => setUploadOpen(true)}
+                signedInUserLabel={signedInUserLabel}
                 onSignOut={
                     runtime.environment === "dev"
                         ? () => void handleSignOut()
                         : undefined
                 }
             />
-            {activeView === "library" ? (
+            {activeView === "videos" ? (
                 <VideoWorkspace
                     video={selectedVideo}
                     seekRequest={seekRequest}
-                    onBackToPractice={canReturnToPractice ? () => window.history.back() : undefined}
+                    backNavigation={returnToView ? {
+                        label: returnToView === "practice"
+                            ? "Back to practice queue"
+                            : "Back to all segments",
+                        onBack: () => window.history.back(),
+                    } : undefined}
                     onDelete={setVideoPendingDeletion}
                     onError={showError}
                 />
-            ) : (
-                <PracticeQueue
+            ) : activeView === "practice" ? (
+                <SegmentBrowser
+                    mode="practice"
                     videos={videos}
                     initialSelectedSegmentId={practiceSegmentId}
                     onSelectSegment={setPracticeSegmentId}
-                    onOpenFullVideo={handleOpenFullVideo}
+                    onOpenFullVideo={(segment) =>
+                        handleOpenFullVideo(segment, "practice")
+                    }
+                    onError={showError}
+                />
+            ) : (
+                <SegmentBrowser
+                    mode="all"
+                    videos={videos}
+                    initialSelectedSegmentId={allSegmentsSegmentId}
+                    onSelectSegment={setAllSegmentsSegmentId}
+                    onOpenFullVideo={(segment) =>
+                        handleOpenFullVideo(segment, "segments")
+                    }
                     onError={showError}
                 />
             )}

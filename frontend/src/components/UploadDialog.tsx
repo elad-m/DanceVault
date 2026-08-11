@@ -1,5 +1,5 @@
 import { Upload, X } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 type UploadDialogProps = {
     open: boolean;
@@ -8,9 +8,16 @@ type UploadDialogProps = {
     onUpload: (title: string, file: File) => Promise<void>;
 };
 
+function createVideoTitleFromFileName(fileName: string): string {
+    const titleWithoutExtension = fileName.replace(/\.[^.]+$/, "");
+    return titleWithoutExtension || fileName;
+}
+
 export function UploadDialog({ open, uploading, onClose, onUpload }: UploadDialogProps) {
     const [title, setTitle] = useState("");
     const [file, setFile] = useState<File | null>(null);
+    const generatedTitleRef = useRef<string | null>(null);
+    const titleInputRef = useRef<HTMLInputElement>(null);
 
     if (!open) return null;
 
@@ -20,6 +27,45 @@ export function UploadDialog({ open, uploading, onClose, onUpload }: UploadDialo
         await onUpload(title.trim(), file);
         setTitle("");
         setFile(null);
+        generatedTitleRef.current = null;
+    }
+
+    function closeDialog() {
+        setTitle("");
+        setFile(null);
+        generatedTitleRef.current = null;
+        onClose();
+    }
+
+    function updateTitle(event: ChangeEvent<HTMLInputElement>) {
+        const nextTitle = event.target.value;
+        setTitle(nextTitle);
+
+        if (nextTitle !== generatedTitleRef.current) {
+            generatedTitleRef.current = null;
+        }
+    }
+
+    function selectFile(event: ChangeEvent<HTMLInputElement>) {
+        const selectedFile = event.target.files?.[0] ?? null;
+        setFile(selectedFile);
+
+        if (!selectedFile) return;
+
+        const generatedTitle = createVideoTitleFromFileName(
+            selectedFile.name
+        );
+        const titleCanBeReplaced =
+            !title.trim() || title === generatedTitleRef.current;
+
+        if (!titleCanBeReplaced) return;
+
+        generatedTitleRef.current = generatedTitle;
+        setTitle(generatedTitle);
+        window.requestAnimationFrame(() => {
+            titleInputRef.current?.focus();
+            titleInputRef.current?.select();
+        });
     }
 
     return (
@@ -30,24 +76,30 @@ export function UploadDialog({ open, uploading, onClose, onUpload }: UploadDialo
                         <h2>Upload lesson video</h2>
                         <p>MP4 or MOV files, up to 500 MB</p>
                     </div>
-                    <button type="button" className="icon-button" onClick={onClose} disabled={uploading} aria-label="Close">
+                    <button type="button" className="icon-button" onClick={closeDialog} disabled={uploading} aria-label="Close">
                         <X size={18} />
                     </button>
                 </div>
                 <label>
                     Video title
-                    <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Thursday salsa lesson" autoFocus />
+                    <input
+                        ref={titleInputRef}
+                        value={title}
+                        onChange={updateTitle}
+                        placeholder="Video title"
+                        autoFocus
+                    />
                 </label>
                 <label>
                     Video file
                     <input
                         type="file"
                         accept="video/mp4,video/quicktime,.mp4,.mov"
-                        onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                        onChange={selectFile}
                     />
                 </label>
                 <div className="modal-footer">
-                    <button type="button" className="secondary-button" onClick={onClose} disabled={uploading}>Cancel</button>
+                    <button type="button" className="secondary-button" onClick={closeDialog} disabled={uploading}>Cancel</button>
                     <button className="primary-button" disabled={!file || !title.trim() || uploading}>
                         <Upload size={17} /> {uploading ? "Uploading..." : "Upload video"}
                     </button>
