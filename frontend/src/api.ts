@@ -9,6 +9,24 @@ import { runtime } from "./runtime";
 
 const maxVideoUploadSizeBytes: number = 500_000_000;
 
+type SupportedVideoContentType =
+    | "video/mp4"
+    | "video/quicktime";
+
+function getVideoContentType(fileName: string): SupportedVideoContentType {
+    const normalizedFileName = fileName.toLowerCase();
+
+    if (normalizedFileName.endsWith(".mp4")) {
+        return "video/mp4";
+    }
+
+    if (normalizedFileName.endsWith(".mov")) {
+        return "video/quicktime";
+    }
+
+    throw new Error("Only MP4 and MOV video files are supported");
+}
+
 type ApiErrorBody = {
     error?: {
         message?: string;
@@ -112,6 +130,8 @@ export async function uploadVideo(
     title: string,
     file: File
 ): Promise<Video> {
+    const contentType = getVideoContentType(file.name);
+
     if (file.size > maxVideoUploadSizeBytes) {
         throw new Error(
             "Video files must be 500 MB or smaller"
@@ -130,7 +150,7 @@ export async function uploadVideo(
         body: JSON.stringify({
             title,
             fileName: file.name,
-            contentType: "video/mp4",
+            contentType,
             fileSizeBytes: file.size,
         }),
     });
@@ -138,7 +158,7 @@ export async function uploadVideo(
     const uploadResponse = await fetch(initialized.uploadUrl, {
         method: "PUT",
         headers: {
-            "content-type": "video/mp4",
+            "content-type": contentType,
         },
         body: file,
     });

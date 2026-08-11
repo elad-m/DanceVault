@@ -14,7 +14,10 @@ import {
     createVideoStorageClientConfiguration,
     getVideoStorageBucketName,
 } from "./videoStorageConfig";
-import type { VideoStorageProviderName } from "../domain/video";
+import type {
+    SupportedVideoContentType,
+    VideoStorageProviderName,
+} from "../domain/video";
 
 export type VideoStorageProvider = {
     name: VideoStorageProviderName;
@@ -31,7 +34,7 @@ export type VideoStorageProvider = {
 
 export type CreateVideoUploadUrlInput = {
     storageKey: string;
-    contentType: "video/mp4";
+    contentType: SupportedVideoContentType;
 };
 
 export const videoUrlExpirationSeconds = 15 * 60;

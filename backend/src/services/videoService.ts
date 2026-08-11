@@ -48,6 +48,7 @@ export async function initializeVideoUpload({
     const storageKey = createVideoStorageKey({
         userId,
         uploadId: videoID,
+        contentType,
     });
     const uploadUrl = await videoStorageProvider.createVideoUploadUrl({
         storageKey,

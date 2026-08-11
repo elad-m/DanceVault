@@ -369,6 +369,44 @@ describe("POST /video-uploads", () => {
             storageKey: body.video.storageKey,
         });
         expect(storedVideo?.storageProvider).toBe("minio");
+        expect(
+            createVideoUploadUrlMock
+        ).toHaveBeenCalledExactlyOnceWith({
+            storageKey: body.video.storageKey,
+            contentType: "video/mp4",
+        });
+    });
+
+    it("creates a pending QuickTime upload with a MOV storage key", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/video-uploads",
+            payload: {
+                title: "iPhone salsa lesson",
+                fileName: "IMG_1234.MOV",
+                contentType: "video/quicktime",
+                fileSizeBytes: TEST_VIDEO_FILE_SIZE_BYTES,
+            },
+        });
+
+        expect(response.statusCode).toBe(201);
+        const body = response.json();
+        expect(body.video).toMatchObject({
+            userId: TEST_USER_ID,
+            title: "iPhone salsa lesson",
+            originalFileName: "IMG_1234.MOV",
+            status: "pending_upload",
+            storageProvider: "minio",
+            storageKey: expect.stringMatching(
+                /^users\/test-user-1\/videos\/[0-9a-f-]+\.mov$/
+            ),
+        });
+        expect(
+            createVideoUploadUrlMock
+        ).toHaveBeenCalledExactlyOnceWith({
+            storageKey: body.video.storageKey,
+            contentType: "video/quicktime",
+        });
     });
 
     it("rejects unsupported content types", async () => {
@@ -386,20 +424,29 @@ describe("POST /video-uploads", () => {
         expect(response.statusCode).toBe(400);
     });
 
-    it("rejects a non-MP4 filename", async () => {
-        const response = await app.inject({
-            method: "POST",
-            url: "/video-uploads",
-            payload: {
-                title: "Mismatched upload",
-                fileName: "lesson.mov",
-                contentType: "video/mp4",
-                fileSizeBytes: TEST_VIDEO_FILE_SIZE_BYTES,
-            },
-        });
+    it.each([
+        ["lesson.mov", "video/mp4"],
+        ["lesson.mp4", "video/quicktime"],
+    ])(
+        "rejects mismatched filename %s and content type %s",
+        async (fileName, contentType) => {
+            const response = await app.inject({
+                method: "POST",
+                url: "/video-uploads",
+                payload: {
+                    title: "Mismatched upload",
+                    fileName,
+                    contentType,
+                    fileSizeBytes: TEST_VIDEO_FILE_SIZE_BYTES,
+                },
+            });
 
-        expect(response.statusCode).toBe(400);
-    });
+            expect(response.statusCode).toBe(400);
+            expect(
+                createVideoUploadUrlMock
+            ).not.toHaveBeenCalled();
+        }
+    );
 
     it("rejects a video larger than the upload-size limit", async () => {
         const response = await app.inject({

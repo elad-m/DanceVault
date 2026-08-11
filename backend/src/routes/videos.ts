@@ -65,7 +65,8 @@ const createVideoUploadRouteOptions = {
                     type: "string",
                     minLength: 1,
                     maxLength: 255,
-                    pattern: "^[^/\\\\]+\\.[mM][pP]4$",
+                    pattern:
+                        "^[^/\\\\]+\\.(?:[mM][pP]4|[mM][oO][vV])$",
                 },
                 contentType: supportedVideoContentTypeSchema,
                 fileSizeBytes: {
@@ -74,6 +75,28 @@ const createVideoUploadRouteOptions = {
                     maximum: maxVideoUploadSizeBytes,
                 },
             },
+            oneOf: [
+                {
+                    properties: {
+                        fileName: {
+                            pattern: "^[^/\\\\]+\\.[mM][pP]4$",
+                        },
+                        contentType: {
+                            const: "video/mp4",
+                        },
+                    },
+                },
+                {
+                    properties: {
+                        fileName: {
+                            pattern: "^[^/\\\\]+\\.[mM][oO][vV]$",
+                        },
+                        contentType: {
+                            const: "video/quicktime",
+                        },
+                    },
+                },
+            ],
         },
     },
 } as const;

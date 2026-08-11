@@ -28,7 +28,7 @@ export function UploadDialog({ open, uploading, onClose, onUpload }: UploadDialo
                 <div className="modal-header">
                     <div>
                         <h2>Upload lesson video</h2>
-                        <p>MP4 files only, up to 500 MB</p>
+                        <p>MP4 or MOV files, up to 500 MB</p>
                     </div>
                     <button type="button" className="icon-button" onClick={onClose} disabled={uploading} aria-label="Close">
                         <X size={18} />
@@ -39,10 +39,10 @@ export function UploadDialog({ open, uploading, onClose, onUpload }: UploadDialo
                     <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Thursday salsa lesson" autoFocus />
                 </label>
                 <label>
-                    MP4 file
+                    Video file
                     <input
                         type="file"
-                        accept="video/mp4,.mp4"
+                        accept="video/mp4,video/quicktime,.mp4,.mov"
                         onChange={(event) => setFile(event.target.files?.[0] ?? null)}
                     />
                 </label>
