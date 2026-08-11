@@ -6,4 +6,7 @@ export {
     createVideoStorageProvider,
     videoUrlExpirationSeconds,
 } from "./videoStorageProvider";
-export { getActiveVideoStorageProviderName } from "./videoStorageConfig";
+export {
+    getActiveVideoStorageProviderName,
+    getMinioVideoStorageEndpoint,
+} from "./videoStorageConfig";

@@ -1,15 +1,23 @@
 import { buildApp } from "./app";
 import { runtime } from "./runtime";
-import { getActiveVideoStorageProviderName } from "./storage";
+import {
+    getActiveVideoStorageProviderName,
+    getMinioVideoStorageEndpoint,
+} from "./storage";
 
 async function start() {
     const app = buildApp();
+    const videoStorageProviderName =
+        getActiveVideoStorageProviderName();
 
     app.log.info(
         {
             environment: runtime.environment,
-            videoStorageProviderName:
-                getActiveVideoStorageProviderName(),
+            videoStorageProviderName,
+            videoStorageEndpoint:
+                videoStorageProviderName === "minio"
+                    ? getMinioVideoStorageEndpoint()
+                    : undefined,
         },
         "Storage configuration"
     );
