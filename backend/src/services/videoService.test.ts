@@ -38,8 +38,14 @@ type DeleteVideoObject = (
     storageKey: string
 ) => Promise<void>;
 
+type DeleteSegmentThumbnailObject = (
+    storageKey: string
+) => Promise<void>;
+
 function createFakeVideoStorageProvider(
-    deleteVideoObject: DeleteVideoObject = async () => { }
+    deleteVideoObject: DeleteVideoObject = async () => { },
+    deleteSegmentThumbnailObject: DeleteSegmentThumbnailObject =
+        async () => { }
 ): VideoStorageProvider {
     return {
         name: "minio",
@@ -58,6 +64,20 @@ function createFakeVideoStorageProvider(
         async getVideoObjectSizeBytes() {
             throw new Error("Not used by deletion tests");
         },
+
+        async createSegmentThumbnailUploadUrl() {
+            throw new Error("Not used by deletion tests");
+        },
+
+        async createSegmentThumbnailPlaybackUrl() {
+            throw new Error("Not used by deletion tests");
+        },
+
+        async getSegmentThumbnailObjectSizeBytes() {
+            throw new Error("Not used by deletion tests");
+        },
+
+        deleteSegmentThumbnailObject,
 
         async listVideoObjectKeys() {
             throw new Error("Not used by deletion tests");
@@ -203,6 +223,75 @@ describe("executeVideoDeletion", () => {
         });
         expect(deletedVideo).toBeNull();
         expect(remainingSegments).toEqual([]);
+    });
+
+    it("deletes every segment thumbnail during video deletion", async () => {
+        const deletedThumbnailStorageKeys: string[] = [];
+        const videoStorageProvider = createFakeVideoStorageProvider(
+            undefined,
+            async (storageKey) => {
+                deletedThumbnailStorageKeys.push(storageKey);
+            }
+        );
+
+        const result = await executeVideoDeletion({
+            videoId: "sample-video-1",
+            userId: TEST_USER_ID,
+            videoStorageProvider,
+            videoDataAccess:
+                persistenceProvider.videoDataAccess,
+            segmentDataAccess:
+                persistenceProvider.segmentDataAccess,
+        });
+
+        expect(result).toEqual({
+            kind: "deleted",
+        });
+        expect(deletedThumbnailStorageKeys).toEqual([
+            "users/test-user-1/thumbnails/sample-segment-1.jpg",
+            "users/test-user-1/thumbnails/sample-segment-2.jpg",
+            "users/test-user-1/thumbnails/sample-segment-3.jpg",
+        ]);
+    });
+
+    it("keeps failed and remaining segments when thumbnail deletion fails", async () => {
+        const videoStorageProvider = createFakeVideoStorageProvider(
+            undefined,
+            async (storageKey) => {
+                if (storageKey.endsWith("sample-segment-2.jpg")) {
+                    throw new Error("Thumbnail storage unavailable");
+                }
+            }
+        );
+
+        await expect(
+            executeVideoDeletion({
+                videoId: "sample-video-1",
+                userId: TEST_USER_ID,
+                videoStorageProvider,
+                videoDataAccess:
+                    persistenceProvider.videoDataAccess,
+                segmentDataAccess:
+                    persistenceProvider.segmentDataAccess,
+            })
+        ).rejects.toThrow("Thumbnail storage unavailable");
+
+        const retainedVideo =
+            await persistenceProvider.videoDataAccess.getVideoByID({
+                userID: TEST_USER_ID,
+                videoID: "sample-video-1",
+            });
+        const retainedSegments =
+            await persistenceProvider.segmentDataAccess.listSegmentsByVideo({
+                userID: TEST_USER_ID,
+                videoID: "sample-video-1",
+            });
+
+        expect(retainedVideo?.status).toBe("deleting");
+        expect(retainedSegments.map((segment) => segment.id)).toEqual([
+            "sample-segment-2",
+            "sample-segment-3",
+        ]);
     });
 
     it("does not modify a video stored by a different provider", async () => {

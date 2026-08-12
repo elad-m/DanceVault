@@ -1,4 +1,11 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import {
+    afterAll,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from "vitest";
 import { buildApp } from "../app";
 import {
     registerTestAuthentication,
@@ -14,17 +21,71 @@ import {
     createDynamoDBTestPersistenceProvider,
     resetDynamoDBTestDatabase,
 } from "../test/dynamoDBTestDatabase";
+import type { VideoStorageProvider } from "../storage";
+
+const createSegmentThumbnailUploadUrlMock = vi.fn(
+    async (storageKey: string): Promise<string> =>
+        `http://storage.test/${storageKey}?upload=test`
+);
+
+const createSegmentThumbnailPlaybackUrlMock = vi.fn(
+    async (storageKey: string): Promise<string> =>
+        `http://storage.test/${storageKey}?playback=test`
+);
+
+const getSegmentThumbnailObjectSizeBytesMock = vi.fn(
+    async (_storageKey: string): Promise<number | null> => null
+);
+
+const deleteSegmentThumbnailObjectMock = vi.fn(
+    async (_storageKey: string): Promise<void> => { }
+);
+
+const fakeVideoStorageProvider: VideoStorageProvider = {
+    name: "minio",
+    bucketName: "test-video-bucket",
+
+    async createVideoUploadUrl() {
+        throw new Error("Not used by segment route tests");
+    },
+    async createVideoPlaybackUrl() {
+        throw new Error("Not used by segment route tests");
+    },
+    async getVideoObjectSizeBytes() {
+        throw new Error("Not used by segment route tests");
+    },
+    async deleteVideoObject() {
+        throw new Error("Not used by segment route tests");
+    },
+    async listVideoObjectKeys() {
+        throw new Error("Not used by segment route tests");
+    },
+
+    createSegmentThumbnailUploadUrl:
+        createSegmentThumbnailUploadUrlMock,
+    createSegmentThumbnailPlaybackUrl:
+        createSegmentThumbnailPlaybackUrlMock,
+    getSegmentThumbnailObjectSizeBytes:
+        getSegmentThumbnailObjectSizeBytesMock,
+    deleteSegmentThumbnailObject:
+        deleteSegmentThumbnailObjectMock,
+
+    close() { },
+};
 
 const persistenceProvider =
     createDynamoDBTestPersistenceProvider();
 
 const app = buildApp({
     persistenceProvider,
+    videoStorageProvider: fakeVideoStorageProvider,
 });
 
 registerTestAuthentication(app);
 
 beforeEach(async () => {
+    vi.clearAllMocks();
+    getSegmentThumbnailObjectSizeBytesMock.mockResolvedValue(null);
     resetRuntimeForTest();
 
     await resetDynamoDBTestDatabase({
@@ -506,6 +567,11 @@ describe("DELETE /segments/:segmentId", () => {
         });
 
         expect(response.statusCode).toBe(204);
+        expect(
+            deleteSegmentThumbnailObjectMock
+        ).toHaveBeenCalledExactlyOnceWith(
+            "users/test-user-1/thumbnails/sample-segment-3.jpg"
+        );
 
         const deletedSegment =
             await persistenceProvider.segmentDataAccess.getSegmentByID({
@@ -514,6 +580,27 @@ describe("DELETE /segments/:segmentId", () => {
             });
 
         expect(deletedSegment).toBeNull();
+    });
+
+    it("keeps the segment when thumbnail deletion fails", async () => {
+        deleteSegmentThumbnailObjectMock.mockRejectedValueOnce(
+            new Error("Storage unavailable")
+        );
+
+        const response = await app.inject({
+            method: "DELETE",
+            url: "/segments/sample-segment-3",
+        });
+
+        expect(response.statusCode).toBe(500);
+
+        const retainedSegment =
+            await persistenceProvider.segmentDataAccess.getSegmentByID({
+                userID: TEST_USER_ID,
+                segmentID: "sample-segment-3",
+            });
+
+        expect(retainedSegment).not.toBeNull();
     });
 
     it("returns 404 for a segment that does not exist", async () => {
@@ -529,6 +616,9 @@ describe("DELETE /segments/:segmentId", () => {
                 message: "Segment not found",
             },
         });
+        expect(
+            deleteSegmentThumbnailObjectMock
+        ).not.toHaveBeenCalled();
     });
 });
 
@@ -766,3 +856,231 @@ describe("Segment ownership", () => {
         expect(storedSegment).not.toBeNull();
     });
 });
+
+describe("POST /segments/:segmentId/thumbnail-upload", () => {
+    it("creates a signed upload URL for the user's segment", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/segments/sample-segment-1/thumbnail-upload",
+            payload: {
+                fileSizeBytes: 100_000,
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({
+            uploadUrl:
+                "http://storage.test/users/test-user-1/thumbnails/sample-segment-1.jpg?upload=test",
+            contentType: "image/jpeg",
+            expiresInSeconds: 900,
+        });
+        expect(
+            createSegmentThumbnailUploadUrlMock
+        ).toHaveBeenCalledExactlyOnceWith(
+            "users/test-user-1/thumbnails/sample-segment-1.jpg"
+        );
+    });
+
+    it("does not create an upload URL for another user's segment", async () => {
+        await createOtherUserDynamoDBTestData({
+            persistenceProvider,
+        });
+
+        const response = await app.inject({
+            method: "POST",
+            url: `/segments/${OTHER_TEST_SEGMENT_ID}/thumbnail-upload`,
+            payload: {
+                fileSizeBytes: 100_000,
+            },
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: {
+                code: "SEGMENT_NOT_FOUND",
+                message: "Segment not found",
+            },
+        });
+        expect(
+            createSegmentThumbnailUploadUrlMock
+        ).not.toHaveBeenCalled();
+    });
+
+    it("rejects an announced thumbnail size above the limit", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/segments/sample-segment-1/thumbnail-upload",
+            payload: {
+                fileSizeBytes: 250_001,
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(
+            createSegmentThumbnailUploadUrlMock
+        ).not.toHaveBeenCalled();
+    });
+});
+
+describe("POST /segments/:segmentId/thumbnail-upload/complete",
+    () => {
+        it("completes an uploaded thumbnail within the size limit", async () => {
+            getSegmentThumbnailObjectSizeBytesMock
+                .mockResolvedValueOnce(100_000);
+
+            const response = await app.inject({
+                method: "POST",
+                url:
+                    "/segments/sample-segment-1" +
+                    "/thumbnail-upload/complete",
+            });
+
+            expect(response.statusCode).toBe(204);
+            expect(
+                getSegmentThumbnailObjectSizeBytesMock
+            ).toHaveBeenCalledExactlyOnceWith(
+                "users/test-user-1/thumbnails/sample-segment-1.jpg"
+            );
+            expect(
+                deleteSegmentThumbnailObjectMock
+            ).not.toHaveBeenCalled();
+        });
+
+        it("rejects completion when the uploaded object is missing", async () => {
+            const response = await app.inject({
+                method: "POST",
+                url:
+                    "/segments/sample-segment-1" +
+                    "/thumbnail-upload/complete",
+            });
+            // The mock returns null by default, simulating a missing object.
+            expect(response.statusCode).toBe(409);
+            expect(response.json()).toEqual({
+                error: {
+                    code: "SEGMENT_THUMBNAIL_UPLOAD_NOT_FOUND",
+                    message:
+                        "Uploaded segment thumbnail was not found",
+                },
+            });
+        });
+
+        it("deletes and rejects an oversized uploaded thumbnail", async () => {
+            getSegmentThumbnailObjectSizeBytesMock
+                .mockResolvedValueOnce(250_001);
+
+            const response = await app.inject({
+                method: "POST",
+                url:
+                    "/segments/sample-segment-1" +
+                    "/thumbnail-upload/complete",
+            });
+
+            expect(response.statusCode).toBe(413);
+            expect(response.json()).toEqual({
+                error: {
+                    code:
+                        "SEGMENT_THUMBNAIL_UPLOAD_TOO_LARGE",
+                    message:
+                        "Segment thumbnail exceeds the upload-size limit",
+                },
+            });
+            expect(
+                deleteSegmentThumbnailObjectMock
+            ).toHaveBeenCalledExactlyOnceWith(
+                "users/test-user-1/thumbnails/sample-segment-1.jpg"
+            );
+        });
+
+        it("does not inspect storage for a missing segment", async () => {
+            const response = await app.inject({
+                method: "POST",
+                url:
+                    "/segments/not-real" +
+                    "/thumbnail-upload/complete",
+            });
+
+            expect(response.statusCode).toBe(404);
+            expect(
+                getSegmentThumbnailObjectSizeBytesMock
+            ).not.toHaveBeenCalled();
+        });
+    }
+);
+
+describe(
+    "GET /segments/:segmentId/thumbnail-playback-url",
+    () => {
+        it("returns a signed playback URL for an existing thumbnail", async () => {
+            getSegmentThumbnailObjectSizeBytesMock
+                .mockResolvedValueOnce(100_000);
+
+            const response = await app.inject({
+                method: "GET",
+                url:
+                    "/segments/sample-segment-1" +
+                    "/thumbnail-playback-url",
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.json()).toEqual({
+                playbackUrl:
+                    "http://storage.test/" +
+                    "users/test-user-1/thumbnails/" +
+                    "sample-segment-1.jpg?playback=test",
+                expiresInSeconds: 900,
+            });
+            expect(
+                createSegmentThumbnailPlaybackUrlMock
+            ).toHaveBeenCalledExactlyOnceWith(
+                "users/test-user-1/thumbnails/sample-segment-1.jpg"
+            );
+        });
+
+        it("returns not found when the thumbnail object is missing", async () => {
+            const response = await app.inject({
+                method: "GET",
+                url:
+                    "/segments/sample-segment-1" +
+                    "/thumbnail-playback-url",
+            });
+
+            expect(response.statusCode).toBe(404);
+            expect(response.json()).toEqual({
+                error: {
+                    code: "SEGMENT_THUMBNAIL_NOT_FOUND",
+                    message: "Segment thumbnail was not found",
+                },
+            });
+            expect(
+                createSegmentThumbnailPlaybackUrlMock
+            ).not.toHaveBeenCalled();
+        });
+
+        it("does not expose another user's thumbnail", async () => {
+            await createOtherUserDynamoDBTestData({
+                persistenceProvider,
+            });
+
+            const response = await app.inject({
+                method: "GET",
+                url:
+                    `/segments/${OTHER_TEST_SEGMENT_ID}` +
+                    "/thumbnail-playback-url",
+            });
+
+            expect(response.statusCode).toBe(404);
+            expect(response.json()).toEqual({
+                error: {
+                    code: "SEGMENT_NOT_FOUND",
+                    message: "Segment not found",
+                },
+            });
+            expect(
+                getSegmentThumbnailObjectSizeBytesMock
+            ).not.toHaveBeenCalled();
+            expect(
+                createSegmentThumbnailPlaybackUrlMock
+            ).not.toHaveBeenCalled();
+        });
+    }
+);

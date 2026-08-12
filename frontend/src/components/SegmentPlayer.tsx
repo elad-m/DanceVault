@@ -20,7 +20,10 @@ type SegmentPlayerProps = {
     onPrevious: () => void;
     onNext: () => void;
     onOpenFullVideo: (segment: Segment) => void;
-    onThumbnailCaptured: (segmentId: string, dataUrl: string) => void;
+    onThumbnailCaptured: (
+        segmentId: string,
+        thumbnail: Blob
+    ) => Promise<void>;
     onError: (message: string) => void;
 };
 
@@ -112,16 +115,46 @@ export function SegmentPlayer({
             try {
                 const canvas = document.createElement("canvas");
                 canvas.width = 320;
-                canvas.height = Math.round(
-                    canvas.width * player.videoHeight / player.videoWidth
-                );
+                canvas.height = 240;
                 const context = canvas.getContext("2d");
-                if (!context) return;
 
-                context.drawImage(player, 0, 0, canvas.width, canvas.height);
-                onThumbnailCaptured(
-                    segmentId,
-                    canvas.toDataURL("image/jpeg", 0.78)
+                if (!context) {
+                    thumbnailCapturedForSegmentRef.current = null;
+                    return;
+                }
+
+                const scale = Math.min(
+                    canvas.width / player.videoWidth,
+                    canvas.height / player.videoHeight
+                );
+                const frameWidth = player.videoWidth * scale;
+                const frameHeight = player.videoHeight * scale;
+                const frameX = (canvas.width - frameWidth) / 2;
+                const frameY = (canvas.height - frameHeight) / 2;
+
+                context.fillStyle = "#000000";
+                context.fillRect(0, 0, canvas.width, canvas.height);
+                context.drawImage(
+                    player,
+                    frameX,
+                    frameY,
+                    frameWidth,
+                    frameHeight
+                );
+                canvas.toBlob(
+                    (thumbnail) => {
+                        if (!thumbnail) {
+                            thumbnailCapturedForSegmentRef.current = null;
+                            return;
+                        }
+
+                        void onThumbnailCaptured(segmentId, thumbnail)
+                            .catch(() => {
+                                thumbnailCapturedForSegmentRef.current = null;
+                            });
+                    },
+                    "image/jpeg",
+                    0.78
                 );
             } catch {
                 thumbnailCapturedForSegmentRef.current = null;

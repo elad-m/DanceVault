@@ -6,7 +6,9 @@ import type {
 import {
     confidenceSchema,
     difficultySchema,
+    maxSegmentThumbnailSizeBytes,
     practicePrioritySchema,
+    segmentThumbnailContentType,
 } from "../domain/segment";
 import { ApiErrorCode, sendApiError } from "../httpErrors";
 import type {
@@ -19,9 +21,14 @@ import {
     createSegment,
     getPracticeQueue,
     searchSegments,
+    initializeSegmentThumbnailUpload,
+    completeSegmentThumbnailUpload,
+    getSegmentThumbnailPlaybackUrl,
+    deleteSegmentWithThumbnail,
 } from "../services/segmentService";
 import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
 import type { VideoDataAccess } from "../persistence/videoDataAccess";
+import type { VideoStorageProvider } from "../storage";
 
 type CreateSegmentRequest = {
     Params: {
@@ -61,6 +68,12 @@ type PracticeQueueRequest = {
 type SegmentParams = {
     Params: {
         segmentId: string;
+    };
+};
+
+type CreateSegmentThumbnailUploadRequest = SegmentParams & {
+    Body: {
+        fileSizeBytes: number;
     };
 };
 
@@ -119,6 +132,23 @@ const createSegmentRouteOptions = {
     },
 } as const;
 
+const createSegmentThumbnailUploadRouteOptions = {
+    schema: {
+        body: {
+            type: "object",
+            additionalProperties: false,
+            required: ["fileSizeBytes"],
+            properties: {
+                fileSizeBytes: {
+                    type: "integer",
+                    minimum: 1,
+                    maximum: maxSegmentThumbnailSizeBytes,
+                },
+            },
+        },
+    },
+} as const;
+
 const paginationQueryProperties = {
     limit: {
         type: "string",
@@ -171,6 +201,103 @@ const updateSegmentRouteOptions = {
         },
     },
 } as const;
+
+async function initializeSegmentThumbnailUploadHandler(
+    request: FastifyRequest<CreateSegmentThumbnailUploadRequest>,
+    reply: FastifyReply,
+    videoStorageProvider: VideoStorageProvider,
+    segmentDataAccess: SegmentDataAccess
+) {
+    const result = await initializeSegmentThumbnailUpload({
+        userId: request.userId,
+        segmentId: request.params.segmentId,
+        videoStorageProvider,
+        segmentDataAccess,
+    });
+
+    if (result.kind === "not_found") {
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.SegmentNotFound,
+        });
+    }
+
+    return {
+        uploadUrl: result.uploadUrl,
+        contentType: segmentThumbnailContentType,
+        expiresInSeconds: result.expiresInSeconds,
+    };
+}
+
+async function completeSegmentThumbnailUploadHandler(
+    request: FastifyRequest<SegmentParams>,
+    reply: FastifyReply,
+    videoStorageProvider: VideoStorageProvider,
+    segmentDataAccess: SegmentDataAccess
+) {
+    const result = await completeSegmentThumbnailUpload({
+        userId: request.userId,
+        segmentId: request.params.segmentId,
+        videoStorageProvider,
+        segmentDataAccess,
+    });
+
+    if (result.kind === "not_found") {
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.SegmentNotFound,
+        });
+    }
+
+    if (result.kind === "upload_object_missing") {
+        return sendApiError(reply, {
+            statusCode: 409,
+            code: ApiErrorCode.SegmentThumbnailUploadNotFound,
+        });
+    }
+
+    if (result.kind === "upload_too_large") {
+        return sendApiError(reply, {
+            statusCode: 413,
+            code: ApiErrorCode.SegmentThumbnailUploadTooLarge,
+        });
+    }
+
+    return reply.status(204).send();
+}
+
+async function getSegmentThumbnailPlaybackUrlHandler(
+    request: FastifyRequest<SegmentParams>,
+    reply: FastifyReply,
+    videoStorageProvider: VideoStorageProvider,
+    segmentDataAccess: SegmentDataAccess
+) {
+    const result = await getSegmentThumbnailPlaybackUrl({
+        userId: request.userId,
+        segmentId: request.params.segmentId,
+        videoStorageProvider,
+        segmentDataAccess,
+    });
+
+    if (result.kind === "not_found") {
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.SegmentNotFound,
+        });
+    }
+
+    if (result.kind === "thumbnail_missing") {
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.SegmentThumbnailNotFound,
+        });
+    }
+
+    return {
+        playbackUrl: result.playbackUrl,
+        expiresInSeconds: result.expiresInSeconds,
+    };
+}
 
 async function createSegmentHandler(
     request: FastifyRequest<CreateSegmentRequest>,
@@ -341,34 +468,30 @@ async function updateSegmentHandler(
 async function deleteSegmentHandler(
     request: FastifyRequest<SegmentParams>,
     reply: FastifyReply,
+    videoStorageProvider: VideoStorageProvider,
     segmentDataAccess: SegmentDataAccess
 ) {
-    const existingSegment = await segmentDataAccess.getSegmentByID({
-        segmentID: request.params.segmentId,
-        userID: request.userId,
+    const result = await deleteSegmentWithThumbnail({
+        userId: request.userId,
+        segmentId: request.params.segmentId,
+        videoStorageProvider,
+        segmentDataAccess,
     });
 
-    if (!existingSegment) {
+    if (result.kind === "not_found") {
         return sendApiError(reply, {
             statusCode: 404,
             code: ApiErrorCode.SegmentNotFound,
         });
     }
 
-    await segmentDataAccess.deleteSegment({
-        segmentID: existingSegment.id,
-        videoID: existingSegment.videoId,
-        userID: request.userId,
-    });
-
     request.log.info(
         {
             event: "segment_deleted",
             userId: request.userId,
-            videoId: existingSegment.videoId,
-            segmentId: existingSegment.id,
+            segmentId: request.params.segmentId,
         },
-        "Segment deleted"
+        "Segment and thumbnail deleted"
     );
 
     return reply.status(204).send();
@@ -376,6 +499,7 @@ async function deleteSegmentHandler(
 
 export function registerSegmentRoutes(
     app: FastifyInstance,
+    videoStorageProvider: VideoStorageProvider,
     videoDataAccess: VideoDataAccess,
     segmentDataAccess: SegmentDataAccess
 ) {
@@ -427,11 +551,45 @@ export function registerSegmentRoutes(
                 segmentDataAccess
             )
     );
-    app.delete<SegmentParams>("/segments/:segmentId", (request, reply) =>
-        deleteSegmentHandler(
-            request,
-            reply,
-            segmentDataAccess
-        )
+    app.delete<SegmentParams>(
+        "/segments/:segmentId",
+        (request, reply) =>
+            deleteSegmentHandler(
+                request,
+                reply,
+                videoStorageProvider,
+                segmentDataAccess
+            )
+    );
+    app.post<CreateSegmentThumbnailUploadRequest>(
+        "/segments/:segmentId/thumbnail-upload",
+        createSegmentThumbnailUploadRouteOptions,
+        (request, reply) =>
+            initializeSegmentThumbnailUploadHandler(
+                request,
+                reply,
+                videoStorageProvider,
+                segmentDataAccess
+            )
+    );
+    app.post<SegmentParams>(
+        "/segments/:segmentId/thumbnail-upload/complete",
+        (request, reply) =>
+            completeSegmentThumbnailUploadHandler(
+                request,
+                reply,
+                videoStorageProvider,
+                segmentDataAccess
+            )
+    );
+    app.get<SegmentParams>(
+        "/segments/:segmentId/thumbnail-playback-url",
+        (request, reply) =>
+            getSegmentThumbnailPlaybackUrlHandler(
+                request,
+                reply,
+                videoStorageProvider,
+                segmentDataAccess
+            )
     );
 }

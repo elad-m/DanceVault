@@ -8,6 +8,8 @@ import { addAuthenticationHeaders } from "./auth/authentication";
 import { runtime } from "./runtime";
 
 const maxVideoUploadSizeBytes: number = 500_000_000;
+const maxSegmentThumbnailSizeBytes = 250_000;
+const segmentThumbnailContentType = "image/jpeg";
 
 type SupportedVideoContentType =
     | "video/mp4"
@@ -137,6 +139,70 @@ export async function deleteSegment(segmentId: string): Promise<void> {
     return requestJson<void>(`/segments/${segmentId}`, {
         method: "DELETE",
     });
+}
+
+export async function uploadSegmentThumbnail(
+    segmentId: string,
+    thumbnail: Blob
+): Promise<void> {
+    if (thumbnail.type !== segmentThumbnailContentType) {
+        throw new Error("Segment thumbnails must be JPEG images");
+    }
+
+    if (thumbnail.size === 0) {
+        throw new Error("The segment thumbnail is empty");
+    }
+
+    if (thumbnail.size > maxSegmentThumbnailSizeBytes) {
+        throw new Error(
+            "Segment thumbnails must be 250 KB or smaller"
+        );
+    }
+
+    const initialized = await requestJson<{
+        uploadUrl: string;
+        contentType: typeof segmentThumbnailContentType;
+        expiresInSeconds: number;
+    }>(`/segments/${segmentId}/thumbnail-upload`, {
+        method: "POST",
+        body: JSON.stringify({
+            fileSizeBytes: thumbnail.size,
+        }),
+    });
+
+    const uploadResponse = await fetch(initialized.uploadUrl, {
+        method: "PUT",
+        headers: {
+            "content-type": initialized.contentType,
+        },
+        body: thumbnail,
+    });
+
+    if (!uploadResponse.ok) {
+        throw new Error(
+            `Segment thumbnail upload failed (${uploadResponse.status})`
+        );
+    }
+
+    await requestJson<void>(
+        `/segments/${segmentId}/thumbnail-upload/complete`,
+        {
+            method: "POST",
+        }
+    );
+}
+
+export async function getSegmentThumbnailPlaybackUrl(
+    segmentId: string
+): Promise<string> {
+    const response = await requestJson<{
+        playbackUrl: string;
+        expiresInSeconds: number;
+    }>(
+        `/segments/${segmentId}/thumbnail-playback-url`
+    );
+
+    return response.playbackUrl;
 }
 
 export async function uploadVideo(

@@ -110,6 +110,7 @@ export function buildApp(
     );
     registerSegmentRoutes(
         app,
+        videoStorageProvider,
         persistenceProvider.videoDataAccess,
         persistenceProvider.segmentDataAccess
     );

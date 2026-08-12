@@ -18,10 +18,13 @@ import type {
     SupportedVideoContentType,
     VideoStorageProviderName,
 } from "../domain/video";
+import { segmentThumbnailContentType } from "../domain/segment";
 
 export type VideoStorageProvider = {
     name: VideoStorageProviderName;
     bucketName: string;
+
+    // Video storage operations
     createVideoUploadUrl(input: CreateVideoUploadUrlInput): Promise<string>;
     createVideoPlaybackUrl(storageKey: string): Promise<string>;
     getVideoObjectSizeBytes(
@@ -29,6 +32,13 @@ export type VideoStorageProvider = {
     ): Promise<number | null>;
     deleteVideoObject(storageKey: string): Promise<void>;
     listVideoObjectKeys(): Promise<string[]>;
+
+    // Segment thumbnail storage operations
+    createSegmentThumbnailUploadUrl(storageKey: string): Promise<string>;
+    createSegmentThumbnailPlaybackUrl(storageKey: string): Promise<string>;
+    getSegmentThumbnailObjectSizeBytes(storageKey: string): Promise<number | null>;
+    deleteSegmentThumbnailObject(storageKey: string): Promise<void>;
+
     close(): void;
 };
 
@@ -140,6 +150,74 @@ export function createVideoStorageProvider(
             } while (continuationToken);
 
             return storageKeys.sort();
+        },
+
+        async createSegmentThumbnailUploadUrl(
+            storageKey: string
+        ): Promise<string> {
+            const command = new PutObjectCommand({
+                Bucket: bucketName,
+                Key: storageKey,
+                ContentType: segmentThumbnailContentType,
+            });
+
+            return getSignedUrl(client, command, {
+                expiresIn: videoUrlExpirationSeconds,
+            });
+        },
+
+        async createSegmentThumbnailPlaybackUrl(
+            storageKey: string
+        ): Promise<string> {
+            const command = new GetObjectCommand({
+                Bucket: bucketName,
+                Key: storageKey,
+            });
+
+            return getSignedUrl(client, command, {
+                expiresIn: videoUrlExpirationSeconds,
+            });
+        },
+
+        async getSegmentThumbnailObjectSizeBytes(
+            storageKey: string
+        ): Promise<number | null> {
+            const command = new HeadObjectCommand({
+                Bucket: bucketName,
+                Key: storageKey,
+            });
+
+            try {
+                const response = await client.send(command);
+
+                if (response.ContentLength === undefined) {
+                    throw new Error(
+                        "Thumbnail storage did not return an object size"
+                    );
+                }
+
+                return response.ContentLength;
+            } catch (error: unknown) {
+                if (
+                    error instanceof S3ServiceException &&
+                    error.$metadata.httpStatusCode === 404
+                ) {
+                    return null;
+                }
+
+                throw error;
+            }
+        },
+
+        async deleteSegmentThumbnailObject(
+            storageKey: string
+        ): Promise<void> {
+            const command = new DeleteObjectCommand({
+                Bucket: bucketName,
+                Key: storageKey,
+            });
+
+            await client.send(command);
         },
 
         close(): void {

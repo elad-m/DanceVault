@@ -19,6 +19,9 @@ import {
     type VideoDeletionJob,
     type VideoDeletionQueue,
 } from "../jobs/videoDeletionQueue";
+import {
+    createSegmentThumbnailStorageKey,
+} from "../domain/segment";
 
 type UserScope = {
     userId: string;
@@ -315,6 +318,17 @@ export async function executeVideoDeletion({
         });
 
     for (const segment of segments) {
+        const thumbnailStorageKey =
+            createSegmentThumbnailStorageKey({
+                userId,
+                segmentId: segment.id,
+            });
+
+        await videoStorageProvider
+            .deleteSegmentThumbnailObject(
+                thumbnailStorageKey
+            );
+
         await segmentDataAccess.deleteSegment({
             segmentID: segment.id,
             videoID: video.id,

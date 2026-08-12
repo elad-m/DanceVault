@@ -18,3 +18,21 @@ export const practicePrioritySchema = {
     type: "string",
     enum: ["low", "medium", "high"],
 } as const;
+
+export const segmentThumbnailContentType = "image/jpeg" as const;
+
+export const maxSegmentThumbnailSizeBytes = 250_000;
+
+type CreateSegmentThumbnailStorageKeyInput = {
+    userId: string;
+    segmentId: string;
+};
+
+export function createSegmentThumbnailStorageKey({
+    userId,
+    segmentId,
+}: CreateSegmentThumbnailStorageKeyInput): string {
+    const safeUserId = encodeURIComponent(userId); // even though we don't expect slashes in user IDs, we encode them to be safe
+
+    return `users/${safeUserId}/thumbnails/${segmentId}.jpg`;
+}

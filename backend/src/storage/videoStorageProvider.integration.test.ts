@@ -68,4 +68,63 @@ describe("S3 video storage integration", () => {
             );
         }
     });
+
+    it("uploads, downloads, and deletes a segment thumbnail", async () => {
+        const storageKey =
+            `integration-tests/thumbnails/${randomUUID()}.jpg`;
+        const thumbnailBytes = new TextEncoder().encode(
+            "DanceVault thumbnail integration test"
+        );
+
+        try {
+            expect(
+                await videoStorageProvider
+                    .getSegmentThumbnailObjectSizeBytes(storageKey)
+            ).toBeNull();
+
+            const uploadUrl =
+                await videoStorageProvider
+                    .createSegmentThumbnailUploadUrl(storageKey);
+
+            const uploadResponse = await fetch(uploadUrl, {
+                method: "PUT",
+                headers: {
+                    "content-type": "image/jpeg",
+                },
+                body: thumbnailBytes,
+            });
+
+            expect(uploadResponse.status).toBe(200);
+            expect(
+                await videoStorageProvider
+                    .getSegmentThumbnailObjectSizeBytes(storageKey)
+            ).toBe(thumbnailBytes.byteLength);
+
+            const playbackUrl =
+                await videoStorageProvider
+                    .createSegmentThumbnailPlaybackUrl(storageKey);
+
+            const playbackResponse = await fetch(playbackUrl);
+
+            expect(playbackResponse.status).toBe(200);
+            expect(
+                new Uint8Array(
+                    await playbackResponse.arrayBuffer()
+                )
+            ).toEqual(thumbnailBytes);
+
+            await videoStorageProvider.deleteSegmentThumbnailObject(
+                storageKey
+            );
+
+            expect(
+                await videoStorageProvider
+                    .getSegmentThumbnailObjectSizeBytes(storageKey)
+            ).toBeNull();
+        } finally {
+            await videoStorageProvider.deleteSegmentThumbnailObject(
+                storageKey
+            );
+        }
+    });
 });

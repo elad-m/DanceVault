@@ -7,9 +7,15 @@ type SegmentEditorProps = {
     currentMilliseconds: number;
     saving: boolean;
     onCreate: (input: CreateSegmentInput) => Promise<void>;
+    onThumbnailTimeChange: (milliseconds: number | null) => void;
 };
 
-export function SegmentEditor({ currentMilliseconds, saving, onCreate }: SegmentEditorProps) {
+export function SegmentEditor({
+    currentMilliseconds,
+    saving,
+    onCreate,
+    onThumbnailTimeChange,
+}: SegmentEditorProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [name, setName] = useState("");
     const [startMilliseconds, setStartMilliseconds] = useState(0);
@@ -27,7 +33,23 @@ export function SegmentEditor({ currentMilliseconds, saving, onCreate }: Segment
             practicePriority,
         });
         setName("");
+        setStartMilliseconds(0);
+        setEndMilliseconds(0);
         setIsOpen(false);
+        onThumbnailTimeChange(null);
+    }
+
+    function toggleEditor() {
+        setIsOpen((current) => {
+            const next = !current;
+            onThumbnailTimeChange(next ? startMilliseconds : null);
+            return next;
+        });
+    }
+
+    function setStart() {
+        setStartMilliseconds(currentMilliseconds);
+        onThumbnailTimeChange(currentMilliseconds);
     }
 
     return (
@@ -36,7 +58,7 @@ export function SegmentEditor({ currentMilliseconds, saving, onCreate }: Segment
                 type="button"
                 className="segment-editor-toggle"
                 aria-expanded={isOpen}
-                onClick={() => setIsOpen((current) => !current)}
+                onClick={toggleEditor}
             >
                 <div>
                     <span className="eyebrow">New segment</span>
@@ -54,7 +76,7 @@ export function SegmentEditor({ currentMilliseconds, saving, onCreate }: Segment
                         <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Open stance wave" autoFocus />
                     </label>
                     <div className="time-controls">
-                        <button type="button" className="secondary-button" onClick={() => setStartMilliseconds(currentMilliseconds)}>
+                        <button type="button" className="secondary-button" onClick={setStart}>
                             <Flag size={15} /> Set start
                         </button>
                         <output>{formatDuration(startMilliseconds)}</output>

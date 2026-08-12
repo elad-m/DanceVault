@@ -17,6 +17,7 @@ import {
     getPlaybackUrl,
     getVideoSegments,
     updateSegment,
+    uploadSegmentThumbnail,
 } from "../api";
 import {
     formatDuration,
@@ -46,9 +47,19 @@ type VideoWorkspaceProps = {
     onError: (message: string) => void;
 };
 
+const thumbnailCaptureDebounceMilliseconds = 250;
+const thumbnailMediaTimeoutMilliseconds = 5_000;
+const thumbnailWidth = 320;
+const thumbnailHeight = 240;
+
 export function VideoWorkspace({ video, seekRequest, backNavigation, onDelete, onError }: VideoWorkspaceProps) {
     const playerShellRef = useRef<HTMLDivElement>(null);
     const playerRef = useRef<HTMLVideoElement>(null);
+    const thumbnailCaptureTimeoutRef =
+        useRef<ReturnType<typeof setTimeout> | null>(null);
+    const thumbnailCaptureGenerationRef = useRef(0);
+    const thumbnailCandidatePromiseRef =
+        useRef<Promise<Blob | null>>(Promise.resolve(null));
     const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
     const [segments, setSegments] = useState<Segment[]>([]);
     const [currentMilliseconds, setCurrentMilliseconds] = useState(0);
@@ -102,6 +113,14 @@ export function VideoWorkspace({ video, seekRequest, backNavigation, onDelete, o
     }, [video, onError]);
 
     useEffect(() => {
+        return () => {
+            if (thumbnailCaptureTimeoutRef.current) {
+                clearTimeout(thumbnailCaptureTimeoutRef.current);
+            }
+        };
+    }, []);
+
+    useEffect(() => {
         const player = playerRef.current;
         if (!player || !playbackUrl || !seekRequest || player.readyState < 1) return;
 
@@ -113,13 +132,165 @@ export function VideoWorkspace({ video, seekRequest, backNavigation, onDelete, o
         if (!video) return;
         setSaving(true);
         try {
+            const thumbnailCandidate =
+                thumbnailCandidatePromiseRef.current;
             const segment = await createSegment(video.id, input);
             setSegments((current) => [...current, segment].sort((a, b) => a.startMilliseconds - b.startMilliseconds));
+
+            try {
+                const thumbnail = await thumbnailCandidate;
+                if (!thumbnail) {
+                    throw new Error(
+                        "The browser could not capture the selected video frame"
+                    );
+                }
+                await uploadSegmentThumbnail(segment.id, thumbnail);
+            } catch (error: unknown) {
+                onError(
+                    error instanceof Error
+                        ? `Segment saved, but its thumbnail could not be created: ${error.message}`
+                        : "Segment saved, but its thumbnail could not be created"
+                );
+            }
         } catch (error) {
             onError(error instanceof Error ? error.message : "Could not save segment");
         } finally {
             setSaving(false);
         }
+    }
+
+    function scheduleThumbnailCandidate(
+        milliseconds: number | null
+    ) {
+        if (thumbnailCaptureTimeoutRef.current) {
+            clearTimeout(thumbnailCaptureTimeoutRef.current);
+            thumbnailCaptureTimeoutRef.current = null;
+        }
+
+        const generation = ++thumbnailCaptureGenerationRef.current;
+
+        if (milliseconds === null) {
+            thumbnailCandidatePromiseRef.current =
+                Promise.resolve(null);
+            return;
+        }
+
+        thumbnailCandidatePromiseRef.current =
+            new Promise<Blob | null>((resolve) => {
+                thumbnailCaptureTimeoutRef.current = setTimeout(() => {
+                    thumbnailCaptureTimeoutRef.current = null;
+                    void captureThumbnailCandidate(
+                        milliseconds,
+                        generation
+                    ).then(resolve);
+                }, thumbnailCaptureDebounceMilliseconds);
+            });
+    }
+
+    async function captureThumbnailCandidate(
+        milliseconds: number,
+        generation: number
+    ): Promise<Blob | null> {
+        if (!playbackUrl) return null;
+
+        const thumbnailPlayer = document.createElement("video");
+        thumbnailPlayer.crossOrigin = "anonymous";
+        thumbnailPlayer.preload = "auto";
+        thumbnailPlayer.muted = true;
+        thumbnailPlayer.src = playbackUrl;
+
+        try {
+            const loaded = await waitForThumbnailMediaEvent(
+                thumbnailPlayer,
+                "loadeddata"
+            );
+            if (!loaded) return null;
+
+            const targetSeconds = milliseconds / 1000;
+            if (Math.abs(thumbnailPlayer.currentTime - targetSeconds) > 0.05) {
+                const seekedPromise = waitForThumbnailMediaEvent(
+                    thumbnailPlayer,
+                    "seeked"
+                );
+                thumbnailPlayer.currentTime = targetSeconds;
+                const seeked = await seekedPromise;
+                if (!seeked) return null;
+            }
+
+            if (generation !== thumbnailCaptureGenerationRef.current) {
+                return null;
+            }
+
+            return createThumbnailBlob(thumbnailPlayer);
+        } finally {
+            thumbnailPlayer.removeAttribute("src");
+            thumbnailPlayer.load();
+        }
+    }
+
+    function waitForThumbnailMediaEvent(
+        player: HTMLVideoElement,
+        eventName: "loadeddata" | "seeked"
+    ): Promise<boolean> {
+        return new Promise((resolve) => {
+            const finish = (succeeded: boolean) => {
+                clearTimeout(timeout);
+                player.removeEventListener(eventName, handleSuccess);
+                player.removeEventListener("error", handleError);
+                resolve(succeeded);
+            };
+            const handleSuccess = () => finish(true);
+            const handleError = () => finish(false);
+            const timeout = setTimeout(
+                () => finish(false),
+                thumbnailMediaTimeoutMilliseconds
+            );
+
+            player.addEventListener(eventName, handleSuccess);
+            player.addEventListener("error", handleError);
+
+            if (eventName === "loadeddata") {
+                player.load();
+            }
+        });
+    }
+
+    function createThumbnailBlob(
+        player: HTMLVideoElement
+    ): Promise<Blob | null> {
+        const canvas = document.createElement("canvas");
+        canvas.width = thumbnailWidth;
+        canvas.height = thumbnailHeight;
+        const context = canvas.getContext("2d");
+
+        if (!context) return Promise.resolve(null);
+
+        const scale = Math.min(
+            thumbnailWidth / player.videoWidth,
+            thumbnailHeight / player.videoHeight
+        );
+        const frameWidth = player.videoWidth * scale;
+        const frameHeight = player.videoHeight * scale;
+        const frameX = (thumbnailWidth - frameWidth) / 2;
+        const frameY = (thumbnailHeight - frameHeight) / 2;
+
+        context.fillStyle = "#000000";
+        context.fillRect(0, 0, thumbnailWidth, thumbnailHeight);
+        context.drawImage(
+            player,
+            frameX,
+            frameY,
+            frameWidth,
+            frameHeight
+        );
+
+        return new Promise((resolve) => {
+            canvas.toBlob(
+                resolve,
+                "image/jpeg",
+                0.78
+            );
+        });
     }
 
     async function saveSegmentEdit(
@@ -319,7 +490,12 @@ export function VideoWorkspace({ video, seekRequest, backNavigation, onDelete, o
                     </div>
 
                     {playbackUrl && (
-                        <SegmentEditor currentMilliseconds={currentMilliseconds} saving={saving} onCreate={saveSegment} />
+                        <SegmentEditor
+                            currentMilliseconds={currentMilliseconds}
+                            saving={saving}
+                            onCreate={saveSegment}
+                            onThumbnailTimeChange={scheduleThumbnailCandidate}
+                        />
                     )}
                 </section>
 

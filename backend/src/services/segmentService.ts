@@ -1,10 +1,16 @@
-import type {
-    Confidence,
-    Difficulty,
-    PracticePriority,
+import {
+    createSegmentThumbnailStorageKey,
+    type Confidence,
+    type Difficulty,
+    type PracticePriority,
+    maxSegmentThumbnailSizeBytes,
 } from "../domain/segment";
 import { randomUUID } from "node:crypto";
 import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
+import {
+    videoUrlExpirationSeconds,
+    type VideoStorageProvider,
+} from "../storage";
 
 type UserScope = {
     userId: string;
@@ -14,11 +20,212 @@ type VideoScope = UserScope & {
     videoId: string;
 };
 
+type SegmentThumbnailStorageInput = UserScope & {
+    segmentId: string;
+    segmentDataAccess: SegmentDataAccess;
+    videoStorageProvider: VideoStorageProvider;
+};
+
+export type InitializeSegmentThumbnailUploadResult =
+    | {
+        kind: "not_found";
+    }
+    | {
+        kind: "upload_ready";
+        uploadUrl: string;
+        expiresInSeconds: number;
+    };
+
+export type CompleteSegmentThumbnailUploadResult =
+    | {
+        kind: "not_found";
+    }
+    | {
+        kind: "upload_object_missing";
+    }
+    | {
+        kind: "upload_too_large";
+    }
+    | {
+        kind: "ready";
+    };
+
+export type GetSegmentThumbnailPlaybackUrlResult =
+    | {
+        kind: "not_found";
+    }
+    | {
+        kind: "thumbnail_missing";
+    }
+    | {
+        kind: "ready";
+        playbackUrl: string;
+        expiresInSeconds: number;
+    };
+
+export type DeleteSegmentWithThumbnailResult =
+    | {
+        kind: "not_found";
+    }
+    | {
+        kind: "deleted";
+    };
+
 export function areSegmentTimestampsValid(
     startMilliseconds: number,
     endMilliseconds: number
 ) {
     return endMilliseconds > startMilliseconds;
+}
+
+export async function initializeSegmentThumbnailUpload(
+    input: SegmentThumbnailStorageInput
+): Promise<InitializeSegmentThumbnailUploadResult> {
+    const segment =
+        await input.segmentDataAccess.getSegmentByID({
+            userID: input.userId,
+            segmentID: input.segmentId,
+        });
+
+    if (!segment) {
+        return {
+            kind: "not_found",
+        };
+    }
+
+    const storageKey = createSegmentThumbnailStorageKey({
+        userId: input.userId,
+        segmentId: segment.id,
+    });
+
+    const uploadUrl =
+        await input.videoStorageProvider
+            .createSegmentThumbnailUploadUrl(storageKey);
+
+    return {
+        kind: "upload_ready",
+        uploadUrl,
+        expiresInSeconds: videoUrlExpirationSeconds,
+    };
+}
+
+export async function completeSegmentThumbnailUpload(
+    input: SegmentThumbnailStorageInput
+): Promise<CompleteSegmentThumbnailUploadResult> {
+    const segment =
+        await input.segmentDataAccess.getSegmentByID({
+            userID: input.userId,
+            segmentID: input.segmentId,
+        });
+
+    if (!segment) {
+        return {
+            kind: "not_found",
+        };
+    }
+
+    const storageKey = createSegmentThumbnailStorageKey({
+        userId: input.userId,
+        segmentId: segment.id,
+    });
+
+    const objectSizeBytes =
+        await input.videoStorageProvider
+            .getSegmentThumbnailObjectSizeBytes(storageKey);
+
+    if (objectSizeBytes === null) {
+        return {
+            kind: "upload_object_missing",
+        };
+    }
+
+    if (objectSizeBytes > maxSegmentThumbnailSizeBytes) {
+        await input.videoStorageProvider
+            .deleteSegmentThumbnailObject(storageKey);
+
+        return {
+            kind: "upload_too_large",
+        };
+    }
+
+    return {
+        kind: "ready",
+    };
+}
+
+export async function getSegmentThumbnailPlaybackUrl(
+    input: SegmentThumbnailStorageInput
+): Promise<GetSegmentThumbnailPlaybackUrlResult> {
+    const segment =
+        await input.segmentDataAccess.getSegmentByID({
+            userID: input.userId,
+            segmentID: input.segmentId,
+        });
+
+    if (!segment) {
+        return {
+            kind: "not_found",
+        };
+    }
+
+    const storageKey = createSegmentThumbnailStorageKey({
+        userId: input.userId,
+        segmentId: segment.id,
+    });
+
+    const objectSizeBytes =
+        await input.videoStorageProvider
+            .getSegmentThumbnailObjectSizeBytes(storageKey);
+
+    if (objectSizeBytes === null) {
+        return {
+            kind: "thumbnail_missing",
+        };
+    }
+
+    const playbackUrl =
+        await input.videoStorageProvider
+            .createSegmentThumbnailPlaybackUrl(storageKey);
+
+    return {
+        kind: "ready",
+        playbackUrl,
+        expiresInSeconds: videoUrlExpirationSeconds,
+    };
+}
+
+export async function deleteSegmentWithThumbnail(
+    input: SegmentThumbnailStorageInput
+): Promise<DeleteSegmentWithThumbnailResult> {
+    const segment =
+        await input.segmentDataAccess.getSegmentByID({
+            userID: input.userId,
+            segmentID: input.segmentId,
+        });
+
+    if (!segment) {
+        return {
+            kind: "not_found",
+        };
+    }
+
+    const storageKey = createSegmentThumbnailStorageKey({
+        userId: input.userId,
+        segmentId: segment.id,
+    });
+
+    await input.videoStorageProvider
+        .deleteSegmentThumbnailObject(storageKey);
+
+    await input.segmentDataAccess.deleteSegment({
+        userID: input.userId,
+        videoID: segment.videoId,
+        segmentID: segment.id,
+    });
+
+    return {
+        kind: "deleted",
+    };
 }
 
 export function paginateResults<T extends { id: string }>(
@@ -203,11 +410,11 @@ export async function getPracticeQueue(
         .sort(
             (first, second) =>
                 priorityRank[second.practicePriority] -
-                    priorityRank[first.practicePriority] ||
+                priorityRank[first.practicePriority] ||
                 confidenceRank[first.confidence] -
-                    confidenceRank[second.confidence] ||
+                confidenceRank[second.confidence] ||
                 first.createdAt.getTime() -
-                    second.createdAt.getTime() ||
+                second.createdAt.getTime() ||
                 first.id.localeCompare(second.id)
         );
 

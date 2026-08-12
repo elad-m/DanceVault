@@ -4,14 +4,11 @@ import {
     deleteSegment,
     getAllSegments,
     getPracticeQueue,
+    getSegmentThumbnailPlaybackUrl,
     updateSegment,
+    uploadSegmentThumbnail,
 } from "../api";
 import { formatDuration } from "../format";
-import {
-    deleteSegmentThumbnail,
-    getSegmentThumbnail,
-    saveSegmentThumbnail,
-} from "../thumbnailStorage";
 import type {
     Confidence,
     PracticePriority,
@@ -78,6 +75,18 @@ export function SegmentBrowser({
     const [loading, setLoading] = useState(true);
     const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
     const initialSelectedSegmentIdRef = useRef(initialSelectedSegmentId);
+    const thumbnailObjectUrlsRef = useRef(new Set<string>());
+
+    useEffect(() => {
+        const thumbnailObjectUrls = thumbnailObjectUrlsRef.current;
+
+        return () => {
+            for (const objectUrl of thumbnailObjectUrls) {
+                URL.revokeObjectURL(objectUrl);
+            }
+            thumbnailObjectUrls.clear();
+        };
+    }, []);
 
     useEffect(() => {
         let cancelled = false;
@@ -91,7 +100,7 @@ export function SegmentBrowser({
             .then((response) => {
                 if (cancelled) return;
                 setSegments(response.segments);
-                void loadStoredThumbnails(response.segments);
+                void loadPersistentThumbnails(response.segments);
                 const initialSegment = response.segments.find(
                     (segment) => segment.id === initialSelectedSegmentIdRef.current
                 ) ?? response.segments[0];
@@ -122,12 +131,13 @@ export function SegmentBrowser({
         onSelectSegment(segmentId);
     }
 
-    async function loadStoredThumbnails(segmentsToLoad: Segment[]) {
+    async function loadPersistentThumbnails(segmentsToLoad: Segment[]) {
         const entries = await Promise.all(
             segmentsToLoad.map(async (segment): Promise<[string, string] | null> => {
                 try {
-                    const thumbnail = await getSegmentThumbnail(segment.id);
-                    return thumbnail ? [segment.id, thumbnail] : null;
+                    const playbackUrl =
+                        await getSegmentThumbnailPlaybackUrl(segment.id);
+                    return [segment.id, playbackUrl];
                 } catch {
                     return null;
                 }
@@ -140,9 +150,36 @@ export function SegmentBrowser({
         }));
     }
 
-    function handleThumbnailCaptured(segmentId: string, dataUrl: string) {
-        setThumbnails((current) => ({ ...current, [segmentId]: dataUrl }));
-        void saveSegmentThumbnail(segmentId, dataUrl).catch(() => undefined);
+    async function handleThumbnailCaptured(
+        segmentId: string,
+        thumbnail: Blob
+    ): Promise<void> {
+        const previewUrl = URL.createObjectURL(thumbnail);
+        thumbnailObjectUrlsRef.current.add(previewUrl);
+        setThumbnails((current) => ({
+            ...current,
+            [segmentId]: previewUrl,
+        }));
+
+        try {
+            await uploadSegmentThumbnail(segmentId, thumbnail);
+            const playbackUrl =
+                await getSegmentThumbnailPlaybackUrl(segmentId);
+
+            setThumbnails((current) => ({
+                ...current,
+                [segmentId]: playbackUrl,
+            }));
+            URL.revokeObjectURL(previewUrl);
+            thumbnailObjectUrlsRef.current.delete(previewUrl);
+        } catch (error: unknown) {
+            onError(
+                error instanceof Error
+                    ? error.message
+                    : "Could not save segment thumbnail"
+            );
+            throw error;
+        }
     }
 
     async function loadMore() {
@@ -153,7 +190,7 @@ export function SegmentBrowser({
                 ? await getPracticeQueue(nextCursor)
                 : await getAllSegments(nextCursor);
             setSegments((current) => [...current, ...response.segments]);
-            void loadStoredThumbnails(response.segments);
+            void loadPersistentThumbnails(response.segments);
             setNextCursor(response.nextCursor);
         } catch (error) {
             onError(error instanceof Error ? error.message : "Could not load more segments");
@@ -229,10 +266,17 @@ export function SegmentBrowser({
             setSegments(remainingSegments);
             setThumbnails((current) => {
                 const next = { ...current };
+                const thumbnailUrl = next[segment.id];
+                if (
+                    thumbnailUrl &&
+                    thumbnailObjectUrlsRef.current.has(thumbnailUrl)
+                ) {
+                    URL.revokeObjectURL(thumbnailUrl);
+                    thumbnailObjectUrlsRef.current.delete(thumbnailUrl);
+                }
                 delete next[segment.id];
                 return next;
             });
-            void deleteSegmentThumbnail(segment.id).catch(() => undefined);
 
             if (selectedSegmentId === segment.id) {
                 selectSegment(

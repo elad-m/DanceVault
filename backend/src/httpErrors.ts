@@ -12,6 +12,11 @@ export const ApiErrorCode = {
     VideoUploadNotFound: "VIDEO_UPLOAD_NOT_FOUND",
     VideoUploadTooLarge: "VIDEO_UPLOAD_TOO_LARGE",
     VideoDeleting: "VIDEO_DELETING",
+    SegmentThumbnailNotFound: "SEGMENT_THUMBNAIL_NOT_FOUND",
+    SegmentThumbnailUploadNotFound:
+        "SEGMENT_THUMBNAIL_UPLOAD_NOT_FOUND",
+    SegmentThumbnailUploadTooLarge:
+        "SEGMENT_THUMBNAIL_UPLOAD_TOO_LARGE",
 } as const;
 
 export type ApiErrorCode =
@@ -34,6 +39,12 @@ export const ApiErrorMessage: ApiErrorMessageMap = {
     [ApiErrorCode.VideoUploadTooLarge]:
         "Video file exceeds the upload-size limit",
     [ApiErrorCode.VideoDeleting]: "Video is being deleted",
+    [ApiErrorCode.SegmentThumbnailNotFound]:
+        "Segment thumbnail was not found",
+    [ApiErrorCode.SegmentThumbnailUploadNotFound]:
+        "Uploaded segment thumbnail was not found",
+    [ApiErrorCode.SegmentThumbnailUploadTooLarge]:
+        "Segment thumbnail exceeds the upload-size limit",
 };
 
 type SendApiErrorOptions = {

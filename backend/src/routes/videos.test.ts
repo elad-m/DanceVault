@@ -61,6 +61,18 @@ const fakeVideoStorageProvider: VideoStorageProvider = {
     createVideoUploadUrl: createVideoUploadUrlMock,
     deleteVideoObject: deleteVideoObjectMock,
     getVideoObjectSizeBytes: getVideoObjectSizeBytesMock,
+    createSegmentThumbnailUploadUrl: async () => {
+        throw new Error("Not used by video route tests");
+    },
+    createSegmentThumbnailPlaybackUrl: async () => {
+        throw new Error("Not used by video route tests");
+    },
+    getSegmentThumbnailObjectSizeBytes: async () => {
+        throw new Error("Not used by video route tests");
+    },
+    deleteSegmentThumbnailObject: async () => {
+        throw new Error("Not used by video route tests");
+    },
     listVideoObjectKeys: async () => [],
     close: () => { },
 };
