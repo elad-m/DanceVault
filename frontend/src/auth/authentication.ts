@@ -1,7 +1,6 @@
 import { Amplify } from "aws-amplify";
 import {
     fetchAuthSession,
-    fetchUserAttributes,
     signInWithRedirect,
     signOut,
 } from "aws-amplify/auth";
@@ -76,8 +75,14 @@ export async function getSignedInUserLabel(): Promise<string> {
         return "initial-user";
     }
 
-    const attributes = await fetchUserAttributes();
-    return attributes.email ?? "Signed-in user";
+    const session = await fetchAuthSession();
+    const email = session.tokens?.idToken?.payload.email;
+
+    if (typeof email !== "string") {
+        throw new Error("The signed-in user's email is unavailable");
+    }
+
+    return email;
 }
 
 export async function startSignIn(): Promise<void> {

@@ -28,7 +28,7 @@ export default function App() {
     const [videoPendingDeletion, setVideoPendingDeletion] = useState<Video | null>(null);
     const [deletingVideo, setDeletingVideo] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [signedInUserLabel, setSignedInUserLabel] = useState("Signed-in user");
+    const [signedInUserLabel, setSignedInUserLabel] = useState("Loading account...");
     const [activeView, setActiveView] = useState<AppView>(() =>
         getViewForPath(window.location.pathname)
     );
@@ -66,7 +66,7 @@ export default function App() {
     useEffect(() => {
         void getSignedInUserLabel()
             .then(setSignedInUserLabel)
-            .catch(() => setSignedInUserLabel("Signed-in user"));
+            .catch(() => setSignedInUserLabel("Email unavailable"));
     }, []);
 
     useEffect(() => {
