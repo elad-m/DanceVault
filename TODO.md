@@ -142,6 +142,9 @@
 ## 9. Self-Service User Registration
 
 - Enable Cognito self-registration and email verification.
+- Add Sign in with Google and Sign in with Apple through Cognito federation,
+  including provider setup, callback configuration, and account-linking rules
+  for users who previously registered with the same email address.
 - Require acceptance of the current legal documents.
 - Add per-user quotas, account deletion, password recovery, and abuse
   controls.
@@ -151,6 +154,28 @@
   are active before registration is opened.
 
 ## Deferred Technical Follow-ups
+
+### Manual AWS Deployment Process
+
+- **Understand the targets:** uploaded videos remain in the video S3 bucket,
+  application records remain in DynamoDB, the backend runs in Lambda behind
+  API Gateway, and the built frontend is stored in a separate S3 bucket and
+  served through CloudFront.
+- **Build:** run the frontend build to create `frontend/dist`. CDK bundles the
+  backend Lambda code automatically during synthesis and deployment.
+- **Verify:** run the relevant frontend, backend, and infrastructure tests
+  before changing AWS resources.
+- **Preview:** run `npx cdk diff --profile dancevault-admin` from
+  `infrastructure` and confirm that the reported changes match the intended
+  application or infrastructure change.
+- **Deploy:** run `npx cdk deploy --profile dancevault-admin`. CDK synthesizes
+  the stack, uploads changed assets, and asks CloudFormation to update only
+  resources whose definitions or asset hashes changed.
+- **Confirm:** test the CloudFront application, authenticated backend requests,
+  and any workflow affected by the deployment. Check CloudWatch when a backend
+  or background-worker change is involved.
+- **Future improvement:** automate these build, test, diff, deployment, and
+  smoke-test stages through a controlled deployment pipeline.
 
 - When adding the `prod` environment, remove the hardcoded `"dev"` value from
   DynamoDB video mapping. The persistence selector should provide the active
