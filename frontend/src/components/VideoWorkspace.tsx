@@ -193,6 +193,23 @@ export function VideoWorkspace({ video, seekRequest, backNavigation, onDelete, o
     ): Promise<Blob | null> {
         if (!playbackUrl) return null;
 
+        const visiblePlayer = playerRef.current;
+        const targetSeconds = milliseconds / 1000;
+
+        if (
+            visiblePlayer &&
+            visiblePlayer.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+            visiblePlayer.videoWidth > 0 &&
+            visiblePlayer.videoHeight > 0 &&
+            Math.abs(visiblePlayer.currentTime - targetSeconds) <= 0.05
+        ) {
+            if (generation !== thumbnailCaptureGenerationRef.current) {
+                return null;
+            }
+
+            return createThumbnailBlob(visiblePlayer);
+        }
+
         const thumbnailPlayer = document.createElement("video");
         thumbnailPlayer.crossOrigin = "anonymous";
         thumbnailPlayer.preload = "auto";
@@ -206,7 +223,6 @@ export function VideoWorkspace({ video, seekRequest, backNavigation, onDelete, o
             );
             if (!loaded) return null;
 
-            const targetSeconds = milliseconds / 1000;
             if (Math.abs(thumbnailPlayer.currentTime - targetSeconds) > 0.05) {
                 const seekedPromise = waitForThumbnailMediaEvent(
                     thumbnailPlayer,
@@ -436,6 +452,7 @@ export function VideoWorkspace({ video, seekRequest, backNavigation, onDelete, o
                                     <video
                                         ref={playerRef}
                                         src={playbackUrl}
+                                        crossOrigin="anonymous"
                                         preload="metadata"
                                         onClick={togglePlayback}
                                         onDoubleClick={() => void enterFullscreen()}
