@@ -37,12 +37,24 @@
 
 ## 3. Observability
 
-- Add a CloudWatch dashboard and alarms for Lambda errors, API failures,
+- **Done:** Add a CloudWatch dashboard and alarms for Lambda errors, API failures,
   DynamoDB throttling, and media-job failures.
+- **Done:** Add API Gateway access logs and a dashboard query that identifies
+  5xx request IDs, routes, statuses, and integration errors that occur before
+  the backend Lambda can log them.
+- **Done:** Load only visible segment thumbnails and limit signed-thumbnail URL
+  requests to three concurrent calls so list rendering does not create a
+  Lambda request burst.
 - Add structured logs containing request ID, user ID, video ID, and job ID.
-- Before deploying observability, choose the private operations-alert email and
-  pass it as the `MonitoringAlertEmail` CloudFormation parameter. Confirm the
-  SNS subscription from that mailbox after deployment.
+- **Done:** Before deploying observability, choose the private operations-alert
+  email and pass it as the `MonitoringAlertEmail` CloudFormation parameter.
+  Confirm the SNS subscription from that mailbox after deployment.
+- Keep the current one-failure alarm thresholds while usage is private and
+  small. Review alarm history after the bounded thumbnail loader is deployed
+  before deciding whether notification aggregation is necessary.
+- Request an increase of the `il-central-1` Lambda concurrent-executions account
+  quota from 10 to 50. The quota itself has no direct charge; actual Lambda
+  executions remain usage-billed.
 
 ### Deferred until self-service registration
 

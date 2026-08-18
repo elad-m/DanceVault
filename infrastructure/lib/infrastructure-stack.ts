@@ -462,6 +462,17 @@ export class InfrastructureStack extends cdk.Stack {
         },
       );
 
+    const backendAPIAccessLogGroup = new logs.LogGroup(
+      this,
+      "BackendAPIAccessLogGroup",
+      {
+        logGroupName:
+          "/aws/apigateway/DanceVaultDevelopmentAPI",
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
+
     const backendAPI = new apiGateway.HttpApi(
       this,
       "BackendAPI",
@@ -489,6 +500,31 @@ export class InfrastructureStack extends cdk.Stack {
         },
       },
     );
+
+    const backendAPIStage = backendAPI.defaultStage;
+    if (!backendAPIStage) {
+      throw new Error(
+        "DanceVault backend API default stage was not created",
+      );
+    }
+
+    const backendAPICfnStage =
+      backendAPIStage.node.defaultChild as
+        apiGateway.CfnStage;
+    backendAPICfnStage.accessLogSettings = {
+      destinationArn: backendAPIAccessLogGroup.logGroupArn,
+      format: JSON.stringify({
+        requestId: "$context.requestId",
+        requestTime: "$context.requestTime",
+        httpMethod: "$context.httpMethod",
+        routeKey: "$context.routeKey",
+        status: "$context.status",
+        responseLength: "$context.responseLength",
+        integrationError:
+          "$context.integrationErrorMessage",
+        errorMessage: "$context.error.message",
+      }),
+    };
 
     backendAPI.addRoutes({
       path: "/{proxy+}",
@@ -717,6 +753,20 @@ export class InfrastructureStack extends cdk.Stack {
         queryString: [
           "fields @timestamp, level, event, reqId, userId, videoId, segmentId, msg",
           "| filter level >= 50",
+          "| sort @timestamp desc",
+          "| limit 50",
+        ].join("\n"),
+        view: cloudWatch.LogQueryVisualizationType.TABLE,
+        width: 12,
+      }),
+      new cloudWatch.LogQueryWidget({
+        title: "Recent API failures",
+        logGroupNames: [
+          backendAPIAccessLogGroup.logGroupName,
+        ],
+        queryString: [
+          "fields @timestamp, requestId, httpMethod, routeKey, status, integrationError, errorMessage",
+          "| filter status >= 500",
           "| sort @timestamp desc",
           "| limit 50",
         ].join("\n"),

@@ -31,6 +31,65 @@ type SegmentBrowserProps = {
     onError: (message: string) => void;
 };
 
+const maximumConcurrentThumbnailRequests = 3;
+
+type ThumbnailRequest = {
+    segmentId: string;
+    generation: number;
+};
+
+type SegmentThumbnailProps = {
+    segmentId: string;
+    thumbnailUrl: string | undefined;
+    onVisible: (segmentId: string) => void;
+};
+
+function SegmentThumbnail({
+    segmentId,
+    thumbnailUrl,
+    onVisible,
+}: SegmentThumbnailProps) {
+    const elementRef = useRef<HTMLSpanElement>(null);
+    const requestedRef = useRef(false);
+
+    useEffect(() => {
+        if (thumbnailUrl || requestedRef.current) return;
+
+        const element = elementRef.current;
+        if (!element || !("IntersectionObserver" in window)) {
+            requestedRef.current = true;
+            onVisible(segmentId);
+            return;
+        }
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (!entries.some((entry) => entry.isIntersecting)) return;
+
+                requestedRef.current = true;
+                onVisible(segmentId);
+                observer.disconnect();
+            },
+            {
+                rootMargin: "160px 0px",
+            }
+        );
+
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [onVisible, segmentId, thumbnailUrl]);
+
+    return (
+        <span className="queue-thumbnail" ref={elementRef}>
+            {thumbnailUrl ? (
+                <img src={thumbnailUrl} alt="" />
+            ) : (
+                <ListChecks size={17} />
+            )}
+        </span>
+    );
+}
+
 function belongsInPracticeQueue(segment: Segment): boolean {
     return segment.practicePriority === "high" || segment.confidence === "low";
 }
@@ -76,11 +135,18 @@ export function SegmentBrowser({
     const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
     const initialSelectedSegmentIdRef = useRef(initialSelectedSegmentId);
     const thumbnailObjectUrlsRef = useRef(new Set<string>());
+    const thumbnailRequestQueueRef = useRef<ThumbnailRequest[]>([]);
+    const activeThumbnailRequestCountRef = useRef(0);
+    const thumbnailRequestGenerationRef = useRef(0);
+    const requestedThumbnailIdsRef = useRef(new Set<string>());
 
     useEffect(() => {
         const thumbnailObjectUrls = thumbnailObjectUrlsRef.current;
 
         return () => {
+            thumbnailRequestGenerationRef.current += 1;
+            thumbnailRequestQueueRef.current = [];
+
             for (const objectUrl of thumbnailObjectUrls) {
                 URL.revokeObjectURL(objectUrl);
             }
@@ -90,6 +156,9 @@ export function SegmentBrowser({
 
     useEffect(() => {
         let cancelled = false;
+        thumbnailRequestGenerationRef.current += 1;
+        thumbnailRequestQueueRef.current = [];
+        requestedThumbnailIdsRef.current.clear();
         setLoading(true);
 
         const getSegments = mode === "practice"
@@ -100,7 +169,6 @@ export function SegmentBrowser({
             .then((response) => {
                 if (cancelled) return;
                 setSegments(response.segments);
-                void loadPersistentThumbnails(response.segments);
                 const initialSegment = response.segments.find(
                     (segment) => segment.id === initialSelectedSegmentIdRef.current
                 ) ?? response.segments[0];
@@ -131,23 +199,50 @@ export function SegmentBrowser({
         onSelectSegment(segmentId);
     }
 
-    async function loadPersistentThumbnails(segmentsToLoad: Segment[]) {
-        const entries = await Promise.all(
-            segmentsToLoad.map(async (segment): Promise<[string, string] | null> => {
-                try {
-                    const playbackUrl =
-                        await getSegmentThumbnailPlaybackUrl(segment.id);
-                    return [segment.id, playbackUrl];
-                } catch {
-                    return null;
-                }
-            })
-        );
+    function processThumbnailRequestQueue() {
+        while (
+            activeThumbnailRequestCountRef.current <
+                maximumConcurrentThumbnailRequests &&
+            thumbnailRequestQueueRef.current.length > 0
+        ) {
+            const request = thumbnailRequestQueueRef.current.shift();
+            if (!request) return;
 
-        setThumbnails((current) => ({
-            ...current,
-            ...Object.fromEntries(entries.filter((entry) => entry !== null)),
-        }));
+            activeThumbnailRequestCountRef.current += 1;
+
+            void getSegmentThumbnailPlaybackUrl(request.segmentId)
+                .then((playbackUrl) => {
+                    if (
+                        request.generation !==
+                        thumbnailRequestGenerationRef.current
+                    ) {
+                        return;
+                    }
+
+                    setThumbnails((current) => ({
+                        ...current,
+                        [request.segmentId]: playbackUrl,
+                    }));
+                })
+                .catch(() => {
+                    // Missing thumbnails are repaired when their segment plays.
+                })
+                .finally(() => {
+                    activeThumbnailRequestCountRef.current -= 1;
+                    processThumbnailRequestQueue();
+                });
+        }
+    }
+
+    function requestPersistentThumbnail(segmentId: string) {
+        if (requestedThumbnailIdsRef.current.has(segmentId)) return;
+
+        requestedThumbnailIdsRef.current.add(segmentId);
+        thumbnailRequestQueueRef.current.push({
+            segmentId,
+            generation: thumbnailRequestGenerationRef.current,
+        });
+        processThumbnailRequestQueue();
     }
 
     async function handleThumbnailCaptured(
@@ -190,7 +285,6 @@ export function SegmentBrowser({
                 ? await getPracticeQueue(nextCursor)
                 : await getAllSegments(nextCursor);
             setSegments((current) => [...current, ...response.segments]);
-            void loadPersistentThumbnails(response.segments);
             setNextCursor(response.nextCursor);
         } catch (error) {
             onError(error instanceof Error ? error.message : "Could not load more segments");
@@ -359,13 +453,12 @@ export function SegmentBrowser({
                                 key={segment.id}
                             >
                                 <button className="practice-list-select" onClick={() => selectSegment(segment.id)}>
-                                    <span className="queue-thumbnail">
-                                        {thumbnails[segment.id] ? (
-                                            <img src={thumbnails[segment.id]} alt="" />
-                                        ) : (
-                                            <ListChecks size={17} />
-                                        )}
-                                    </span>
+                                    <SegmentThumbnail
+                                        key={`${mode}-${segment.id}`}
+                                        segmentId={segment.id}
+                                        thumbnailUrl={thumbnails[segment.id]}
+                                        onVisible={requestPersistentThumbnail}
+                                    />
                                     <span className="queue-time">{formatDuration(segment.startMilliseconds)}</span>
                                     <span className="queue-movement">
                                         <strong>{segment.name}</strong>

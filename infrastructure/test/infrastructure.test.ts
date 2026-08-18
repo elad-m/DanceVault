@@ -578,6 +578,27 @@ test("creates an HTTP API connected to the backend Lambda", () => {
     },
   );
 
+  template.hasResourceProperties("AWS::Logs::LogGroup", {
+    LogGroupName:
+      "/aws/apigateway/DanceVaultDevelopmentAPI",
+    RetentionInDays: 7,
+  });
+
+  template.hasResourceProperties("AWS::ApiGatewayV2::Stage", {
+    StageName: "$default",
+    AccessLogSettings: {
+      DestinationArn: {
+        "Fn::GetAtt": [
+          Match.stringLikeRegexp("BackendAPIAccessLogGroup"),
+          "Arn",
+        ],
+      },
+      Format: Match.stringLikeRegexp(
+        ".*\\$context\\.requestId.*\\$context\\.status.*\\$context\\.integrationErrorMessage.*",
+      ),
+    },
+  });
+
   template.hasOutput("BackendAPIURL", {});
 });
 
@@ -669,6 +690,9 @@ test("monitors development backend failures and emails operations alerts", () =>
   );
   expect(JSON.stringify(dashboards)).toContain(
     "Recent backend errors",
+  );
+  expect(JSON.stringify(dashboards)).toContain(
+    "Recent API failures",
   );
   expect(JSON.stringify(dashboards)).toContain(
     "Failed video deletion jobs",
