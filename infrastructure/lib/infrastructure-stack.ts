@@ -175,13 +175,206 @@ export class InfrastructureStack extends cdk.Stack {
         cognito.ManagedLoginVersion.NEWER_MANAGED_LOGIN,
     });
 
+    const managedLoginBrandingSettings = {
+      categories: {
+        global: {
+          colorSchemeMode: "DARK",
+          pageFooter: { enabled: false },
+          pageHeader: { enabled: false },
+          spacingDensity: "REGULAR",
+        },
+      },
+      components: {
+        pageBackground: {
+          image: { enabled: false },
+          lightMode: { color: "171714ff" },
+          darkMode: { color: "171714ff" },
+        },
+        form: {
+          lightMode: {
+            backgroundColor: "23231fff",
+            borderColor: "3d3d35ff",
+          },
+          darkMode: {
+            backgroundColor: "23231fff",
+            borderColor: "3d3d35ff",
+          },
+          borderRadius: 8,
+          backgroundImage: { enabled: false },
+          logo: { enabled: false },
+        },
+        pageText: {
+          lightMode: {
+            bodyColor: "aaa99cff",
+            headingColor: "f4f4ecff",
+            descriptionColor: "aaa99cff",
+          },
+          darkMode: {
+            bodyColor: "aaa99cff",
+            headingColor: "f4f4ecff",
+            descriptionColor: "aaa99cff",
+          },
+        },
+        primaryButton: {
+          lightMode: {
+            defaults: {
+              backgroundColor: "ffef00ff",
+              textColor: "11110fff",
+            },
+            hover: {
+              backgroundColor: "e6d700ff",
+              textColor: "11110fff",
+            },
+            active: {
+              backgroundColor: "c9bd00ff",
+              textColor: "11110fff",
+            },
+          },
+          darkMode: {
+            defaults: {
+              backgroundColor: "ffef00ff",
+              textColor: "11110fff",
+            },
+            hover: {
+              backgroundColor: "e6d700ff",
+              textColor: "11110fff",
+            },
+            active: {
+              backgroundColor: "c9bd00ff",
+              textColor: "11110fff",
+            },
+          },
+        },
+        secondaryButton: {
+          lightMode: {
+            defaults: {
+              backgroundColor: "30302aff",
+              borderColor: "5b5b50ff",
+              textColor: "f4f4ecff",
+            },
+            hover: {
+              backgroundColor: "3b3b34ff",
+              borderColor: "777769ff",
+              textColor: "ffffffff",
+            },
+            active: {
+              backgroundColor: "45453dff",
+              borderColor: "ffef00ff",
+              textColor: "ffffffff",
+            },
+          },
+          darkMode: {
+            defaults: {
+              backgroundColor: "30302aff",
+              borderColor: "5b5b50ff",
+              textColor: "f4f4ecff",
+            },
+            hover: {
+              backgroundColor: "3b3b34ff",
+              borderColor: "777769ff",
+              textColor: "ffffffff",
+            },
+            active: {
+              backgroundColor: "45453dff",
+              borderColor: "ffef00ff",
+              textColor: "ffffffff",
+            },
+          },
+        },
+        alert: {
+          borderRadius: 6,
+          lightMode: {
+            error: {
+              backgroundColor: "302321ff",
+              borderColor: "e27068ff",
+            },
+          },
+          darkMode: {
+            error: {
+              backgroundColor: "302321ff",
+              borderColor: "e27068ff",
+            },
+          },
+        },
+      },
+      componentClasses: {
+        input: {
+          borderRadius: 6,
+          lightMode: {
+            defaults: {
+              backgroundColor: "171714ff",
+              borderColor: "5b5b50ff",
+            },
+            placeholderColor: "85857aff",
+          },
+          darkMode: {
+            defaults: {
+              backgroundColor: "171714ff",
+              borderColor: "5b5b50ff",
+            },
+            placeholderColor: "85857aff",
+          },
+        },
+        buttons: { borderRadius: 6 },
+        inputLabel: {
+          lightMode: { textColor: "f4f4ecff" },
+          darkMode: { textColor: "f4f4ecff" },
+        },
+        inputDescription: {
+          lightMode: { textColor: "aaa99cff" },
+          darkMode: { textColor: "aaa99cff" },
+        },
+        link: {
+          lightMode: {
+            defaults: { textColor: "f0df21ff" },
+            hover: { textColor: "ffef00ff" },
+          },
+          darkMode: {
+            defaults: { textColor: "f0df21ff" },
+            hover: { textColor: "ffef00ff" },
+          },
+        },
+        focusState: {
+          lightMode: { borderColor: "ffef00ff" },
+          darkMode: { borderColor: "ffef00ff" },
+        },
+        divider: {
+          lightMode: { borderColor: "3d3d35ff" },
+          darkMode: { borderColor: "3d3d35ff" },
+        },
+        optionControls: {
+          lightMode: {
+            defaults: {
+              backgroundColor: "171714ff",
+              borderColor: "5b5b50ff",
+            },
+            selected: {
+              backgroundColor: "ffef00ff",
+              foregroundColor: "11110fff",
+            },
+          },
+          darkMode: {
+            defaults: {
+              backgroundColor: "171714ff",
+              borderColor: "5b5b50ff",
+            },
+            selected: {
+              backgroundColor: "ffef00ff",
+              foregroundColor: "11110fff",
+            },
+          },
+        },
+      },
+    };
+
     new cognito.CfnManagedLoginBranding(
       this,
       'ManagedLoginBranding',
       {
         userPoolId: userPool.userPoolId,
         clientId: userPoolClient.userPoolClientId,
-        useCognitoProvidedValues: true,
+        settings: managedLoginBrandingSettings,
+        useCognitoProvidedValues: false,
       },
     );
 

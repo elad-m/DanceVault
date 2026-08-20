@@ -212,7 +212,29 @@ test('creates Cognito authentication for the development web app', () => {
   template.hasResourceProperties(
     'AWS::Cognito::ManagedLoginBranding',
     {
-      UseCognitoProvidedValues: true,
+      UseCognitoProvidedValues: false,
+      Settings: Match.objectLike({
+        categories: Match.objectLike({
+          global: Match.objectLike({
+            colorSchemeMode: "DARK",
+          }),
+        }),
+        components: Match.objectLike({
+          pageBackground: Match.objectLike({
+            darkMode: {
+              color: "171714ff",
+            },
+          }),
+          primaryButton: Match.objectLike({
+            darkMode: Match.objectLike({
+              defaults: {
+                backgroundColor: "ffef00ff",
+                textColor: "11110fff",
+              },
+            }),
+          }),
+        }),
+      }),
     },
   );
 });
