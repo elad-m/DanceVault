@@ -4,8 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "sync:legal": "node scripts/syncLegalDocuments.mjs",
+    "prelocal": "npm run sync:legal",
     "local": "vite --configLoader runner --mode local-development",
+    "predev": "npm run sync:legal",
     "dev": "vite --configLoader runner --mode dev",
+    "prebuild": "npm run sync:legal",
     "build": "tsc -b && vite build --configLoader runner --mode dev",
     "preview": "vite preview --configLoader runner --mode dev"
   },
@@ -20,6 +24,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "marked": "^18.0.10",
     "typescript": "^6.0.3",
     "vite": "^6.0.0"
   }

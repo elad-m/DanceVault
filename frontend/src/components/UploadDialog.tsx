@@ -1,4 +1,4 @@
-import { Upload, X } from "lucide-react";
+import { ShieldCheck, Upload, X } from "lucide-react";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 type UploadDialogProps = {
@@ -98,6 +98,20 @@ export function UploadDialog({ open, uploading, onClose, onUpload }: UploadDialo
                         onChange={selectFile}
                     />
                 </label>
+                <div className="upload-legal-notice">
+                    <ShieldCheck size={17} aria-hidden="true" />
+                    <p>
+                        Upload only videos you have the right and permission
+                        to use. By uploading, you agree to the{" "}
+                        <a href="/terms" target="_blank" rel="noreferrer">
+                            Terms of Use
+                        </a>{" "}
+                        and acknowledge the{" "}
+                        <a href="/privacy" target="_blank" rel="noreferrer">
+                            Privacy Notice
+                        </a>.
+                    </p>
+                </div>
                 <div className="modal-footer">
                     <button type="button" className="secondary-button" onClick={closeDialog} disabled={uploading}>Cancel</button>
                     <button className="primary-button" disabled={!file || !title.trim() || uploading}>

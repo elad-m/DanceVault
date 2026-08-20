@@ -1,4 +1,4 @@
-import { LoaderCircle, LogIn } from "lucide-react";
+import { Film, LoaderCircle, LogIn } from "lucide-react";
 import {
     type ReactNode,
     useEffect,
@@ -80,7 +80,12 @@ export function AuthenticationGate({
     if (status === "checking") {
         return (
             <main className="authentication-screen">
-                <LoaderCircle className="authentication-spinner" />
+                <div className="authentication-loading" aria-label="Checking sign-in status">
+                    <span className="authentication-brand-mark">
+                        <Film size={22} />
+                    </span>
+                    <LoaderCircle className="authentication-spinner" />
+                </div>
             </main>
         );
     }
@@ -89,11 +94,23 @@ export function AuthenticationGate({
         return (
             <main className="authentication-screen">
                 <section className="authentication-panel">
-                    <h1>DanceVault</h1>
-                    <p>Sign in to access your videos and practice queue.</p>
+                    <div className="authentication-brand">
+                        <span className="authentication-brand-mark">
+                            <Film size={24} />
+                        </span>
+                        <strong>DanceVault</strong>
+                    </div>
+                    <div className="authentication-copy">
+                        <span>Private video practice</span>
+                        <h1>Sign in to DanceVault</h1>
+                        <p>
+                            Access your videos, segments, and practice queue.
+                        </p>
+                    </div>
 
                     <button
                         type="button"
+                        className="primary-button authentication-sign-in"
                         onClick={() => {
                             setError(null);
                             void startSignIn().catch(() => {
@@ -106,6 +123,11 @@ export function AuthenticationGate({
                     </button>
 
                     {error && <p role="alert">{error}</p>}
+
+                    <nav className="authentication-legal" aria-label="Legal">
+                        <a href="/privacy">Privacy Notice</a>
+                        <a href="/terms">Terms of Use</a>
+                    </nav>
                 </section>
             </main>
         );

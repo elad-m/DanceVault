@@ -18,13 +18,12 @@ contains or could reveal:
 - Email addresses, Cognito user IDs, or other personal information.
 - Instructions that would allow another person to access a user's data.
 
-**Private security contact:** A dedicated private contact address or GitHub
-private-vulnerability-reporting channel must be established before external
-users are invited.
+**Private security contact:**
+[elad.apps.contact@gmail.com](mailto:elad.apps.contact@gmail.com)
 
-Until that channel is established, do not send real credentials or personal
-data. A report can initially describe the affected component and general impact
-through the repository owner's private GitHub profile contact method.
+Do not send passwords, authentication tokens, private videos, or other secrets.
+Describe the affected component and the general impact without including
+unnecessary personal data.
 
 A useful report should include:
 
@@ -135,7 +134,6 @@ must be revoked or rotated first.
 
 ## Known Limitations
 
-- No dedicated private security contact is configured yet.
 - No automated security-alert or incident-management workflow exists yet.
 - Video and DynamoDB deletion failures are not retried automatically.
 - Account-wide data deletion is manual.

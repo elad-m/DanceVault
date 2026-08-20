@@ -22,3 +22,4 @@ dist/
 *.webm
 .DS_Store
 /deployment-roadmap.html
+/frontend/src/generated-legal/

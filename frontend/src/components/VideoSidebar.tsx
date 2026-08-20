@@ -2,13 +2,13 @@ import {
     Film,
     List,
     ListChecks,
-    LogOut,
     Plus,
     RefreshCw,
     Upload,
 } from "lucide-react";
 import { getVisibleVideoStatusLabel } from "../format";
 import type { Video } from "../types";
+import { AccountMenu } from "./AccountMenu";
 
 export type AppView = "practice" | "videos" | "segments";
 
@@ -47,16 +47,10 @@ export function VideoSidebar({
                         {signedInUserLabel}
                     </span>
                 </div>
-                {onSignOut && (
-                    <button
-                        className="icon-button"
-                        onClick={onSignOut}
-                        title="Sign out"
-                        aria-label="Sign out"
-                    >
-                        <LogOut size={17} />
-                    </button>
-                )}
+                <AccountMenu
+                    signedInUserLabel={signedInUserLabel}
+                    onSignOut={onSignOut}
+                />
             </div>
 
             <div className="sidebar-actions">

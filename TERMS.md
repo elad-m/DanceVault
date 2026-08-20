@@ -3,6 +3,8 @@
 **Effective date:** August 3, 2026  
 **Status:** Development draft for the invite-only DanceVault service
 
+DanceVault is operated by **Elad Musba**.
+
 These terms apply to use of the hosted DanceVault application. They do not
 grant permission to reuse the DanceVault source code. No open-source license is
 currently granted; the public repository remains subject to GitHub's terms and
@@ -21,8 +23,8 @@ the person to whom it was issued.
 
 Users must provide accurate account information and protect access to their
 email account, password, and authentication factors. Suspected unauthorized
-access should be reported promptly through the private contact method described
-in `SECURITY.md` once that contact is established.
+access should be reported promptly to
+[elad.apps.contact@gmail.com](mailto:elad.apps.contact@gmail.com).
 
 Users must not attempt to access another user's account, videos, segments, or
 technical credentials.
@@ -114,6 +116,6 @@ must be reviewed before public registration or commercial use.
 
 ## 11. Contact
 
-A dedicated private contact address for legal, privacy, and account requests
-must be added before external users are invited. Do not include credentials,
-private videos, or personal information in a public GitHub issue.
+Contact [elad.apps.contact@gmail.com](mailto:elad.apps.contact@gmail.com) for
+legal, privacy, account, deletion, and product-support requests. Do not include
+credentials, private videos, or personal information in a public GitHub issue.

@@ -3,6 +3,11 @@
 **Effective date:** August 3, 2026  
 **Status:** Development draft for the invite-only DanceVault service
 
+DanceVault is operated by **Elad Musba**, the controller responsible for the
+personal information described in this notice. Privacy and data requests can
+be sent to
+[elad.apps.contact@gmail.com](mailto:elad.apps.contact@gmail.com).
+
 DanceVault helps users upload dance lesson videos, identify timestamped
 segments, and organize practice. This notice explains what information the
 current development service processes and why.
@@ -110,17 +115,19 @@ A user may request:
 - Correction of inaccurate account information where supported.
 - Deletion of their account and associated DanceVault content.
 
-**Privacy contact:** A dedicated private contact address must be added before
-external users are invited. Do not include personal information in a public
-GitHub issue.
+**Privacy contact:** [elad.apps.contact@gmail.com](mailto:elad.apps.contact@gmail.com)
+
+Use this address for privacy questions, account or content deletion requests,
+and corrections to personal information. Do not include personal information
+in a public GitHub issue.
 
 ## Security
 
 DanceVault uses authentication, encrypted AWS storage, private S3 buckets,
 time-limited signed video URLs, and access-limited AWS roles. No internet
 service can guarantee absolute security. Suspected exposure of an account,
-video, or credential should be reported through the private security contact
-defined in `SECURITY.md` once that contact is established.
+video, or credential should be reported to
+[elad.apps.contact@gmail.com](mailto:elad.apps.contact@gmail.com).
 
 ## Changes to This Notice
 
