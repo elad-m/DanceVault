@@ -1,5 +1,52 @@
 # DanceVault Priority Roadmap
 
+## Product Naming
+
+- Reconsider the `DanceVault` name. It is not easy to say and "vault" suggests
+  secure storage rather than the app's actual purpose.
+- The core product loop is: save a useful dance-video segment, revisit and
+  practice it, reassess confidence, and update what deserves attention next.
+- Useful naming roots include **Loop**, **Repertoire**, **Practice**,
+  **Replay**, **Refine**, and **Review**.
+- Current candidates: **DanceLoop**, **PracticeLoop**, **MoveLoop**,
+  **DanceReplay**, **MoveReplay**, **DanceRefine**, **Repertoire**,
+  **My Repertoire**, **Practice Repertoire**, **DanceReview**,
+  **MoveReview**, **PracticeDeck**, and **MoveDeck**.
+- **Current leading candidate:** `DanceLoop`. It is easy to say and connects
+  video repetition with the recurring practice and reassessment cycle. Its
+  weakness is that it does not explicitly communicate a personal saved
+  repertoire.
+- `DanceLog` remains a possible direction, but it emphasizes recording what
+  was learned more than repeated practice, prioritization, and confidence
+  updates.
+
+### Rename impact and recommended scope
+
+- A future product rename should initially change only user-facing branding:
+  the app title, visible labels, logo, favicon, installed-app icons, and public
+  legal and branding documents.
+- Keep `DanceVault` as the internal infrastructure codename unless renaming a
+  specific resource has a concrete operational benefit. DynamoDB table,
+  Lambda, SQS, SNS, IAM role, CloudWatch alarm, Docker volume, and local test
+  names do not need to match the public product name.
+- Do not rename the DynamoDB table merely for branding. Its physical name
+  cannot be changed in place and replacing it would require a deliberate data
+  migration. S3 object keys and DynamoDB item keys are already independent of
+  the product name, so a user-facing rename requires no user-data migration.
+- Defer changing the Cognito `dancevault-dev` login domain until a permanent
+  public or custom domain is selected. Changing it requires coordinated
+  infrastructure and frontend configuration updates.
+- CloudWatch alarm names may remain internal. Renaming them would reset alarm
+  resources/history and require updating Gmail filters and operator-facing
+  alert expectations.
+- Renaming the GitHub repository and local workspace directory is optional and
+  independent of the application and AWS resource names. If the repository is
+  renamed, update the local Git remote; if the directory is renamed, update
+  absolute documentation paths and reopen local tools.
+- Therefore, choosing a new name and designing its icon is a small branding
+  change, not an AWS or database migration, provided internal resource names
+  remain stable.
+
 ## 1. Privacy, Security, and Legal Baseline
 
 - Audit the public Git history for credentials and personal data.
@@ -11,12 +58,8 @@
 
 ### Owner setup required before inviting external users
 
-- Create a dedicated private privacy and legal contact address and replace the
-  placeholder in `PRIVACY.md` and `TERMS.md`.
-- Create a dedicated security contact address or enable GitHub private
-  vulnerability reporting, then replace the placeholder in `SECURITY.md`.
-- Create a developer/support contact address for account and product-support
-  requests.
+- [x] Use `elad.apps.contact@gmail.com` as the shared private contact for
+  privacy, legal, security, account deletion, and product-support requests.
 - Add visible links to `PRIVACY.md`, `TERMS.md`, and `SECURITY.md` from the
   repository README and hosted application.
 - Configure a GitHub `noreply` commit email for future commits if the personal
@@ -52,9 +95,11 @@
 - Keep the current one-failure alarm thresholds while usage is private and
   small. Review alarm history after the bounded thumbnail loader is deployed
   before deciding whether notification aggregation is necessary.
-- Request an increase of the `il-central-1` Lambda concurrent-executions account
-  quota from 10 to 50. The quota itself has no direct charge; actual Lambda
-  executions remain usage-billed.
+- Monitor the reduced new-account Lambda concurrency quota after deploying the
+  bounded thumbnail loader. AWS may raise the current limit of 10 automatically
+  as the account establishes normal usage. If legitimate requests continue to
+  be throttled, contact AWS Support and ask for a limit of 50; Service Quotas
+  cannot directly request a value below its standard default of 1,000.
 
 ### Deferred until self-service registration
 
