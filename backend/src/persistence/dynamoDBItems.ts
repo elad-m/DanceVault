@@ -2,6 +2,7 @@ import type {
     VideoStatus,
     VideoStorageProviderName,
 } from "../domain/video";
+import type { VideoDeletionSourceStatus } from "../domain/userQuota";
 import type {
     Confidence,
     Difficulty,
@@ -10,12 +11,54 @@ import type {
 import {
     createSegmentItemKeys,
     createDynamoDBVideoItemKeys,
+    createUserQuotaUsagePrimaryKey,
     type SegmentItemKeys,
     type DynamoDBVideoItemKeys,
+    type UserQuotaUsagePrimaryKey,
 } from "./dynamoDBKeys";
 
 export const CURRENT_VIDEO_SCHEMA_VERSION = 3;
 export const CURRENT_SEGMENT_SCHEMA_VERSION = 2;
+export const CURRENT_USER_QUOTA_USAGE_SCHEMA_VERSION = 1;
+
+export type DynamoDBUserQuotaUsageItem =
+    UserQuotaUsagePrimaryKey & {
+        entityType: "userQuotaUsage";
+        schemaVersion: typeof CURRENT_USER_QUOTA_USAGE_SCHEMA_VERSION;
+        userID: string;
+        storedVideoBytes: number;
+        pendingVideoBytes: number;
+        videoCount: number;
+        segmentCount: number;
+        pendingVideoUploadCount: number;
+    };
+
+export type CreateDynamoDBUserQuotaUsageItemInput = {
+    userID: string;
+    storedVideoBytes: number;
+    pendingVideoBytes: number;
+    videoCount: number;
+    segmentCount: number;
+    pendingVideoUploadCount: number;
+};
+
+export function createDynamoDBUserQuotaUsageItem(
+    input: CreateDynamoDBUserQuotaUsageItemInput
+): DynamoDBUserQuotaUsageItem {
+    return {
+        ...createUserQuotaUsagePrimaryKey(input.userID),
+        entityType: "userQuotaUsage",
+        schemaVersion:
+            CURRENT_USER_QUOTA_USAGE_SCHEMA_VERSION,
+        userID: input.userID,
+        storedVideoBytes: input.storedVideoBytes,
+        pendingVideoBytes: input.pendingVideoBytes,
+        videoCount: input.videoCount,
+        segmentCount: input.segmentCount,
+        pendingVideoUploadCount:
+            input.pendingVideoUploadCount,
+    };
+}
 
 export type DynamoDBVideoItem = DynamoDBVideoItemKeys & {
     entityType: "video";
@@ -26,7 +69,10 @@ export type DynamoDBVideoItem = DynamoDBVideoItemKeys & {
     storageKey: string;
     storageProviderName: VideoStorageProviderName;
     originalFileName: string;
+    // Optional until existing schema-version-3 records are backfilled.
+    fileSizeBytes?: number;
     status: VideoStatus;
+    deletionSourceStatus?: VideoDeletionSourceStatus;
     segmentCount: number;
     createdAt: string;
 };
@@ -38,6 +84,8 @@ export type CreateDynamoDBVideoItemInput = {
     storageKey: string;
     storageProviderName: VideoStorageProviderName;
     originalFileName: string;
+    // Omit only when constructing a legacy record for migration or testing.
+    fileSizeBytes?: number;
     status: VideoStatus;
     createdAt: Date;
 };
@@ -60,6 +108,9 @@ export function createDynamoDBVideoItem(
         storageProviderName:
             input.storageProviderName,
         originalFileName: input.originalFileName,
+        ...(input.fileSizeBytes === undefined
+            ? {}
+            : { fileSizeBytes: input.fileSizeBytes }),
         status: input.status,
         segmentCount: 0,
         createdAt: input.createdAt.toISOString(),

@@ -21,6 +21,10 @@ import {
     maxVideoUploadSizeBytes,
     type VideoStorageProviderName,
 } from "../domain/video";
+import {
+    UserQuotaExceededError,
+    type UserQuotaLimitName,
+} from "../domain/userQuota";
 import { resetRuntimeForTest } from "../runtime";
 import type { PersistenceProvider } from "../persistence";
 import type { VideoDataAccess } from "../persistence/videoDataAccess";
@@ -127,6 +131,7 @@ type CreateTestVideoInput = {
     storageKey: string;
     storageProvider?: VideoStorageProviderName;
     originalFileName?: string;
+    fileSizeBytes?: number;
     status?: "pending_upload" | "ready";
 };
 
@@ -136,6 +141,7 @@ async function createTestVideo({
     storageKey,
     storageProvider = "minio",
     originalFileName = "lesson.mp4",
+    fileSizeBytes = TEST_VIDEO_FILE_SIZE_BYTES,
     status = "ready",
 }: CreateTestVideoInput) {
     const createdVideo =
@@ -146,6 +152,7 @@ async function createTestVideo({
             storageKey,
             storageProvider,
             originalFileName,
+            fileSizeBytes,
             status: "pending_upload",
             createdAt: new Date("2026-07-30T14:00:00.000Z"),
         });
@@ -154,10 +161,10 @@ async function createTestVideo({
         return createdVideo;
     }
 
-    return persistenceProvider.videoDataAccess.updateVideoStatus({
+    return persistenceProvider.videoDataAccess.finalizeVideoUpload({
         userID: TEST_USER_ID,
         videoID,
-        status,
+        fileSizeBytes,
     });
 }
 
@@ -192,6 +199,7 @@ describe("video data access injection", () => {
             storageKey: "test-videos/injected-video.mp4",
             storageProvider: "minio" as const,
             originalFileName: "injected-video.mp4",
+            fileSizeBytes: TEST_VIDEO_FILE_SIZE_BYTES,
             status: "ready" as const,
             createdAt: new Date("2026-07-27T10:00:00.000Z"),
         };
@@ -210,6 +218,13 @@ describe("video data access injection", () => {
             videoDataAccess: {
                 createVideo: vi.fn(async () => video),
                 updateVideoStatus: vi.fn(async () => video),
+                finalizeVideoUpload: vi.fn(async () => video),
+                markVideoUploadFailed: vi.fn(
+                    async () => video
+                ),
+                markVideoDeleting: vi.fn(async () => {
+                    throw new Error("Not used by this test");
+                }),
                 getVideoByID: getVideoByIDMock,
                 listVideos: listVideosMock,
                 listAllVideosForStorageAudit: vi.fn(
@@ -277,6 +292,7 @@ describe("video data access injection", () => {
             storageKey: input.storageKey,
             storageProvider: input.storageProvider,
             originalFileName: input.originalFileName,
+            fileSizeBytes: input.fileSizeBytes,
             status: input.status,
             createdAt: input.createdAt,
         }));
@@ -285,6 +301,15 @@ describe("video data access injection", () => {
             videoDataAccess: {
                 createVideo: createVideoMock,
                 updateVideoStatus: vi.fn(async () => {
+                    throw new Error("Not used by this test");
+                }),
+                finalizeVideoUpload: vi.fn(async () => {
+                    throw new Error("Not used by this test");
+                }),
+                markVideoUploadFailed: vi.fn(async () => {
+                    throw new Error("Not used by this test");
+                }),
+                markVideoDeleting: vi.fn(async () => {
                     throw new Error("Not used by this test");
                 }),
                 getVideoByID: vi.fn(async () => null),
@@ -332,6 +357,7 @@ describe("video data access injection", () => {
                 ),
                 storageProvider: "minio",
                 originalFileName: "lesson.mp4",
+                fileSizeBytes: TEST_VIDEO_FILE_SIZE_BYTES,
                 status: "pending_upload",
                 createdAt: expect.any(Date),
             });
@@ -339,6 +365,80 @@ describe("video data access injection", () => {
             await injectedApp.close();
         }
     });
+
+    it.each<{
+        limitName: UserQuotaLimitName;
+        expectedCode: string;
+        expectedMessage: string;
+    }>([
+        {
+            limitName: "stored_video_bytes",
+            expectedCode: "VIDEO_STORAGE_QUOTA_EXCEEDED",
+            expectedMessage:
+                "Your video storage quota has been reached",
+        },
+        {
+            limitName: "video_count",
+            expectedCode: "VIDEO_COUNT_QUOTA_EXCEEDED",
+            expectedMessage: "Your video limit has been reached",
+        },
+        {
+            limitName: "pending_video_upload_count",
+            expectedCode:
+                "PENDING_VIDEO_UPLOAD_QUOTA_EXCEEDED",
+            expectedMessage:
+                "Too many video uploads are currently pending",
+        },
+    ])(
+        "maps $limitName to a stable upload quota response",
+        async ({
+            limitName,
+            expectedCode,
+            expectedMessage,
+        }) => {
+            const quotaPersistenceProvider: PersistenceProvider = {
+                videoDataAccess: {
+                    ...persistenceProvider.videoDataAccess,
+                    createVideo: vi.fn(async () => {
+                        throw new UserQuotaExceededError(
+                            limitName
+                        );
+                    }),
+                },
+                segmentDataAccess: unusedSegmentDataAccess,
+                close: vi.fn(async () => { }),
+            };
+            const injectedApp = buildApp({
+                videoStorageProvider: fakeVideoStorageProvider,
+                persistenceProvider: quotaPersistenceProvider,
+            });
+            registerTestAuthentication(injectedApp);
+
+            try {
+                const response = await injectedApp.inject({
+                    method: "POST",
+                    url: "/video-uploads",
+                    payload: {
+                        title: "Quota test",
+                        fileName: "quota.mp4",
+                        contentType: "video/mp4",
+                        fileSizeBytes:
+                            TEST_VIDEO_FILE_SIZE_BYTES,
+                    },
+                });
+
+                expect(response.statusCode).toBe(409);
+                expect(response.json()).toEqual({
+                    error: {
+                        code: expectedCode,
+                        message: expectedMessage,
+                    },
+                });
+            } finally {
+                await injectedApp.close();
+            }
+        }
+    );
 });
 
 describe("POST /video-uploads", () => {
@@ -545,6 +645,7 @@ describe("POST /video-uploads/:videoId/complete", () => {
         expect(response.json()).toMatchObject({
             id: video.id,
             status: "ready",
+            fileSizeBytes: maxVideoUploadSizeBytes,
         });
         expect(getVideoObjectSizeBytesMock).toHaveBeenCalledWith(
             video.storageKey
@@ -556,6 +657,9 @@ describe("POST /video-uploads/:videoId/complete", () => {
                 videoID: video.id,
             });
         expect(storedVideo?.status).toBe("ready");
+        expect(storedVideo?.fileSizeBytes).toBe(
+            maxVideoUploadSizeBytes
+        );
     });
 
     it("rejects and deletes a stored video above the size limit", async () => {
@@ -590,10 +694,10 @@ describe("POST /video-uploads/:videoId/complete", () => {
 
     it("returns an already-ready video without checking storage again", async () => {
         const video = await createPendingUploadTestVideo();
-        await persistenceProvider.videoDataAccess.updateVideoStatus({
+        await persistenceProvider.videoDataAccess.finalizeVideoUpload({
             userID: TEST_USER_ID,
             videoID: video.id,
-            status: "ready",
+            fileSizeBytes: TEST_VIDEO_FILE_SIZE_BYTES,
         });
 
         const response = await app.inject({
@@ -621,6 +725,69 @@ describe("POST /video-uploads/:videoId/complete", () => {
 
         expect(response.statusCode).toBe(404);
         expect(getVideoObjectSizeBytesMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects an upload that has already failed", async () => {
+        const video = await createPendingUploadTestVideo();
+        await persistenceProvider.videoDataAccess.markVideoUploadFailed({
+            userID: TEST_USER_ID,
+            videoID: video.id,
+        });
+
+        const response = await app.inject({
+            method: "POST",
+            url: `/video-uploads/${video.id}/complete`,
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toMatchObject({
+            error: {
+                code: "INVALID_VIDEO_UPLOAD_STATE",
+            },
+        });
+        expect(getVideoObjectSizeBytesMock).not.toHaveBeenCalled();
+    });
+
+    it("maps a completion storage quota failure to a stable response", async () => {
+        const video = await createPendingUploadTestVideo();
+        const quotaPersistenceProvider: PersistenceProvider = {
+            videoDataAccess: {
+                ...persistenceProvider.videoDataAccess,
+                finalizeVideoUpload: vi.fn(async () => {
+                    throw new UserQuotaExceededError(
+                        "stored_video_bytes"
+                    );
+                }),
+            },
+            segmentDataAccess: unusedSegmentDataAccess,
+            close: vi.fn(async () => { }),
+        };
+        const injectedApp = buildApp({
+            videoStorageProvider: fakeVideoStorageProvider,
+            persistenceProvider: quotaPersistenceProvider,
+        });
+        registerTestAuthentication(injectedApp);
+        getVideoObjectSizeBytesMock.mockResolvedValueOnce(
+            TEST_VIDEO_FILE_SIZE_BYTES
+        );
+
+        try {
+            const response = await injectedApp.inject({
+                method: "POST",
+                url: `/video-uploads/${video.id}/complete`,
+            });
+
+            expect(response.statusCode).toBe(409);
+            expect(response.json()).toEqual({
+                error: {
+                    code: "VIDEO_STORAGE_QUOTA_EXCEEDED",
+                    message:
+                        "Your video storage quota has been reached",
+                },
+            });
+        } finally {
+            await injectedApp.close();
+        }
     });
 
     it("fails completion when oversized-object cleanup fails", async () => {

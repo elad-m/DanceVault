@@ -26,6 +26,7 @@ describe("DynamoDB test database", () => {
             storageKey: "test/cleanup-test-video.mp4",
             storageProvider: "minio",
             originalFileName: "cleanup-test-video.mp4",
+            fileSizeBytes: 100_000_000,
             status: "pending_upload",
             createdAt: new Date("2026-07-30T10:00:00.000Z"),
         });

@@ -1,5 +1,16 @@
 # DanceVault Priority Roadmap
 
+## Current Product Work
+
+1. Redesign **All videos** as a vertical, thumbnail-led list that scales to
+   larger libraries, and expose the existing video-title editing capability in
+   that view.
+2. Replace the implicit practice-queue ordering rules with a clear user choice.
+   First decide between selectable priority/confidence sorting and persistent
+   manual ordering. Manual ordering should store queue membership and an order
+   value on segments; it does not require a new DynamoDB index at the current
+   scale because the service already loads and sorts the user's segments.
+
 ## Product Naming
 
 - Reconsider the `DanceVault` name. It is not easy to say and "vault" suggests
@@ -51,17 +62,19 @@
 
 - Audit the public Git history for credentials and personal data.
 - Confirm videos, emails, and user records exist only in AWS, not Git.
-- Draft a basic privacy policy, terms of use, acceptable-use and copyright
+- **Done:** Draft a basic privacy policy, terms of use, acceptable-use and copyright
   rules, retention policy, and face-recording consent expectations.
-- Define account and user-data deletion rights.
+- **Done:** Define account and user-data deletion rights and a private contact
+  route for exercising them. Account deletion is currently handled manually.
 - Obtain an Israeli privacy lawyer's review before opening public registration.
 
 ### Owner setup required before inviting external users
 
 - [x] Use `elad.apps.contact@gmail.com` as the shared private contact for
   privacy, legal, security, account deletion, and product-support requests.
-- Add visible links to `PRIVACY.md`, `TERMS.md`, and `SECURITY.md` from the
-  repository README and hosted application.
+- **Done:** Publish Privacy Notice and Terms of Use links in the hosted app's
+  sign-in screen, account menu, upload flow, and public legal routes. Keep the
+  security-reporting policy in the public repository.
 - Configure a GitHub `noreply` commit email for future commits if the personal
   commit-author email should no longer be published.
 - Decide whether the existing Git history should retain the personal
@@ -74,8 +87,14 @@
 
 ## 2. Cost Controls
 
-- Add service-specific cost monitoring.
-- Add upload-size and per-user storage limits.
+- **Done:** Add service-specific cost monitoring.
+- **Done:** Enforce per-file limits using both the client-announced size and the
+  storage-verified object size.
+- **Done:** Enforce per-user quotas of 10 GB stored or reserved video data,
+  100 videos, 1,000 segments, 200 segments per video, and three pending video
+  uploads. Store storage-verified video sizes, update counters atomically with
+  writes and deletions, and provide guarded local and development reconciliation
+  audits for existing data.
 - Estimate media-processing costs before introducing transcoding.
 
 ## 3. Observability
@@ -112,7 +131,8 @@
 
 ## 4. Reliable Deletion
 
-- Retry partial S3 and DynamoDB deletion failures.
+- **Done:** Retry partial S3 and DynamoDB video-deletion failures through SQS,
+  with a dead-letter queue for repeatedly failing jobs.
 - Add complete account deletion covering videos, thumbnails, segments,
   DynamoDB records, and the Cognito user.
 - Before inviting real users, enable DynamoDB table deletion protection and
@@ -120,7 +140,9 @@
 
 ## 5. iPhone MOV Support and Media Normalization
 
-- Accept `video/quicktime` `.mov` uploads.
+- **Done:** Accept `video/quicktime` `.mov` uploads and confirm direct playback,
+  seeking, segment creation, and practice playback for both tested iPhone MOV
+  formats without conversion.
 - Inspect the actual video codec because `.mov` is only a container.
 - Convert uploads into one canonical playback format when necessary.
 - Diagnose slow playback over mobile data and produce a mobile-friendly
@@ -132,10 +154,12 @@
 
 ## 6. Frame-by-Frame Playback
 
-- Run a technical spike using normalized videos.
+- **Done:** Complete a MediaBunny/WebCodecs technical spike against existing MP4
+  and MOV uploads without requiring normalized videos first.
 - Store frame-rate and duration metadata.
-- Implement previous-frame and next-frame controls for segments and full
-  videos.
+- **Done:** Implement previous-frame and next-frame controls for segment
+  playback, with a normal-player fallback when the browser cannot decode the
+  video through WebCodecs.
 
 ## 7. UI Improvements
 
@@ -169,6 +193,10 @@
     extension as selected text. Preserve a title the user has already edited.
 11. Replace the technical name "Practice queue" with a clearer user-facing
     name. Keep the current wording until a final choice is made.
+12. Redesign **All videos** as a vertical list with persistent video
+    thumbnails and inline title editing.
+13. Replace the current practice ordering formula with either explicit
+    priority/confidence sort controls or persistent drag-and-drop manual order.
 
 ### Practice queue naming candidates
 
@@ -190,11 +218,13 @@
 
 ## 8. Persistent Thumbnails
 
-- Generate a thumbnail at the segment start time.
-- Store it under an S3 key such as
+- **Done:** Generate a thumbnail at the segment start time in the browser.
+- **Done:** Store it under an S3 key such as
   `users/{userID}/thumbnails/{segmentID}.jpg`.
-- Store the thumbnail key on the segment record.
-- Generate thumbnails asynchronously through the media-processing pipeline.
+- **Done:** Derive the deterministic thumbnail key from the segment ID and
+  persist the image in MinIO or AWS S3 without adding another database field.
+- Generate thumbnails asynchronously through a media-processing pipeline only
+  if browser capture proves insufficient for future formats or workflows.
 
 ## 9. Self-Service User Registration
 
@@ -203,8 +233,7 @@
   including provider setup, callback configuration, and account-linking rules
   for users who previously registered with the same email address.
 - Require acceptance of the current legal documents.
-- Add per-user quotas, account deletion, password recovery, and abuse
-  controls.
+- Add account deletion, password recovery, and abuse controls.
 - Display the privacy notice and terms during registration.
 - Record the accepted policy versions and acceptance timestamp.
 - Verify that the privacy, security, and developer/support contact addresses

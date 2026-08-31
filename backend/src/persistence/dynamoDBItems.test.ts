@@ -1,8 +1,35 @@
 import { describe, expect, it } from "vitest";
 import {
+    createDynamoDBUserQuotaUsageItem,
     createSegmentItem,
     createDynamoDBVideoItem,
 } from "./dynamoDBItems";
+
+describe("createDynamoDBUserQuotaUsageItem", () => {
+    it("converts user quota counters into their DynamoDB item shape", () => {
+        const item = createDynamoDBUserQuotaUsageItem({
+            userID: "user-1",
+            storedVideoBytes: 800_000_000,
+            pendingVideoBytes: 100_000_000,
+            videoCount: 12,
+            segmentCount: 80,
+            pendingVideoUploadCount: 1,
+        });
+
+        expect(item).toEqual({
+            PK: "USER#user-1",
+            SK: "QUOTA_USAGE",
+            entityType: "userQuotaUsage",
+            schemaVersion: 1,
+            userID: "user-1",
+            storedVideoBytes: 800_000_000,
+            pendingVideoBytes: 100_000_000,
+            videoCount: 12,
+            segmentCount: 80,
+            pendingVideoUploadCount: 1,
+        });
+    });
+});
 
 describe("createDynamoDBVideoItem", () => {
     it("converts a video into its DynamoDB item shape", () => {
@@ -13,6 +40,7 @@ describe("createDynamoDBVideoItem", () => {
             storageKey: "users/user-1/videos/video-1.mp4",
             storageProviderName: "awsS3",
             originalFileName: "video-1.mp4",
+            fileSizeBytes: 100_000_000,
             status: "ready",
             createdAt: new Date(
                 "2026-07-20T12:34:56.789Z"
@@ -34,6 +62,7 @@ describe("createDynamoDBVideoItem", () => {
             storageKey: "users/user-1/videos/video-1.mp4",
             storageProviderName: "awsS3",
             originalFileName: "video-1.mp4",
+            fileSizeBytes: 100_000_000,
             status: "ready",
             segmentCount: 0,
             createdAt: "2026-07-20T12:34:56.789Z",

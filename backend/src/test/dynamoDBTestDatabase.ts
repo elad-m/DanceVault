@@ -13,6 +13,8 @@ import {
     TEST_USER_ID,
 } from "./routeTestSupport";
 import { assertSafeDynamoDBTestTarget } from "../testEnvironmentSafety";
+import type { UserQuotaUsage } from "../domain/userQuota";
+import { getUserQuotaUsage } from "../persistence/dynamoDBUserQuotaUsageDataAccess";
 
 type ResetDynamoDBTestDatabaseInput = {
     persistenceProvider: PersistenceProvider;
@@ -30,14 +32,15 @@ export async function resetDynamoDBTestDatabase({
         storageKey: "test-videos/sample-video-1.mp4",
         storageProvider: "minio",
         originalFileName: "sample-video-1.mp4",
+        fileSizeBytes: 100_000_000,
         status: "pending_upload",
         createdAt: new Date("2026-07-30T10:00:00.000Z"),
     });
 
-    await persistenceProvider.videoDataAccess.updateVideoStatus({
+    await persistenceProvider.videoDataAccess.finalizeVideoUpload({
         userID: TEST_USER_ID,
         videoID: "sample-video-1",
-        status: "ready",
+        fileSizeBytes: 100_000_000,
     });
 
     await persistenceProvider.segmentDataAccess.createSegment({
@@ -100,14 +103,15 @@ export async function createOtherUserDynamoDBTestData({
         storageKey: "test-videos/other-user-video.mp4",
         storageProvider: "minio",
         originalFileName: "other-user-video.mp4",
+        fileSizeBytes: 100_000_000,
         status: "pending_upload",
         createdAt: new Date("2026-07-30T13:00:00.000Z"),
     });
 
-    await persistenceProvider.videoDataAccess.updateVideoStatus({
+    await persistenceProvider.videoDataAccess.finalizeVideoUpload({
         userID: OTHER_TEST_USER_ID,
         videoID: OTHER_TEST_VIDEO_ID,
-        status: "ready",
+        fileSizeBytes: 100_000_000,
     });
 
     await persistenceProvider.segmentDataAccess.createSegment({
@@ -137,6 +141,39 @@ export function createDynamoDBTestPersistenceProvider(): PersistenceProvider {
             connection.close();
         },
     };
+}
+
+export async function getDynamoDBTestUserQuotaUsage(
+    userID: string
+): Promise<UserQuotaUsage | null> {
+    assertSafeDynamoDBTestTarget({
+        endpoint: process.env.DYNAMODB_ENDPOINT,
+        tableName: process.env.DYNAMODB_TABLE_NAME,
+    });
+
+    const connection = createDynamoDBConnection();
+
+    try {
+        const item = await getUserQuotaUsage(
+            connection,
+            userID
+        );
+
+        if (!item) {
+            return null;
+        }
+
+        return {
+            storedVideoBytes: item.storedVideoBytes,
+            pendingVideoBytes: item.pendingVideoBytes,
+            videoCount: item.videoCount,
+            segmentCount: item.segmentCount,
+            pendingVideoUploadCount:
+                item.pendingVideoUploadCount,
+        };
+    } finally {
+        connection.close();
+    }
 }
 
 export async function clearDynamoDBTestDatabase(): Promise<void> {

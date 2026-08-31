@@ -29,6 +29,10 @@ import {
 import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
 import type { VideoDataAccess } from "../persistence/videoDataAccess";
 import type { VideoStorageProvider } from "../storage";
+import {
+    SegmentQuotaExceededError,
+    type SegmentQuotaLimitName,
+} from "../domain/userQuota";
 
 type CreateSegmentRequest = {
     Params: {
@@ -45,6 +49,17 @@ type CreateSegmentRequest = {
         practicePriority?: PracticePriority;
     };
 };
+
+function getSegmentQuotaApiErrorCode(
+    limitName: SegmentQuotaLimitName
+): ApiErrorCode {
+    switch (limitName) {
+        case "segment_count":
+            return ApiErrorCode.SegmentCountQuotaExceeded;
+        case "segments_per_video":
+            return ApiErrorCode.VideoSegmentCountQuotaExceeded;
+    }
+}
 
 type SearchSegmentsRequest = {
     Querystring: {
@@ -333,19 +348,44 @@ async function createSegmentHandler(
         });
     }
 
-    const segment = await createSegment({
-        userId: request.userId,
-        videoId: video.id,
-        name,
-        description: request.body.description,
-        startMilliseconds,
-        endMilliseconds,
-        tags: request.body.tags,
-        difficulty: request.body.difficulty,
-        confidence: request.body.confidence,
-        practicePriority: request.body.practicePriority,
-        segmentDataAccess,
-    });
+    let segment;
+
+    try {
+        segment = await createSegment({
+            userId: request.userId,
+            videoId: video.id,
+            name,
+            description: request.body.description,
+            startMilliseconds,
+            endMilliseconds,
+            tags: request.body.tags,
+            difficulty: request.body.difficulty,
+            confidence: request.body.confidence,
+            practicePriority: request.body.practicePriority,
+            segmentDataAccess,
+        });
+    } catch (error) {
+        if (error instanceof SegmentQuotaExceededError) {
+            request.log.warn(
+                {
+                    event: "segment_creation_quota_rejected",
+                    userId: request.userId,
+                    videoId: video.id,
+                    quotaLimitName: error.limitName,
+                },
+                "Segment creation rejected by user quota"
+            );
+
+            return sendApiError(reply, {
+                statusCode: 409,
+                code: getSegmentQuotaApiErrorCode(
+                    error.limitName
+                ),
+            });
+        }
+
+        throw error;
+    }
 
     request.log.info(
         {

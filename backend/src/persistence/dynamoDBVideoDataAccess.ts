@@ -1,27 +1,46 @@
 // Performs video database operations and hides DynamoDB-specific item mapping.
 
 import {
+    ConditionalCheckFailedException,
+    TransactionCanceledException,
+} from "@aws-sdk/client-dynamodb";
+import {
     DeleteCommand,
     GetCommand,
     PutCommand,
     QueryCommand,
     ScanCommand,
+    TransactWriteCommand,
     UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBConnection } from "./dynamoDBConnection";
 import {
     createDynamoDBVideoItem,
+    CURRENT_USER_QUOTA_USAGE_SCHEMA_VERSION,
     CURRENT_VIDEO_SCHEMA_VERSION,
     type CreateDynamoDBVideoItemInput,
     type DynamoDBVideoItem,
 } from "./dynamoDBItems";
 import {
     createUserPartitionKey,
+    createUserQuotaUsagePrimaryKey,
     createVideoPrimaryKey,
     VIDEO_ITEM_KEY_PREFIX,
 } from "./dynamoDBKeys";
 import type { VideoStatus } from "../domain/video";
+import {
+    calculateVideoDeletionQuota,
+    calculateVideoUploadCompletion,
+    calculateVideoUploadFailure,
+    calculateVideoUploadReservation,
+    type VideoDeletionSourceStatus,
+} from "../domain/userQuota";
+import {
+    getOrCreateUserQuotaUsage,
+    getUserQuotaUsage,
+} from "./dynamoDBUserQuotaUsageDataAccess";
 import type {
+    FinalizeVideoUploadDataAccessInput,
     VideoDataAccess,
     VideoDataAccessItem,
 } from "./videoDataAccess";
@@ -120,7 +139,14 @@ function toVideoDataAccessItem(
         storageKey: item.storageKey,
         storageProvider: item.storageProviderName,
         originalFileName: item.originalFileName,
+        fileSizeBytes: item.fileSizeBytes ?? null,
         status: item.status,
+        ...(item.deletionSourceStatus === undefined
+            ? {}
+            : {
+                deletionSourceStatus:
+                    item.deletionSourceStatus,
+            }),
         createdAt: new Date(item.createdAt),
     };
 }
@@ -141,6 +167,131 @@ export async function createVideo(
     );
 
     return item;
+}
+
+type CreatePendingVideoWithQuotaReservationInput = Omit<
+    CreateDynamoDBVideoItemInput,
+    "fileSizeBytes" | "status"
+> & {
+    fileSizeBytes: number;
+    status: "pending_upload";
+};
+
+const maximumVideoQuotaTransactionAttempts = 5;
+
+export async function createPendingVideoWithQuotaReservation(
+    connection: DynamoDBConnection,
+    input: CreatePendingVideoWithQuotaReservationInput
+): Promise<DynamoDBVideoItem> {
+    const videoItem = createDynamoDBVideoItem(input);
+
+    for (
+        let attempt = 1;
+        attempt <= maximumVideoQuotaTransactionAttempts;
+        attempt += 1
+    ) {
+        const currentUsage = await getOrCreateUserQuotaUsage(
+            connection,
+            input.userID
+        );
+        const reservedUsage = calculateVideoUploadReservation({
+            currentUsage,
+            fileSizeBytes: input.fileSizeBytes,
+        });
+
+        try {
+            await connection.documentClient.send(
+                new TransactWriteCommand({
+                    TransactItems: [
+                        {
+                            Put: {
+                                TableName: connection.tableName,
+                                Item: videoItem,
+                                ConditionExpression:
+                                    "attribute_not_exists(PK) " +
+                                    "AND attribute_not_exists(SK)",
+                            },
+                        },
+                        {
+                            Update: {
+                                TableName: connection.tableName,
+                                Key: createUserQuotaUsagePrimaryKey(
+                                    input.userID
+                                ),
+                                UpdateExpression:
+                                    "SET #pendingVideoBytes = :reservedPendingVideoBytes, " +
+                                    "#videoCount = :reservedVideoCount, " +
+                                    "#pendingVideoUploadCount = :reservedPendingVideoUploadCount",
+                                ConditionExpression:
+                                    "#entityType = :quotaEntityType " +
+                                    "AND #schemaVersion = :quotaSchemaVersion " +
+                                    "AND #storedVideoBytes = :currentStoredVideoBytes " +
+                                    "AND #pendingVideoBytes = :currentPendingVideoBytes " +
+                                    "AND #videoCount = :currentVideoCount " +
+                                    "AND #pendingVideoUploadCount = :currentPendingVideoUploadCount",
+                                ExpressionAttributeNames: {
+                                    "#entityType": "entityType",
+                                    "#schemaVersion": "schemaVersion",
+                                    "#storedVideoBytes":
+                                        "storedVideoBytes",
+                                    "#pendingVideoBytes":
+                                        "pendingVideoBytes",
+                                    "#videoCount": "videoCount",
+                                    "#pendingVideoUploadCount":
+                                        "pendingVideoUploadCount",
+                                },
+                                ExpressionAttributeValues: {
+                                    ":quotaEntityType":
+                                        "userQuotaUsage",
+                                    ":quotaSchemaVersion":
+                                        CURRENT_USER_QUOTA_USAGE_SCHEMA_VERSION,
+                                    ":currentStoredVideoBytes":
+                                        currentUsage.storedVideoBytes,
+                                    ":currentPendingVideoBytes":
+                                        currentUsage.pendingVideoBytes,
+                                    ":currentVideoCount":
+                                        currentUsage.videoCount,
+                                    ":currentPendingVideoUploadCount":
+                                        currentUsage.pendingVideoUploadCount,
+                                    ":reservedPendingVideoBytes":
+                                        reservedUsage.pendingVideoBytes,
+                                    ":reservedVideoCount":
+                                        reservedUsage.videoCount,
+                                    ":reservedPendingVideoUploadCount":
+                                        reservedUsage.pendingVideoUploadCount,
+                                },
+                            },
+                        },
+                    ],
+                })
+            );
+
+            return videoItem;
+        } catch (error: unknown) {
+            if (
+                !(error instanceof TransactionCanceledException) ||
+                attempt === maximumVideoQuotaTransactionAttempts
+            ) {
+                throw error;
+            }
+
+            const existingVideo = await getVideoByID(
+                connection,
+                {
+                    userID: input.userID,
+                    videoID: input.videoID,
+                }
+            );
+
+            if (existingVideo) {
+                throw error;
+            }
+        }
+    }
+
+    throw new Error(
+        "Video upload reservation exhausted its retry attempts"
+    );
 }
 
 type GetVideoByIDInput = {
@@ -269,6 +420,7 @@ type UpdateDynamoDBVideoItemInput = {
         string,
         string | number
     >;
+    additionalConditionExpression?: string;
 };
 
 async function updateDynamoDBVideoItem(
@@ -284,7 +436,10 @@ async function updateDynamoDBVideoItem(
                 "attribute_exists(PK) " +
                 "AND attribute_exists(SK) " +
                 "AND #entityType = :videoEntityType " +
-                "AND #schemaVersion = :schemaVersion",
+                "AND #schemaVersion = :schemaVersion" +
+                (input.additionalConditionExpression
+                    ? ` AND ${input.additionalConditionExpression}`
+                    : ""),
             ExpressionAttributeNames: {
                 ...input.expressionAttributeNames,
                 "#entityType": "entityType",
@@ -357,6 +512,467 @@ export async function updateVideoStatus(
     });
 }
 
+type MarkVideoDeletingInput = {
+    userID: string;
+    videoID: string;
+};
+
+export async function markVideoDeleting(
+    connection: DynamoDBConnection,
+    input: MarkVideoDeletingInput
+): Promise<DynamoDBVideoItem> {
+    for (
+        let attempt = 1;
+        attempt <= maximumVideoQuotaTransactionAttempts;
+        attempt += 1
+    ) {
+        const video = await getVideoByID(connection, input);
+
+        if (!video) {
+            throw new Error("Video to delete was not found");
+        }
+
+        if (video.status === "deleting") {
+            if (video.deletionSourceStatus) {
+                return video;
+            }
+
+            throw new Error(
+                "Deleting video does not preserve its source status"
+            );
+        }
+
+        const sourceStatus: VideoDeletionSourceStatus =
+            video.status;
+
+        try {
+            return await updateDynamoDBVideoItem(connection, {
+                userID: input.userID,
+                videoID: input.videoID,
+                updateExpression:
+                    "SET #status = :deletingStatus, " +
+                    "#deletionSourceStatus = :sourceStatus",
+                expressionAttributeNames: {
+                    "#status": "status",
+                    "#deletionSourceStatus":
+                        "deletionSourceStatus",
+                },
+                expressionAttributeValues: {
+                    ":deletingStatus": "deleting",
+                    ":sourceStatus": sourceStatus,
+                    ":currentStatus": sourceStatus,
+                },
+                additionalConditionExpression:
+                    "#status = :currentStatus " +
+                    "AND attribute_not_exists(#deletionSourceStatus)",
+            });
+        } catch (error: unknown) {
+            if (
+                !(error instanceof ConditionalCheckFailedException) ||
+                attempt === maximumVideoQuotaTransactionAttempts
+            ) {
+                throw error;
+            }
+        }
+    }
+
+    throw new Error(
+        "Video deletion status update exhausted its retry limit"
+    );
+}
+
+export async function finalizeVideoUpload(
+    connection: DynamoDBConnection,
+    input: FinalizeVideoUploadDataAccessInput
+): Promise<DynamoDBVideoItem> {
+    return updateDynamoDBVideoItem(connection, {
+        userID: input.userID,
+        videoID: input.videoID,
+        updateExpression:
+            "SET #status = :readyStatus, #fileSizeBytes = :fileSizeBytes",
+        expressionAttributeNames: {
+            "#status": "status",
+            "#fileSizeBytes": "fileSizeBytes",
+        },
+        expressionAttributeValues: {
+            ":readyStatus": "ready",
+            ":fileSizeBytes": input.fileSizeBytes,
+        },
+    });
+}
+
+export async function finalizeVideoUploadWithQuota(
+    connection: DynamoDBConnection,
+    input: FinalizeVideoUploadDataAccessInput
+): Promise<DynamoDBVideoItem> {
+    for (
+        let attempt = 1;
+        attempt <= maximumVideoQuotaTransactionAttempts;
+        attempt += 1
+    ) {
+        const video = await getVideoByID(connection, input);
+
+        if (!video) {
+            throw new Error("Video upload was not found");
+        }
+
+        if (video.status === "ready") {
+            if (video.fileSizeBytes === input.fileSizeBytes) {
+                return video;
+            }
+
+            throw new Error(
+                "Completed video has a different storage-verified file size"
+            );
+        }
+
+        if (video.status !== "pending_upload") {
+            throw new Error(
+                `Video upload cannot be completed from status ${video.status}`
+            );
+        }
+
+        if (video.fileSizeBytes === undefined) {
+            throw new Error(
+                "Pending video does not contain its reserved file size"
+            );
+        }
+
+        const currentUsage = await getUserQuotaUsage(
+            connection,
+            input.userID
+        );
+
+        if (!currentUsage) {
+            throw new Error(
+                "User quota usage was not found for the pending video"
+            );
+        }
+
+        const completedUsage = calculateVideoUploadCompletion({
+            currentUsage,
+            reservedFileSizeBytes: video.fileSizeBytes,
+            actualFileSizeBytes: input.fileSizeBytes,
+        });
+
+        try {
+            await connection.documentClient.send(
+                new TransactWriteCommand({
+                    TransactItems: [
+                        {
+                            Update: {
+                                TableName: connection.tableName,
+                                Key: createVideoPrimaryKey(input),
+                                UpdateExpression:
+                                    "SET #status = :readyStatus, " +
+                                    "#fileSizeBytes = :actualFileSizeBytes",
+                                ConditionExpression:
+                                    "#entityType = :videoEntityType " +
+                                    "AND #schemaVersion = :videoSchemaVersion " +
+                                    "AND #status = :pendingStatus " +
+                                    "AND #fileSizeBytes = :reservedFileSizeBytes",
+                                ExpressionAttributeNames: {
+                                    "#entityType": "entityType",
+                                    "#schemaVersion": "schemaVersion",
+                                    "#status": "status",
+                                    "#fileSizeBytes":
+                                        "fileSizeBytes",
+                                },
+                                ExpressionAttributeValues: {
+                                    ":videoEntityType": "video",
+                                    ":videoSchemaVersion":
+                                        CURRENT_VIDEO_SCHEMA_VERSION,
+                                    ":pendingStatus":
+                                        "pending_upload",
+                                    ":readyStatus": "ready",
+                                    ":reservedFileSizeBytes":
+                                        video.fileSizeBytes,
+                                    ":actualFileSizeBytes":
+                                        input.fileSizeBytes,
+                                },
+                            },
+                        },
+                        {
+                            Update: {
+                                TableName: connection.tableName,
+                                Key: createUserQuotaUsagePrimaryKey(
+                                    input.userID
+                                ),
+                                UpdateExpression:
+                                    "SET #storedVideoBytes = :completedStoredVideoBytes, " +
+                                    "#pendingVideoBytes = :completedPendingVideoBytes, " +
+                                    "#pendingVideoUploadCount = :completedPendingVideoUploadCount",
+                                ConditionExpression:
+                                    "#entityType = :quotaEntityType " +
+                                    "AND #schemaVersion = :quotaSchemaVersion " +
+                                    "AND #storedVideoBytes = :currentStoredVideoBytes " +
+                                    "AND #pendingVideoBytes = :currentPendingVideoBytes " +
+                                    "AND #pendingVideoUploadCount = :currentPendingVideoUploadCount",
+                                ExpressionAttributeNames: {
+                                    "#entityType": "entityType",
+                                    "#schemaVersion": "schemaVersion",
+                                    "#storedVideoBytes":
+                                        "storedVideoBytes",
+                                    "#pendingVideoBytes":
+                                        "pendingVideoBytes",
+                                    "#pendingVideoUploadCount":
+                                        "pendingVideoUploadCount",
+                                },
+                                ExpressionAttributeValues: {
+                                    ":quotaEntityType":
+                                        "userQuotaUsage",
+                                    ":quotaSchemaVersion":
+                                        CURRENT_USER_QUOTA_USAGE_SCHEMA_VERSION,
+                                    ":currentStoredVideoBytes":
+                                        currentUsage.storedVideoBytes,
+                                    ":currentPendingVideoBytes":
+                                        currentUsage.pendingVideoBytes,
+                                    ":currentPendingVideoUploadCount":
+                                        currentUsage.pendingVideoUploadCount,
+                                    ":completedStoredVideoBytes":
+                                        completedUsage.storedVideoBytes,
+                                    ":completedPendingVideoBytes":
+                                        completedUsage.pendingVideoBytes,
+                                    ":completedPendingVideoUploadCount":
+                                        completedUsage.pendingVideoUploadCount,
+                                },
+                            },
+                        },
+                    ],
+                })
+            );
+
+            const completedVideo = await getVideoByID(
+                connection,
+                input
+            );
+
+            if (!completedVideo) {
+                throw new Error(
+                    "Completed video disappeared after its transaction"
+                );
+            }
+
+            return completedVideo;
+        } catch (error: unknown) {
+            if (
+                !(error instanceof TransactionCanceledException) ||
+                attempt === maximumVideoQuotaTransactionAttempts
+            ) {
+                throw error;
+            }
+        }
+    }
+
+    throw new Error(
+        "Video upload completion exhausted its retry attempts"
+    );
+}
+
+type MarkVideoUploadFailedWithQuotaInput = {
+    userID: string;
+    videoID: string;
+};
+
+export async function markVideoUploadFailedWithQuota(
+    connection: DynamoDBConnection,
+    input: MarkVideoUploadFailedWithQuotaInput
+): Promise<DynamoDBVideoItem> {
+    for (
+        let attempt = 1;
+        attempt <= maximumVideoQuotaTransactionAttempts;
+        attempt += 1
+    ) {
+        const video = await getVideoByID(connection, input);
+
+        if (!video) {
+            throw new Error("Video upload was not found");
+        }
+
+        if (video.status === "upload_failed") {
+            return video;
+        }
+
+        if (video.status !== "pending_upload") {
+            throw new Error(
+                `Video upload cannot fail from status ${video.status}`
+            );
+        }
+
+        if (video.fileSizeBytes === undefined) {
+            throw new Error(
+                "Pending video does not contain its reserved file size"
+            );
+        }
+
+        const currentUsage = await getUserQuotaUsage(
+            connection,
+            input.userID
+        );
+
+        if (!currentUsage) {
+            throw new Error(
+                "User quota usage was not found for the pending video"
+            );
+        }
+
+        const failedUsage = calculateVideoUploadFailure({
+            currentUsage,
+            reservedFileSizeBytes: video.fileSizeBytes,
+        });
+
+        try {
+            await connection.documentClient.send(
+                new TransactWriteCommand({
+                    TransactItems: [
+                        {
+                            Update: {
+                                TableName: connection.tableName,
+                                Key: createVideoPrimaryKey(input),
+                                UpdateExpression:
+                                    "SET #status = :failedStatus",
+                                ConditionExpression:
+                                    "#entityType = :videoEntityType " +
+                                    "AND #schemaVersion = :videoSchemaVersion " +
+                                    "AND #status = :pendingStatus " +
+                                    "AND #fileSizeBytes = :reservedFileSizeBytes",
+                                ExpressionAttributeNames: {
+                                    "#entityType": "entityType",
+                                    "#schemaVersion": "schemaVersion",
+                                    "#status": "status",
+                                    "#fileSizeBytes":
+                                        "fileSizeBytes",
+                                },
+                                ExpressionAttributeValues: {
+                                    ":videoEntityType": "video",
+                                    ":videoSchemaVersion":
+                                        CURRENT_VIDEO_SCHEMA_VERSION,
+                                    ":pendingStatus":
+                                        "pending_upload",
+                                    ":failedStatus":
+                                        "upload_failed",
+                                    ":reservedFileSizeBytes":
+                                        video.fileSizeBytes,
+                                },
+                            },
+                        },
+                        {
+                            Update: {
+                                TableName: connection.tableName,
+                                Key: createUserQuotaUsagePrimaryKey(
+                                    input.userID
+                                ),
+                                UpdateExpression:
+                                    "SET #pendingVideoBytes = :failedPendingVideoBytes, " +
+                                    "#pendingVideoUploadCount = :failedPendingVideoUploadCount",
+                                ConditionExpression:
+                                    "#entityType = :quotaEntityType " +
+                                    "AND #schemaVersion = :quotaSchemaVersion " +
+                                    "AND #pendingVideoBytes = :currentPendingVideoBytes " +
+                                    "AND #pendingVideoUploadCount = :currentPendingVideoUploadCount",
+                                ExpressionAttributeNames: {
+                                    "#entityType": "entityType",
+                                    "#schemaVersion": "schemaVersion",
+                                    "#pendingVideoBytes":
+                                        "pendingVideoBytes",
+                                    "#pendingVideoUploadCount":
+                                        "pendingVideoUploadCount",
+                                },
+                                ExpressionAttributeValues: {
+                                    ":quotaEntityType":
+                                        "userQuotaUsage",
+                                    ":quotaSchemaVersion":
+                                        CURRENT_USER_QUOTA_USAGE_SCHEMA_VERSION,
+                                    ":currentPendingVideoBytes":
+                                        currentUsage.pendingVideoBytes,
+                                    ":currentPendingVideoUploadCount":
+                                        currentUsage.pendingVideoUploadCount,
+                                    ":failedPendingVideoBytes":
+                                        failedUsage.pendingVideoBytes,
+                                    ":failedPendingVideoUploadCount":
+                                        failedUsage.pendingVideoUploadCount,
+                                },
+                            },
+                        },
+                    ],
+                })
+            );
+
+            const failedVideo = await getVideoByID(
+                connection,
+                input
+            );
+
+            if (!failedVideo) {
+                throw new Error(
+                    "Failed video disappeared after its transaction"
+                );
+            }
+
+            return failedVideo;
+        } catch (error: unknown) {
+            if (
+                !(error instanceof TransactionCanceledException) ||
+                attempt === maximumVideoQuotaTransactionAttempts
+            ) {
+                throw error;
+            }
+        }
+    }
+
+    throw new Error(
+        "Video upload failure exhausted its retry attempts"
+    );
+}
+
+type BackfillVideoFileSizeBytesInput = {
+    userID: string;
+    videoID: string;
+    fileSizeBytes: number;
+};
+
+export async function backfillVideoFileSizeBytes(
+    connection: DynamoDBConnection,
+    input: BackfillVideoFileSizeBytesInput
+): Promise<DynamoDBVideoItem> {
+    try {
+        return await updateDynamoDBVideoItem(connection, {
+            userID: input.userID,
+            videoID: input.videoID,
+            updateExpression:
+                "SET #fileSizeBytes = :fileSizeBytes",
+            expressionAttributeNames: {
+                "#fileSizeBytes": "fileSizeBytes",
+            },
+            expressionAttributeValues: {
+                ":fileSizeBytes": input.fileSizeBytes,
+            },
+            additionalConditionExpression:
+                "attribute_not_exists(#fileSizeBytes)",
+        });
+    } catch (error: unknown) {
+        if (
+            !(error instanceof ConditionalCheckFailedException)
+        ) {
+            throw error;
+        }
+
+        const existingVideo = await getVideoByID(connection, {
+            userID: input.userID,
+            videoID: input.videoID,
+        });
+
+        if (
+            existingVideo?.fileSizeBytes ===
+            input.fileSizeBytes
+        ) {
+            return existingVideo;
+        }
+
+        throw error;
+    }
+}
+
 type DeleteVideoInput = {
     userID: string;
     videoID: string;
@@ -402,27 +1018,218 @@ export async function deleteVideo(
     );
 }
 
+export async function deleteVideoWithQuota(
+    connection: DynamoDBConnection,
+    input: DeleteVideoInput
+): Promise<void> {
+    for (
+        let attempt = 1;
+        attempt <= maximumVideoQuotaTransactionAttempts;
+        attempt += 1
+    ) {
+        const video = await getVideoByID(connection, input);
+
+        if (!video) {
+            return;
+        }
+
+        if (
+            video.status !== "deleting" ||
+            !video.deletionSourceStatus
+        ) {
+            throw new Error(
+                "Video must preserve its source status before deletion"
+            );
+        }
+
+        if (video.segmentCount !== 0) {
+            throw new Error(
+                "Video cannot be deleted while it contains segments"
+            );
+        }
+
+        const currentUsage = await getUserQuotaUsage(
+            connection,
+            input.userID
+        );
+
+        if (!currentUsage) {
+            throw new Error(
+                "User quota usage was not found for video deletion"
+            );
+        }
+
+        const deletedUsage = calculateVideoDeletionQuota({
+            currentUsage,
+            sourceStatus: video.deletionSourceStatus,
+            fileSizeBytes: video.fileSizeBytes ?? null,
+        });
+
+        try {
+            await connection.documentClient.send(
+                new TransactWriteCommand({
+                    TransactItems: [
+                        {
+                            Delete: {
+                                TableName: connection.tableName,
+                                Key: createVideoPrimaryKey(input),
+                                ConditionExpression:
+                                    "attribute_exists(PK) " +
+                                    "AND attribute_exists(SK) " +
+                                    "AND #entityType = :videoEntityType " +
+                                    "AND #schemaVersion = :videoSchemaVersion " +
+                                    "AND #status = :deletingStatus " +
+                                    "AND #deletionSourceStatus = :deletionSourceStatus " +
+                                    "AND #segmentCount = :zero",
+                                ExpressionAttributeNames: {
+                                    "#entityType": "entityType",
+                                    "#schemaVersion": "schemaVersion",
+                                    "#status": "status",
+                                    "#deletionSourceStatus":
+                                        "deletionSourceStatus",
+                                    "#segmentCount": "segmentCount",
+                                },
+                                ExpressionAttributeValues: {
+                                    ":videoEntityType": "video",
+                                    ":videoSchemaVersion":
+                                        CURRENT_VIDEO_SCHEMA_VERSION,
+                                    ":deletingStatus": "deleting",
+                                    ":deletionSourceStatus":
+                                        video.deletionSourceStatus,
+                                    ":zero": 0,
+                                },
+                            },
+                        },
+                        {
+                            Update: {
+                                TableName: connection.tableName,
+                                Key: createUserQuotaUsagePrimaryKey(
+                                    input.userID
+                                ),
+                                UpdateExpression:
+                                    "SET #storedVideoBytes = :deletedStoredVideoBytes, " +
+                                    "#pendingVideoBytes = :deletedPendingVideoBytes, " +
+                                    "#videoCount = :deletedVideoCount, " +
+                                    "#pendingVideoUploadCount = :deletedPendingVideoUploadCount",
+                                ConditionExpression:
+                                    "attribute_exists(PK) " +
+                                    "AND attribute_exists(SK) " +
+                                    "AND #entityType = :quotaEntityType " +
+                                    "AND #schemaVersion = :quotaSchemaVersion " +
+                                    "AND #storedVideoBytes = :currentStoredVideoBytes " +
+                                    "AND #pendingVideoBytes = :currentPendingVideoBytes " +
+                                    "AND #videoCount = :currentVideoCount " +
+                                    "AND #pendingVideoUploadCount = :currentPendingVideoUploadCount",
+                                ExpressionAttributeNames: {
+                                    "#entityType": "entityType",
+                                    "#schemaVersion": "schemaVersion",
+                                    "#storedVideoBytes":
+                                        "storedVideoBytes",
+                                    "#pendingVideoBytes":
+                                        "pendingVideoBytes",
+                                    "#videoCount": "videoCount",
+                                    "#pendingVideoUploadCount":
+                                        "pendingVideoUploadCount",
+                                },
+                                ExpressionAttributeValues: {
+                                    ":quotaEntityType":
+                                        "userQuotaUsage",
+                                    ":quotaSchemaVersion":
+                                        CURRENT_USER_QUOTA_USAGE_SCHEMA_VERSION,
+                                    ":currentStoredVideoBytes":
+                                        currentUsage.storedVideoBytes,
+                                    ":currentPendingVideoBytes":
+                                        currentUsage.pendingVideoBytes,
+                                    ":currentVideoCount":
+                                        currentUsage.videoCount,
+                                    ":currentPendingVideoUploadCount":
+                                        currentUsage.pendingVideoUploadCount,
+                                    ":deletedStoredVideoBytes":
+                                        deletedUsage.storedVideoBytes,
+                                    ":deletedPendingVideoBytes":
+                                        deletedUsage.pendingVideoBytes,
+                                    ":deletedVideoCount":
+                                        deletedUsage.videoCount,
+                                    ":deletedPendingVideoUploadCount":
+                                        deletedUsage.pendingVideoUploadCount,
+                                },
+                            },
+                        },
+                    ],
+                })
+            );
+
+            return;
+        } catch (error: unknown) {
+            if (
+                !(error instanceof TransactionCanceledException) ||
+                attempt === maximumVideoQuotaTransactionAttempts
+            ) {
+                throw error;
+            }
+        }
+    }
+
+    throw new Error(
+        "Video deletion exhausted its retry attempts"
+    );
+}
+
 export function createDynamoDBVideoDataAccess(
     connection: DynamoDBConnection
 ): VideoDataAccess {
     return {
         createVideo: async (input) => {
-            const item = await createVideo(connection, {
-                videoID: input.videoID,
-                userID: input.userID,
-                title: input.title,
-                storageKey: input.storageKey,
-                storageProviderName: input.storageProvider,
-                originalFileName: input.originalFileName,
-                status: input.status,
-                createdAt: input.createdAt,
-            });
+            const item =
+                await createPendingVideoWithQuotaReservation(
+                    connection,
+                    {
+                        videoID: input.videoID,
+                        userID: input.userID,
+                        title: input.title,
+                        storageKey: input.storageKey,
+                        storageProviderName:
+                            input.storageProvider,
+                        originalFileName:
+                            input.originalFileName,
+                        fileSizeBytes: input.fileSizeBytes,
+                        status: input.status,
+                        createdAt: input.createdAt,
+                    }
+                );
 
             return toVideoDataAccessItem(item);
         },
 
         async updateVideoStatus(input) {
             const item = await updateVideoStatus(
+                connection,
+                input
+            );
+
+            return toVideoDataAccessItem(item);
+        },
+
+        async finalizeVideoUpload(input) {
+            const item = await finalizeVideoUploadWithQuota(
+                connection,
+                input
+            );
+
+            return toVideoDataAccessItem(item);
+        },
+
+        async markVideoUploadFailed(input) {
+            const item = await markVideoUploadFailedWithQuota(
+                connection,
+                input
+            );
+
+            return toVideoDataAccessItem(item);
+        },
+
+        async markVideoDeleting(input) {
+            const item = await markVideoDeleting(
                 connection,
                 input
             );
@@ -512,7 +1319,7 @@ export function createDynamoDBVideoDataAccess(
             return toVideoDataAccessItem(item);
         },
         async deleteVideo(input) {
-            await deleteVideo(connection, input);
+            await deleteVideoWithQuota(connection, input);
         },
     };
 }

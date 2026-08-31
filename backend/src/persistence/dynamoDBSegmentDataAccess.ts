@@ -1,5 +1,8 @@
 // Performs segment database operations and hides DynamoDB-specific item mapping.
 import {
+    TransactionCanceledException,
+} from "@aws-sdk/client-dynamodb";
+import {
     GetCommand,
     QueryCommand,
     TransactWriteCommand,
@@ -10,6 +13,7 @@ import type { DynamoDBConnection } from "./dynamoDBConnection";
 import {
     createSegmentItem,
     CURRENT_SEGMENT_SCHEMA_VERSION,
+    CURRENT_USER_QUOTA_USAGE_SCHEMA_VERSION,
     CURRENT_VIDEO_SCHEMA_VERSION,
     type CreateSegmentItemInput,
     type SegmentItem,
@@ -17,6 +21,7 @@ import {
 import {
     createSegmentPrimaryKey,
     createSegmentsByVideoPartitionKey,
+    createUserQuotaUsagePrimaryKey,
     createVideoPrimaryKey,
     SEGMENT_ITEM_KEY_PREFIX,
     createUserPartitionKey,
@@ -30,6 +35,11 @@ import type {
     SegmentDataAccess,
     SegmentDataAccessItem,
 } from "./segmentDataAccess";
+import { calculateSegmentCreationQuota } from "../domain/userQuota";
+import {
+    getOrCreateUserQuotaUsage,
+} from "./dynamoDBUserQuotaUsageDataAccess";
+import { getVideoByID } from "./dynamoDBVideoDataAccess";
 
 const SEGMENTS_BY_VIDEO_INDEX_NAME = "SegmentsByVideo";
 export const MAX_SEGMENTS_BY_VIDEO_PAGE_SIZE = 50;
@@ -184,6 +194,138 @@ export async function createSegment(
     );
 
     return segmentItem;
+}
+
+const maximumSegmentQuotaTransactionAttempts = 5;
+
+export async function createSegmentWithQuota(
+    connection: DynamoDBConnection,
+    input: CreateSegmentItemInput
+): Promise<SegmentItem> {
+    const segmentItem = createSegmentItem(input);
+
+    for (
+        let attempt = 1;
+        attempt <= maximumSegmentQuotaTransactionAttempts;
+        attempt += 1
+    ) {
+        const video = await getVideoByID(connection, {
+            userID: input.userID,
+            videoID: input.videoID,
+        });
+
+        if (!video) {
+            throw new Error("Segment parent video was not found");
+        }
+
+        if (video.status !== "ready") {
+            throw new Error(
+                `Segment cannot be created for video status ${video.status}`
+            );
+        }
+
+        const currentUsage = await getOrCreateUserQuotaUsage(
+            connection,
+            input.userID
+        );
+        const nextQuota = calculateSegmentCreationQuota({
+            currentUsage,
+            currentVideoSegmentCount: video.segmentCount,
+        });
+
+        try {
+            await connection.documentClient.send(
+                new TransactWriteCommand({
+                    TransactItems: [
+                        {
+                            Update: {
+                                TableName: connection.tableName,
+                                Key: createVideoPrimaryKey({
+                                    userID: input.userID,
+                                    videoID: input.videoID,
+                                }),
+                                UpdateExpression:
+                                    "SET #segmentCount = :nextVideoSegmentCount",
+                                ConditionExpression:
+                                    "#entityType = :videoEntityType " +
+                                    "AND #schemaVersion = :videoSchemaVersion " +
+                                    "AND #status = :readyStatus " +
+                                    "AND #segmentCount = :currentVideoSegmentCount",
+                                ExpressionAttributeNames: {
+                                    "#entityType": "entityType",
+                                    "#schemaVersion": "schemaVersion",
+                                    "#status": "status",
+                                    "#segmentCount": "segmentCount",
+                                },
+                                ExpressionAttributeValues: {
+                                    ":videoEntityType": "video",
+                                    ":videoSchemaVersion":
+                                        CURRENT_VIDEO_SCHEMA_VERSION,
+                                    ":readyStatus": "ready",
+                                    ":currentVideoSegmentCount":
+                                        video.segmentCount,
+                                    ":nextVideoSegmentCount":
+                                        nextQuota.videoSegmentCount,
+                                },
+                            },
+                        },
+                        {
+                            Update: {
+                                TableName: connection.tableName,
+                                Key: createUserQuotaUsagePrimaryKey(
+                                    input.userID
+                                ),
+                                UpdateExpression:
+                                    "SET #segmentCount = :nextUserSegmentCount",
+                                ConditionExpression:
+                                    "#entityType = :quotaEntityType " +
+                                    "AND #schemaVersion = :quotaSchemaVersion " +
+                                    "AND #segmentCount = :currentUserSegmentCount",
+                                ExpressionAttributeNames: {
+                                    "#entityType": "entityType",
+                                    "#schemaVersion": "schemaVersion",
+                                    "#segmentCount": "segmentCount",
+                                },
+                                ExpressionAttributeValues: {
+                                    ":quotaEntityType":
+                                        "userQuotaUsage",
+                                    ":quotaSchemaVersion":
+                                        CURRENT_USER_QUOTA_USAGE_SCHEMA_VERSION,
+                                    ":currentUserSegmentCount":
+                                        currentUsage.segmentCount,
+                                    ":nextUserSegmentCount":
+                                        nextQuota.userQuotaUsage
+                                            .segmentCount,
+                                },
+                            },
+                        },
+                        {
+                            Put: {
+                                TableName: connection.tableName,
+                                Item: segmentItem,
+                                ConditionExpression:
+                                    "attribute_not_exists(PK) " +
+                                    "AND attribute_not_exists(SK)",
+                            },
+                        },
+                    ],
+                })
+            );
+
+            return segmentItem;
+        } catch (error: unknown) {
+            if (
+                !(error instanceof TransactionCanceledException) ||
+                attempt === maximumSegmentQuotaTransactionAttempts
+            ) {
+                throw error;
+            }
+        }
+    }
+
+    throw new Error(
+        "Segment creation exhausted its quota transaction retry attempts"
+    );
 }
 
 type GetSegmentByIDInput = {
@@ -501,6 +643,34 @@ export async function deleteSegment(
                         },
                     },
                 },
+                {
+                    Update: {
+                        TableName: connection.tableName,
+                        Key: createUserQuotaUsagePrimaryKey(
+                            input.userID
+                        ),
+                        UpdateExpression:
+                            "ADD #segmentCount :segmentCountDecrement",
+                        ConditionExpression:
+                            "attribute_exists(PK) " +
+                            "AND attribute_exists(SK) " +
+                            "AND #entityType = :quotaEntityType " +
+                            "AND #schemaVersion = :quotaSchemaVersion " +
+                            "AND #segmentCount > :zero",
+                        ExpressionAttributeNames: {
+                            "#entityType": "entityType",
+                            "#schemaVersion": "schemaVersion",
+                            "#segmentCount": "segmentCount",
+                        },
+                        ExpressionAttributeValues: {
+                            ":quotaEntityType": "userQuotaUsage",
+                            ":quotaSchemaVersion":
+                                CURRENT_USER_QUOTA_USAGE_SCHEMA_VERSION,
+                            ":segmentCountDecrement": -1,
+                            ":zero": 0,
+                        },
+                    },
+                },
             ],
         })
     );
@@ -511,7 +681,7 @@ export function createDynamoDBSegmentDataAccess(
 ): SegmentDataAccess {
     return {
         async createSegment(input) {
-            const item = await createSegment(
+            const item = await createSegmentWithQuota(
                 connection,
                 input
             );

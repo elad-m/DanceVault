@@ -3,6 +3,10 @@ import type { FastifyReply } from "fastify";
 export const ApiErrorCode = {
     InternalServerError: "INTERNAL_SERVER_ERROR",
     InvalidSegmentTimestamps: "INVALID_SEGMENT_TIMESTAMPS",
+    SegmentCountQuotaExceeded:
+        "SEGMENT_COUNT_QUOTA_EXCEEDED",
+    VideoSegmentCountQuotaExceeded:
+        "VIDEO_SEGMENT_COUNT_QUOTA_EXCEEDED",
     SegmentNotFound: "SEGMENT_NOT_FOUND",
     ValidationError: "VALIDATION_ERROR",
     VideoNotFound: "VIDEO_NOT_FOUND",
@@ -11,6 +15,11 @@ export const ApiErrorCode = {
     VideoNotReady: "VIDEO_NOT_READY",
     VideoUploadNotFound: "VIDEO_UPLOAD_NOT_FOUND",
     VideoUploadTooLarge: "VIDEO_UPLOAD_TOO_LARGE",
+    VideoStorageQuotaExceeded:
+        "VIDEO_STORAGE_QUOTA_EXCEEDED",
+    VideoCountQuotaExceeded: "VIDEO_COUNT_QUOTA_EXCEEDED",
+    PendingVideoUploadQuotaExceeded:
+        "PENDING_VIDEO_UPLOAD_QUOTA_EXCEEDED",
     VideoDeleting: "VIDEO_DELETING",
     SegmentThumbnailNotFound: "SEGMENT_THUMBNAIL_NOT_FOUND",
     SegmentThumbnailUploadNotFound:
@@ -27,6 +36,10 @@ export const ApiErrorMessage: ApiErrorMessageMap = {
     [ApiErrorCode.InternalServerError]: "Internal server error",
     [ApiErrorCode.InvalidSegmentTimestamps]:
         "endMilliseconds must be greater than startMilliseconds",
+    [ApiErrorCode.SegmentCountQuotaExceeded]:
+        "Your segment limit has been reached",
+    [ApiErrorCode.VideoSegmentCountQuotaExceeded]:
+        "This video's segment limit has been reached",
     [ApiErrorCode.SegmentNotFound]: "Segment not found",
     [ApiErrorCode.ValidationError]: "Request validation failed",
     [ApiErrorCode.VideoNotFound]: "Video not found",
@@ -38,6 +51,12 @@ export const ApiErrorMessage: ApiErrorMessageMap = {
         "Uploaded video file was not found",
     [ApiErrorCode.VideoUploadTooLarge]:
         "Video file exceeds the upload-size limit",
+    [ApiErrorCode.VideoStorageQuotaExceeded]:
+        "Your video storage quota has been reached",
+    [ApiErrorCode.VideoCountQuotaExceeded]:
+        "Your video limit has been reached",
+    [ApiErrorCode.PendingVideoUploadQuotaExceeded]:
+        "Too many video uploads are currently pending",
     [ApiErrorCode.VideoDeleting]: "Video is being deleted",
     [ApiErrorCode.SegmentThumbnailNotFound]:
         "Segment thumbnail was not found",

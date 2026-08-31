@@ -34,6 +34,7 @@ type VideoScope = UserScope & {
 type InitializeVideoUploadInput = UserScope & {
     title: string;
     fileName: string;
+    fileSizeBytes: number;
     contentType: SupportedVideoContentType;
     videoStorageProvider: VideoStorageProvider;
     videoDataAccess: VideoDataAccess;
@@ -43,6 +44,7 @@ export async function initializeVideoUpload({
     userId,
     title,
     fileName,
+    fileSizeBytes,
     contentType,
     videoStorageProvider,
     videoDataAccess,
@@ -65,6 +67,7 @@ export async function initializeVideoUpload({
         storageKey,
         storageProvider: videoStorageProvider.name,
         originalFileName: fileName,
+        fileSizeBytes,
         status: "pending_upload",
         createdAt: new Date(),
     });
@@ -127,6 +130,10 @@ export async function completeVideoUpload({
         };
     }
 
+    if (video.status !== "pending_upload") {
+        return { kind: "invalid_upload_state" };
+    }
+
     const objectSizeBytes =
         await videoStorageProvider.getVideoObjectSizeBytes(
             video.storageKey
@@ -137,10 +144,9 @@ export async function completeVideoUpload({
     }
 
     if (objectSizeBytes > maxVideoUploadSizeBytes) {
-        await videoDataAccess.updateVideoStatus({
+        await videoDataAccess.markVideoUploadFailed({
             videoID: video.id,
             userID: userId,
-            status: "upload_failed",
         });
 
         await videoStorageProvider.deleteVideoObject(
@@ -150,10 +156,10 @@ export async function completeVideoUpload({
         return { kind: "upload_too_large" };
     }
 
-    const readyVideo = await videoDataAccess.updateVideoStatus({
+    const readyVideo = await videoDataAccess.finalizeVideoUpload({
         videoID: video.id,
         userID: userId,
-        status: "ready",
+        fileSizeBytes: objectSizeBytes,
     });
 
     return {
@@ -301,10 +307,9 @@ export async function executeVideoDeletion({
         return { kind: "invalid_upload_state" };
     }
 
-    await videoDataAccess.updateVideoStatus({
+    await videoDataAccess.markVideoDeleting({
         videoID: video.id,
         userID: userId,
-        status: "deleting",
     });
 
     await videoStorageProvider.deleteVideoObject(

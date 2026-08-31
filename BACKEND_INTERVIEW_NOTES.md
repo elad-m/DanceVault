@@ -96,6 +96,61 @@ This fallback is needed because `/practice` is a client-side React route, not
 an object stored in S3. If `/index.html` is also missing, CloudFront returns the
 error from that failed request; it does not repeatedly apply the fallback.
 
+## Notable Architecture Decisions
+
+### STAR: Reconciling denormalized DynamoDB quota counters
+
+**Status:** Implemented and verified locally and against development data.
+
+**Situation:** DanceVault needed per-user limits for stored video bytes,
+videos, segments, and pending uploads. Calculating those totals by scanning
+all of a user's DynamoDB records on every request would be inefficient, so the
+design introduced one aggregate quota-usage item per user. That denormalized
+item could drift from the underlying records if a bug, failed migration, or
+incorrect repair changed only one side.
+
+**Task:** Enforce quotas efficiently during normal requests without making the
+aggregate counters the only source of truth, and provide a safe way to detect
+and repair inconsistencies.
+
+**Action:** Treat video and segment records as the source of truth. Update
+their corresponding quota counters in the same DynamoDB transaction during
+normal writes. Keep a pure, tested calculation that derives expected usage
+from the source records, then use it for initial backfill and a repeatable
+audit/reconciliation command. Make repairs explicit and idempotent instead of
+silently overwriting counters during request handling.
+
+**Result:** Normal requests now enforce quotas with transactional conditional
+writes, while guarded audit and repair commands can verify derived counters
+against source records. Existing local and development data reconciled without
+issues. This follows the standard pattern of transactional updates plus
+periodic or on-demand reconciliation for derived data.
+
+### Quota-enforcement concepts
+
+- Reserve upload bytes before issuing a signed upload URL, then move the
+  reservation to stored bytes only after checking the real object size.
+- Change source records and aggregate counters in one DynamoDB transaction so
+  retries cannot apply only half of an invariant.
+- Use strongly consistent reads where a stale quota value could incorrectly
+  allow or reject a write; handle concurrent conflicts with bounded retries.
+- Make deletion and reconciliation idempotent because workers and operational
+  commands may be repeated after partial failure.
+- Isolate tests with loopback-only endpoints, a dedicated table, invalid AWS
+  credentials, and client-factory guards even when an admin profile is active.
+
+### Derive deterministic storage keys instead of storing them
+
+Segment thumbnail keys can be derived from stable identifiers, for example
+`users/{userID}/thumbnails/{segmentID}.jpg`. DanceVault should therefore derive
+the key when it needs it rather than also storing `thumbnailKey` in DynamoDB.
+
+This avoids a segment schema migration and removes duplicated state that could
+become inconsistent: the database cannot claim one key while the application
+writes the thumbnail to another. Store a key only when it contains information
+that cannot be reconstructed deterministically or when future key changes must
+be preserved per record.
+
 ## Other DanceVault Topics To Revisit
 
 ### DynamoDB data modeling

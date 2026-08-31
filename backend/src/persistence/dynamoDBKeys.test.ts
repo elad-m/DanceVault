@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
     createSegmentItemKeys,
     createUserPartitionKey,
+    createUserQuotaUsagePrimaryKey,
     createDynamoDBVideoItemKeys,
     createVideoPrimaryKey,
 } from "./dynamoDBKeys";
@@ -70,5 +71,16 @@ describe("createUserPartitionKey", () => {
         expect(createUserPartitionKey("user-1")).toBe(
             "USER#user-1"
         );
+    });
+});
+
+describe("createUserQuotaUsagePrimaryKey", () => {
+    it("creates the fixed key for one user's quota counters", () => {
+        expect(
+            createUserQuotaUsagePrimaryKey("user-1")
+        ).toEqual({
+            PK: "USER#user-1",
+            SK: "QUOTA_USAGE",
+        });
     });
 });

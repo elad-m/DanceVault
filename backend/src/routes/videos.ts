@@ -15,6 +15,10 @@ import {
     supportedVideoContentTypeSchema,
     type SupportedVideoContentType,
 } from "../domain/video";
+import {
+    UserQuotaExceededError,
+    type UserQuotaLimitName,
+} from "../domain/userQuota";
 import type { VideoStorageProvider } from "../storage";
 import type { VideoDataAccess } from "../persistence/videoDataAccess";
 import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
@@ -114,6 +118,19 @@ const updateVideoRouteOptions = {
     },
 } as const;
 
+function getVideoQuotaApiErrorCode(
+    limitName: UserQuotaLimitName
+): ApiErrorCode {
+    switch (limitName) {
+        case "stored_video_bytes":
+            return ApiErrorCode.VideoStorageQuotaExceeded;
+        case "video_count":
+            return ApiErrorCode.VideoCountQuotaExceeded;
+        case "pending_video_upload_count":
+            return ApiErrorCode.PendingVideoUploadQuotaExceeded;
+    }
+}
+
 async function createVideoUploadHandler(
     request: FastifyRequest<CreateVideoUploadRequest>,
     reply: FastifyReply,
@@ -127,11 +144,31 @@ async function createVideoUploadHandler(
             userId: request.userId,
             title: request.body.title,
             fileName: request.body.fileName,
+            fileSizeBytes: request.body.fileSizeBytes,
             contentType: request.body.contentType,
             videoStorageProvider,
             videoDataAccess,
         });
     } catch (error) {
+        if (error instanceof UserQuotaExceededError) {
+            request.log.warn(
+                {
+                    event: "video_upload_quota_rejected",
+                    userId: request.userId,
+                    quotaLimitName: error.limitName,
+                    fileSizeBytes: request.body.fileSizeBytes,
+                },
+                "Video upload rejected by user quota"
+            );
+
+            return sendApiError(reply, {
+                statusCode: 409,
+                code: getVideoQuotaApiErrorCode(
+                    error.limitName
+                ),
+            });
+        }
+
         request.log.error(
             {
                 event: "video_upload_initialization_failed",
@@ -178,6 +215,25 @@ async function completeVideoUploadHandler(
             videoDataAccess,
         });
     } catch (error) {
+        if (error instanceof UserQuotaExceededError) {
+            request.log.warn(
+                {
+                    event: "video_upload_quota_rejected",
+                    userId: request.userId,
+                    videoId: request.params.videoId,
+                    quotaLimitName: error.limitName,
+                },
+                "Video upload rejected by user quota"
+            );
+
+            return sendApiError(reply, {
+                statusCode: 409,
+                code: getVideoQuotaApiErrorCode(
+                    error.limitName
+                ),
+            });
+        }
+
         request.log.error(
             {
                 event: "video_upload_completion_failed",

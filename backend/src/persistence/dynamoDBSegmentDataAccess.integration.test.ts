@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { createDynamoDBConnection } from "./dynamoDBConnection";
 import {
     createSegment,
+    createSegmentWithQuota,
     deleteSegment,
     getSegmentByID,
     listSegmentsByVideo,
@@ -20,8 +21,13 @@ import {
 } from "./dynamoDBVideoDataAccess";
 import {
     createSegmentPrimaryKey,
+    createUserQuotaUsagePrimaryKey,
     createVideoPrimaryKey,
 } from "./dynamoDBKeys";
+import {
+    createUserQuotaUsage,
+    getUserQuotaUsage,
+} from "./dynamoDBUserQuotaUsageDataAccess";
 import {
     ConditionalCheckFailedException,
     TransactionCanceledException,
@@ -149,6 +155,207 @@ describe("DynamoDB segment data access integration", () => {
                     Key: videoKey,
                 })
             );
+        }
+    });
+
+    it("atomically creates a segment and increments both quota counters", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+        const segmentID = `integration-segment-${randomUUID()}`;
+        const videoKey = createVideoPrimaryKey({
+            userID,
+            videoID,
+        });
+        const segmentKey = createSegmentPrimaryKey({
+            userID,
+            segmentID,
+        });
+        const quotaKey =
+            createUserQuotaUsagePrimaryKey(userID);
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Quota-counted segment parent",
+                storageKey:
+                    `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
+                fileSizeBytes: 1_000,
+                status: "ready",
+                createdAt: new Date(),
+            });
+            await createUserQuotaUsage(connection, {
+                userID,
+                storedVideoBytes: 1_000,
+                pendingVideoBytes: 0,
+                videoCount: 1,
+                segmentCount: 4,
+                pendingVideoUploadCount: 0,
+            });
+
+            const segment = await createSegmentWithQuota(
+                connection,
+                {
+                    segmentID,
+                    videoID,
+                    userID,
+                    name: "Quota-counted segment",
+                    description: null,
+                    startMilliseconds: 1_000,
+                    endMilliseconds: 2_000,
+                    tags: [],
+                    difficulty: "easy",
+                    confidence: "low",
+                    practicePriority: "high",
+                    createdAt: new Date(),
+                }
+            );
+
+            expect(
+                await getSegmentByID(connection, {
+                    userID,
+                    segmentID,
+                })
+            ).toEqual(segment);
+            expect(
+                await getVideoByID(connection, {
+                    userID,
+                    videoID,
+                })
+            ).toMatchObject({ segmentCount: 1 });
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toMatchObject({
+                storedVideoBytes: 1_000,
+                videoCount: 1,
+                segmentCount: 5,
+            });
+        } finally {
+            for (const key of [segmentKey, videoKey, quotaKey]) {
+                await connection.documentClient.send(
+                    new DeleteCommand({
+                        TableName: connection.tableName,
+                        Key: key,
+                    })
+                );
+            }
+        }
+    });
+
+    it("preserves both counter increments during concurrent segment creation", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+        const firstSegmentID =
+            `integration-segment-${randomUUID()}`;
+        const secondSegmentID =
+            `integration-segment-${randomUUID()}`;
+        const videoKey = createVideoPrimaryKey({
+            userID,
+            videoID,
+        });
+        const quotaKey =
+            createUserQuotaUsagePrimaryKey(userID);
+        const createInput = (
+            segmentID: string,
+            startMilliseconds: number
+        ): CreateSegmentItemInput => ({
+            segmentID,
+            videoID,
+            userID,
+            name: segmentID,
+            description: null,
+            startMilliseconds,
+            endMilliseconds: startMilliseconds + 1_000,
+            tags: [],
+            difficulty: "easy",
+            confidence: "low",
+            practicePriority: "high",
+            createdAt: new Date(),
+        });
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Concurrent segment parent",
+                storageKey:
+                    `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
+                fileSizeBytes: 1_000,
+                status: "ready",
+                createdAt: new Date(),
+            });
+            await createUserQuotaUsage(connection, {
+                userID,
+                storedVideoBytes: 1_000,
+                pendingVideoBytes: 0,
+                videoCount: 1,
+                segmentCount: 0,
+                pendingVideoUploadCount: 0,
+            });
+
+            await Promise.all([
+                createSegmentWithQuota(
+                    connection,
+                    createInput(firstSegmentID, 1_000)
+                ),
+                createSegmentWithQuota(
+                    connection,
+                    createInput(secondSegmentID, 3_000)
+                ),
+            ]);
+
+            expect(
+                await getVideoByID(connection, {
+                    userID,
+                    videoID,
+                })
+            ).toMatchObject({ segmentCount: 2 });
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toMatchObject({ segmentCount: 2 });
+            await expect(
+                Promise.all([
+                    getSegmentByID(connection, {
+                        userID,
+                        segmentID: firstSegmentID,
+                    }),
+                    getSegmentByID(connection, {
+                        userID,
+                        segmentID: secondSegmentID,
+                    }),
+                ])
+            ).resolves.toEqual([
+                expect.objectContaining({
+                    segmentID: firstSegmentID,
+                }),
+                expect.objectContaining({
+                    segmentID: secondSegmentID,
+                }),
+            ]);
+        } finally {
+            for (const key of [
+                createSegmentPrimaryKey({
+                    userID,
+                    segmentID: firstSegmentID,
+                }),
+                createSegmentPrimaryKey({
+                    userID,
+                    segmentID: secondSegmentID,
+                }),
+                videoKey,
+                quotaKey,
+            ]) {
+                await connection.documentClient.send(
+                    new DeleteCommand({
+                        TableName: connection.tableName,
+                        Key: key,
+                    })
+                );
+            }
         }
     });
 
@@ -692,7 +899,6 @@ describe("DynamoDB segment data access integration", () => {
             userID,
             segmentID,
         });
-
         try {
             await createVideo(connection, {
                 videoID,
@@ -892,6 +1098,8 @@ describe("DynamoDB segment data access integration", () => {
             userID,
             segmentID,
         });
+        const quotaKey =
+            createUserQuotaUsagePrimaryKey(userID);
 
         try {
             await createVideo(connection, {
@@ -920,6 +1128,15 @@ describe("DynamoDB segment data access integration", () => {
                 createdAt: new Date(),
             });
 
+            await createUserQuotaUsage(connection, {
+                userID,
+                storedVideoBytes: 0,
+                pendingVideoBytes: 0,
+                videoCount: 1,
+                segmentCount: 1,
+                pendingVideoUploadCount: 0,
+            });
+
             await waitForSegmentCount({
                 userID,
                 videoID,
@@ -940,6 +1157,11 @@ describe("DynamoDB segment data access integration", () => {
             // Segment deletion decrements the parent video count in the same transaction.
             expect(parentVideo?.segmentCount).toBe(0);
 
+            // The same transaction releases the user's consumed segment quota.
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toMatchObject({ segmentCount: 0 });
+
             const storedSegment = await getSegmentByID(connection, {
                 userID,
                 segmentID,
@@ -956,6 +1178,21 @@ describe("DynamoDB segment data access integration", () => {
 
             // DynamoDB also removes the deleted item's eventually consistent GSI entry.
             expect(indexedSegments).toEqual([]);
+
+            await expect(
+                deleteSegment(connection, {
+                    userID,
+                    videoID,
+                    segmentID,
+                })
+            ).rejects.toBeInstanceOf(
+                TransactionCanceledException
+            );
+
+            // A retried deletion cannot decrement either counter twice.
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toMatchObject({ segmentCount: 0 });
         } finally {
             await connection.documentClient.send(
                 new DeleteCommand({
@@ -967,6 +1204,12 @@ describe("DynamoDB segment data access integration", () => {
                 new DeleteCommand({
                     TableName: connection.tableName,
                     Key: videoKey,
+                })
+            );
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: quotaKey,
                 })
             );
         }

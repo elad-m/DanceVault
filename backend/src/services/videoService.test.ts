@@ -8,8 +8,10 @@ import {
 import {
     clearDynamoDBTestDatabase,
     createDynamoDBTestPersistenceProvider,
+    getDynamoDBTestUserQuotaUsage,
     resetDynamoDBTestDatabase,
 } from "../test/dynamoDBTestDatabase";
+import type { UserQuotaUsage } from "../domain/userQuota";
 import type {
     VideoDeletionJob,
     VideoDeletionQueue,
@@ -23,6 +25,30 @@ import type { VideoStorageProvider } from "../storage";
 
 const persistenceProvider =
     createDynamoDBTestPersistenceProvider();
+
+const initialTestUserQuotaUsage: UserQuotaUsage = {
+    storedVideoBytes: 100_000_000,
+    pendingVideoBytes: 0,
+    videoCount: 1,
+    segmentCount: 3,
+    pendingVideoUploadCount: 0,
+};
+
+const emptyTestUserQuotaUsage: UserQuotaUsage = {
+    storedVideoBytes: 0,
+    pendingVideoBytes: 0,
+    videoCount: 0,
+    segmentCount: 0,
+    pendingVideoUploadCount: 0,
+};
+
+async function expectTestUserQuotaUsage(
+    expectedUsage: UserQuotaUsage
+): Promise<void> {
+    expect(
+        await getDynamoDBTestUserQuotaUsage(TEST_USER_ID)
+    ).toEqual(expectedUsage);
+}
 
 const queuedJobs: VideoDeletionJob[] = [];
 
@@ -104,6 +130,8 @@ describe("executeVideoDeletion", () => {
     it("marks the video as deleting before destructive work begins", async () => {
         let statusObservedDuringStorageDeletion:
             string | undefined;
+        let deletionSourceStatusObservedDuringStorageDeletion:
+            string | undefined;
 
         const videoStorageProvider =
             createFakeVideoStorageProvider(
@@ -116,6 +144,8 @@ describe("executeVideoDeletion", () => {
 
                     statusObservedDuringStorageDeletion =
                         video?.status;
+                    deletionSourceStatusObservedDuringStorageDeletion =
+                        video?.deletionSourceStatus;
                 }
             );
 
@@ -132,9 +162,15 @@ describe("executeVideoDeletion", () => {
         expect(
             statusObservedDuringStorageDeletion
         ).toBe("deleting");
+        expect(
+            deletionSourceStatusObservedDuringStorageDeletion
+        ).toBe("ready");
         expect(result).toEqual({
             kind: "deleted",
         });
+        await expectTestUserQuotaUsage(
+            emptyTestUserQuotaUsage
+        );
     });
 
     it("keeps the deleting video and its segments when storage deletion fails", async () => {
@@ -173,6 +209,9 @@ describe("executeVideoDeletion", () => {
             "sample-segment-2",
             "sample-segment-3",
         ]);
+        await expectTestUserQuotaUsage(
+            initialTestUserQuotaUsage
+        );
     });
 
     it("completes deletion when retried after a storage failure", async () => {
@@ -223,6 +262,9 @@ describe("executeVideoDeletion", () => {
         });
         expect(deletedVideo).toBeNull();
         expect(remainingSegments).toEqual([]);
+        await expectTestUserQuotaUsage(
+            emptyTestUserQuotaUsage
+        );
     });
 
     it("deletes every segment thumbnail during video deletion", async () => {
@@ -247,6 +289,9 @@ describe("executeVideoDeletion", () => {
         expect(result).toEqual({
             kind: "deleted",
         });
+        await expectTestUserQuotaUsage(
+            emptyTestUserQuotaUsage
+        );
         expect(deletedThumbnailStorageKeys).toEqual([
             "users/test-user-1/thumbnails/sample-segment-1.jpg",
             "users/test-user-1/thumbnails/sample-segment-2.jpg",
@@ -292,6 +337,10 @@ describe("executeVideoDeletion", () => {
             "sample-segment-2",
             "sample-segment-3",
         ]);
+        await expectTestUserQuotaUsage({
+            ...initialTestUserQuotaUsage,
+            segmentCount: 2,
+        });
     });
 
     it("does not modify a video stored by a different provider", async () => {
@@ -332,6 +381,9 @@ describe("executeVideoDeletion", () => {
         expect(storageDeletionWasCalled).toBe(false);
         expect(retainedVideo?.status).toBe("ready");
         expect(retainedSegments).toHaveLength(3);
+        await expectTestUserQuotaUsage(
+            initialTestUserQuotaUsage
+        );
     });
 
     it("treats a repeated deletion after completion as already finished", async () => {
@@ -369,6 +421,9 @@ describe("executeVideoDeletion", () => {
             kind: "not_found",
         });
         expect(storageDeletionCallCount).toBe(1);
+        await expectTestUserQuotaUsage(
+            emptyTestUserQuotaUsage
+        );
     });
 });
 

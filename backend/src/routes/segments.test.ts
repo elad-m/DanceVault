@@ -22,6 +22,11 @@ import {
     resetDynamoDBTestDatabase,
 } from "../test/dynamoDBTestDatabase";
 import type { VideoStorageProvider } from "../storage";
+import type { PersistenceProvider } from "../persistence";
+import {
+    SegmentQuotaExceededError,
+    type SegmentQuotaLimitName,
+} from "../domain/userQuota";
 
 const createSegmentThumbnailUploadUrlMock = vi.fn(
     async (storageKey: string): Promise<string> =>
@@ -128,6 +133,74 @@ describe("POST /videos/:videoId/segments", () => {
             practicePriority: "high",
         });
     });
+
+    it.each<{
+        limitName: SegmentQuotaLimitName;
+        expectedCode: string;
+        expectedMessage: string;
+    }>([
+        {
+            limitName: "segment_count",
+            expectedCode: "SEGMENT_COUNT_QUOTA_EXCEEDED",
+            expectedMessage:
+                "Your segment limit has been reached",
+        },
+        {
+            limitName: "segments_per_video",
+            expectedCode:
+                "VIDEO_SEGMENT_COUNT_QUOTA_EXCEEDED",
+            expectedMessage:
+                "This video's segment limit has been reached",
+        },
+    ])(
+        "maps $limitName to a stable segment quota response",
+        async ({
+            limitName,
+            expectedCode,
+            expectedMessage,
+        }) => {
+            const quotaPersistenceProvider: PersistenceProvider = {
+                videoDataAccess:
+                    persistenceProvider.videoDataAccess,
+                segmentDataAccess: {
+                    ...persistenceProvider.segmentDataAccess,
+                    createSegment: vi.fn(async () => {
+                        throw new SegmentQuotaExceededError(
+                            limitName
+                        );
+                    }),
+                },
+                close: vi.fn(async () => { }),
+            };
+            const injectedApp = buildApp({
+                persistenceProvider: quotaPersistenceProvider,
+                videoStorageProvider: fakeVideoStorageProvider,
+            });
+            registerTestAuthentication(injectedApp);
+
+            try {
+                const response = await injectedApp.inject({
+                    method: "POST",
+                    url: "/videos/sample-video-1/segments",
+                    payload: {
+                        name: "Quota test segment",
+                        startMilliseconds: 10_000,
+                        endMilliseconds: 20_000,
+                    },
+                });
+
+                expect(response.statusCode).toBe(409);
+                expect(response.json()).toEqual({
+                    error: {
+                        code: expectedCode,
+                        message: expectedMessage,
+                    },
+                });
+            } finally {
+                await injectedApp.close();
+            }
+        }
+    );
 
     it("rejects a segment for a video that does not exist", async () => {
         const response = await app.inject({

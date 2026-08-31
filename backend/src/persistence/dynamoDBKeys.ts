@@ -1,10 +1,25 @@
 export const VIDEO_ITEM_KEY_PREFIX = "VIDEO#";
 export const SEGMENT_ITEM_KEY_PREFIX = "SEGMENT#";
+const USER_QUOTA_USAGE_SORT_KEY = "QUOTA_USAGE";
 
 export function createUserPartitionKey(
     userID: string
 ): string {
     return `USER#${userID}`;
+}
+
+export type UserQuotaUsagePrimaryKey = {
+    PK: string;
+    SK: string;
+};
+
+export function createUserQuotaUsagePrimaryKey(
+    userID: string
+): UserQuotaUsagePrimaryKey {
+    return {
+        PK: createUserPartitionKey(userID),
+        SK: USER_QUOTA_USAGE_SORT_KEY,
+    };
 }
 
 export type VideoPrimaryKey = {

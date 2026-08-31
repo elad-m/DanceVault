@@ -6,7 +6,10 @@ import {
     createDynamoDBConnection,
 } from "./persistence/dynamoDBConnection";
 import { createVideoStorageClientConfiguration } from "./storage/videoStorageConfig";
-import { clearDynamoDBTestDatabase } from "./test/dynamoDBTestDatabase";
+import {
+    clearDynamoDBTestDatabase,
+    getDynamoDBTestUserQuotaUsage,
+} from "./test/dynamoDBTestDatabase";
 
 describe("AWS test isolation", () => {
     afterEach(() => {
@@ -49,6 +52,20 @@ describe("AWS test isolation", () => {
         );
 
         await expect(clearDynamoDBTestDatabase()).rejects.toThrow(
+            "DynamoDB tests may only use DanceVaultTestData"
+        );
+    });
+
+    it("refuses to read quota usage from the development DynamoDB table", async () => {
+        vi.stubEnv("DYNAMODB_ENDPOINT", "http://127.0.0.1:8000");
+        vi.stubEnv(
+            "DYNAMODB_TABLE_NAME",
+            "DanceVaultDevelopmentData"
+        );
+
+        await expect(
+            getDynamoDBTestUserQuotaUsage("test-user")
+        ).rejects.toThrow(
             "DynamoDB tests may only use DanceVaultTestData"
         );
     });

@@ -6,10 +6,17 @@ import {
 import { afterAll, describe, expect, it } from "vitest";
 import { createDynamoDBConnection } from "./dynamoDBConnection";
 import {
+    backfillVideoFileSizeBytes,
+    createPendingVideoWithQuotaReservation,
     createVideo,
     deleteVideo,
+    deleteVideoWithQuota,
+    finalizeVideoUpload,
+    finalizeVideoUploadWithQuota,
     getVideoByID,
+    markVideoDeleting,
     listVideos,
+    markVideoUploadFailedWithQuota,
     MAX_VIDEO_LIST_PAGE_SIZE,
     updateVideoStatus,
     updateVideoTitle,
@@ -23,8 +30,13 @@ import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import type { DynamoDBVideoItem } from "./dynamoDBItems";
 import {
     createSegmentPrimaryKey,
+    createUserQuotaUsagePrimaryKey,
     createVideoPrimaryKey,
 } from "./dynamoDBKeys";
+import {
+    createUserQuotaUsage,
+    getUserQuotaUsage,
+} from "./dynamoDBUserQuotaUsageDataAccess";
 
 const connection = createDynamoDBConnection();
 const videoDataAccess =
@@ -84,6 +96,7 @@ describe("DynamoDB video data access integration", () => {
                 storageKey: `users/${userID}/videos/${videoID}.mp4`,
                 storageProvider: "awsS3",
                 originalFileName: "video.mp4",
+                fileSizeBytes: 100_000_000,
                 status: "pending_upload",
                 createdAt,
             });
@@ -102,6 +115,7 @@ describe("DynamoDB video data access integration", () => {
                 storageKey: `users/${userID}/videos/${videoID}.mp4`,
                 storageProviderName: "awsS3",
                 originalFileName: "video.mp4",
+                fileSizeBytes: 100_000_000,
                 status: "pending_upload",
                 createdAt: createdAt.toISOString(),
             });
@@ -113,11 +127,535 @@ describe("DynamoDB video data access integration", () => {
                     videoID,
                 });
             expect(applicationVideo).toEqual(createdVideo);
+
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toMatchObject({
+                storedVideoBytes: 0,
+                pendingVideoBytes: 100_000_000,
+                videoCount: 1,
+                segmentCount: 0,
+                pendingVideoUploadCount: 1,
+            });
+        } finally {
+            for (const key of [
+                itemKey,
+                createUserQuotaUsagePrimaryKey(userID),
+            ]) {
+                await connection.documentClient.send(
+                    new DeleteCommand({
+                        TableName: connection.tableName,
+                        Key: key,
+                    })
+                );
+            }
+        }
+    });
+
+    it("atomically creates a pending video and reserves its user quota", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+
+        try {
+            await createUserQuotaUsage(connection, {
+                userID,
+                storedVideoBytes: 1_000,
+                pendingVideoBytes: 500,
+                videoCount: 2,
+                segmentCount: 4,
+                pendingVideoUploadCount: 1,
+            });
+
+            const video =
+                await createPendingVideoWithQuotaReservation(
+                    connection,
+                    {
+                        videoID,
+                        userID,
+                        title: "Reserved upload",
+                        storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                        storageProviderName: "awsS3",
+                        originalFileName: "video.mp4",
+                        fileSizeBytes: 250,
+                        status: "pending_upload",
+                        createdAt: new Date(),
+                    }
+                );
+
+            expect(video).toMatchObject({
+                videoID,
+                status: "pending_upload",
+                fileSizeBytes: 250,
+            });
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toMatchObject({
+                storedVideoBytes: 1_000,
+                pendingVideoBytes: 750,
+                videoCount: 3,
+                segmentCount: 4,
+                pendingVideoUploadCount: 2,
+            });
+        } finally {
+            for (const key of [
+                createVideoPrimaryKey({ userID, videoID }),
+                createUserQuotaUsagePrimaryKey(userID),
+            ]) {
+                await connection.documentClient.send(
+                    new DeleteCommand({
+                        TableName: connection.tableName,
+                        Key: key,
+                    })
+                );
+            }
+        }
+    });
+
+    it("preserves both quota reservations during concurrent new-user uploads", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const firstVideoID = `integration-video-${randomUUID()}`;
+        const secondVideoID = `integration-video-${randomUUID()}`;
+
+        try {
+            await Promise.all([
+                createPendingVideoWithQuotaReservation(
+                    connection,
+                    {
+                        videoID: firstVideoID,
+                        userID,
+                        title: "First concurrent upload",
+                        storageKey: `users/${userID}/videos/${firstVideoID}.mp4`,
+                        storageProviderName: "awsS3",
+                        originalFileName: "first.mp4",
+                        fileSizeBytes: 100,
+                        status: "pending_upload",
+                        createdAt: new Date(),
+                    }
+                ),
+                createPendingVideoWithQuotaReservation(
+                    connection,
+                    {
+                        videoID: secondVideoID,
+                        userID,
+                        title: "Second concurrent upload",
+                        storageKey: `users/${userID}/videos/${secondVideoID}.mp4`,
+                        storageProviderName: "awsS3",
+                        originalFileName: "second.mp4",
+                        fileSizeBytes: 200,
+                        status: "pending_upload",
+                        createdAt: new Date(),
+                    }
+                ),
+            ]);
+
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toMatchObject({
+                storedVideoBytes: 0,
+                pendingVideoBytes: 300,
+                videoCount: 2,
+                segmentCount: 0,
+                pendingVideoUploadCount: 2,
+            });
+            await expect(
+                Promise.all([
+                    getVideoByID(connection, {
+                        userID,
+                        videoID: firstVideoID,
+                    }),
+                    getVideoByID(connection, {
+                        userID,
+                        videoID: secondVideoID,
+                    }),
+                ])
+            ).resolves.toEqual([
+                expect.objectContaining({
+                    videoID: firstVideoID,
+                }),
+                expect.objectContaining({
+                    videoID: secondVideoID,
+                }),
+            ]);
+        } finally {
+            for (const key of [
+                createVideoPrimaryKey({
+                    userID,
+                    videoID: firstVideoID,
+                }),
+                createVideoPrimaryKey({
+                    userID,
+                    videoID: secondVideoID,
+                }),
+                createUserQuotaUsagePrimaryKey(userID),
+            ]) {
+                await connection.documentClient.send(
+                    new DeleteCommand({
+                        TableName: connection.tableName,
+                        Key: key,
+                    })
+                );
+            }
+        }
+    });
+
+    it("atomically completes a pending video and moves its reservation to stored bytes", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+
+        try {
+            await createUserQuotaUsage(connection, {
+                userID,
+                storedVideoBytes: 1_000,
+                pendingVideoBytes: 500,
+                videoCount: 3,
+                segmentCount: 4,
+                pendingVideoUploadCount: 2,
+            });
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Pending upload to complete",
+                storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
+                fileSizeBytes: 250,
+                status: "pending_upload",
+                createdAt: new Date(),
+            });
+
+            const completedVideo =
+                await finalizeVideoUploadWithQuota(
+                    connection,
+                    {
+                        userID,
+                        videoID,
+                        fileSizeBytes: 275,
+                    }
+                );
+
+            expect(completedVideo).toMatchObject({
+                status: "ready",
+                fileSizeBytes: 275,
+            });
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toMatchObject({
+                storedVideoBytes: 1_275,
+                pendingVideoBytes: 250,
+                videoCount: 3,
+                segmentCount: 4,
+                pendingVideoUploadCount: 1,
+            });
+
+            await expect(
+                finalizeVideoUploadWithQuota(connection, {
+                    userID,
+                    videoID,
+                    fileSizeBytes: 275,
+                })
+            ).resolves.toEqual(completedVideo);
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toMatchObject({
+                storedVideoBytes: 1_275,
+                pendingVideoBytes: 250,
+                pendingVideoUploadCount: 1,
+            });
+        } finally {
+            for (const key of [
+                createVideoPrimaryKey({ userID, videoID }),
+                createUserQuotaUsagePrimaryKey(userID),
+            ]) {
+                await connection.documentClient.send(
+                    new DeleteCommand({
+                        TableName: connection.tableName,
+                        Key: key,
+                    })
+                );
+            }
+        }
+    });
+
+    it("keeps the pending video and quota unchanged when actual bytes exceed storage quota", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+        const originalUsage = {
+            userID,
+            storedVideoBytes: 9_999_999_700,
+            pendingVideoBytes: 250,
+            videoCount: 1,
+            segmentCount: 0,
+            pendingVideoUploadCount: 1,
+        };
+
+        try {
+            await createUserQuotaUsage(
+                connection,
+                originalUsage
+            );
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Upload beyond remaining quota",
+                storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
+                fileSizeBytes: 250,
+                status: "pending_upload",
+                createdAt: new Date(),
+            });
+
+            await expect(
+                finalizeVideoUploadWithQuota(connection, {
+                    userID,
+                    videoID,
+                    fileSizeBytes: 400,
+                })
+            ).rejects.toMatchObject({
+                limitName: "stored_video_bytes",
+            });
+
+            expect(
+                await getVideoByID(connection, {
+                    userID,
+                    videoID,
+                })
+            ).toMatchObject({
+                status: "pending_upload",
+                fileSizeBytes: 250,
+            });
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toMatchObject(originalUsage);
+        } finally {
+            for (const key of [
+                createVideoPrimaryKey({ userID, videoID }),
+                createUserQuotaUsagePrimaryKey(userID),
+            ]) {
+                await connection.documentClient.send(
+                    new DeleteCommand({
+                        TableName: connection.tableName,
+                        Key: key,
+                    })
+                );
+            }
+        }
+    });
+
+    it("marks an upload failed and releases its pending quota reservation once", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+
+        try {
+            await createUserQuotaUsage(connection, {
+                userID,
+                storedVideoBytes: 1_000,
+                pendingVideoBytes: 500,
+                videoCount: 3,
+                segmentCount: 4,
+                pendingVideoUploadCount: 2,
+            });
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Pending upload to fail",
+                storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "failed.mp4",
+                fileSizeBytes: 250,
+                status: "pending_upload",
+                createdAt: new Date(),
+            });
+
+            const failedVideo =
+                await markVideoUploadFailedWithQuota(
+                    connection,
+                    { userID, videoID }
+                );
+
+            expect(failedVideo).toMatchObject({
+                videoID,
+                status: "upload_failed",
+                fileSizeBytes: 250,
+            });
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toMatchObject({
+                storedVideoBytes: 1_000,
+                pendingVideoBytes: 250,
+                videoCount: 3,
+                segmentCount: 4,
+                pendingVideoUploadCount: 1,
+            });
+
+            await expect(
+                markVideoUploadFailedWithQuota(connection, {
+                    userID,
+                    videoID,
+                })
+            ).resolves.toEqual(failedVideo);
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toMatchObject({
+                pendingVideoBytes: 250,
+                pendingVideoUploadCount: 1,
+            });
+        } finally {
+            for (const key of [
+                createVideoPrimaryKey({ userID, videoID }),
+                createUserQuotaUsagePrimaryKey(userID),
+            ]) {
+                await connection.documentClient.send(
+                    new DeleteCommand({
+                        TableName: connection.tableName,
+                        Key: key,
+                    })
+                );
+            }
+        }
+    });
+
+    it("reads an existing video that does not have a stored file size", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Existing video without size metadata",
+                storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "existing-video.mp4",
+                status: "ready",
+                createdAt: new Date(),
+            });
+
+            const video = await videoDataAccess.getVideoByID({
+                userID,
+                videoID,
+            });
+
+            expect(video?.fileSizeBytes).toBeNull();
         } finally {
             await connection.documentClient.send(
                 new DeleteCommand({
                     TableName: connection.tableName,
-                    Key: itemKey,
+                    Key: {
+                        PK: `USER#${userID}`,
+                        SK: `VIDEO#${videoID}`,
+                    },
+                })
+            );
+        }
+    });
+
+    it("finalizes an upload with its storage-verified file size", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Upload awaiting verification",
+                storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
+                fileSizeBytes: 90_000_000,
+                status: "pending_upload",
+                createdAt: new Date(),
+            });
+
+            const finalizedVideo = await finalizeVideoUpload(
+                connection,
+                {
+                    userID,
+                    videoID,
+                    fileSizeBytes: 100_000_000,
+                }
+            );
+
+            expect(finalizedVideo).toMatchObject({
+                status: "ready",
+                fileSizeBytes: 100_000_000,
+            });
+        } finally {
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: {
+                        PK: `USER#${userID}`,
+                        SK: `VIDEO#${videoID}`,
+                    },
+                })
+            );
+        }
+    });
+
+    it("backfills a missing file size without overwriting existing metadata", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Legacy video without size metadata",
+                storageKey: `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "legacy-video.mp4",
+                status: "ready",
+                createdAt: new Date(),
+            });
+
+            const backfilledVideo =
+                await backfillVideoFileSizeBytes(connection, {
+                    userID,
+                    videoID,
+                    fileSizeBytes: 100_000_000,
+                });
+
+            expect(backfilledVideo.fileSizeBytes).toBe(
+                100_000_000
+            );
+
+            await expect(
+                backfillVideoFileSizeBytes(connection, {
+                    userID,
+                    videoID,
+                    fileSizeBytes: 100_000_000,
+                })
+            ).resolves.toMatchObject({
+                fileSizeBytes: 100_000_000,
+            });
+
+            await expect(
+                backfillVideoFileSizeBytes(connection, {
+                    userID,
+                    videoID,
+                    fileSizeBytes: 200_000_000,
+                })
+            ).rejects.toBeInstanceOf(
+                ConditionalCheckFailedException
+            );
+
+            expect(
+                await getVideoByID(connection, {
+                    userID,
+                    videoID,
+                })
+            ).toMatchObject({
+                fileSizeBytes: 100_000_000,
+            });
+        } finally {
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: createVideoPrimaryKey({
+                        userID,
+                        videoID,
+                    }),
                 })
             );
         }
@@ -653,6 +1191,198 @@ describe("DynamoDB video data access integration", () => {
             );
         }
     });
+
+    it.each([
+        "pending_upload",
+        "ready",
+        "upload_failed",
+    ] as const)(
+        "preserves the %s source status when marking a video as deleting",
+        async (sourceStatus) => {
+            const userID =
+                `integration-user-${randomUUID()}`;
+            const videoID =
+                `integration-video-${randomUUID()}`;
+            const itemKey = createVideoPrimaryKey({
+                userID,
+                videoID,
+            });
+
+            try {
+                await createVideo(connection, {
+                    videoID,
+                    userID,
+                    title: "Video entering deletion",
+                    storageKey:
+                        `users/${userID}/videos/${videoID}.mp4`,
+                    storageProviderName: "awsS3",
+                    originalFileName: "video.mp4",
+                    fileSizeBytes: 1_000,
+                    status: sourceStatus,
+                    createdAt: new Date(),
+                });
+
+                const deletingVideo =
+                    await markVideoDeleting(connection, {
+                        userID,
+                        videoID,
+                    });
+
+                expect(deletingVideo).toMatchObject({
+                    status: "deleting",
+                    deletionSourceStatus: sourceStatus,
+                });
+
+                const repeatedResult =
+                    await markVideoDeleting(connection, {
+                        userID,
+                        videoID,
+                    });
+
+                expect(repeatedResult).toMatchObject({
+                    status: "deleting",
+                    deletionSourceStatus: sourceStatus,
+                });
+            } finally {
+                await connection.documentClient.send(
+                    new DeleteCommand({
+                        TableName: connection.tableName,
+                        Key: itemKey,
+                    })
+                );
+            }
+        }
+    );
+
+    it.each([
+        {
+            sourceStatus: "ready" as const,
+            currentUsage: {
+                storedVideoBytes: 1_500,
+                pendingVideoBytes: 300,
+                videoCount: 3,
+                segmentCount: 4,
+                pendingVideoUploadCount: 1,
+            },
+            expectedUsage: {
+                storedVideoBytes: 500,
+                pendingVideoBytes: 300,
+                videoCount: 2,
+                segmentCount: 4,
+                pendingVideoUploadCount: 1,
+            },
+        },
+        {
+            sourceStatus: "pending_upload" as const,
+            currentUsage: {
+                storedVideoBytes: 500,
+                pendingVideoBytes: 1_300,
+                videoCount: 3,
+                segmentCount: 4,
+                pendingVideoUploadCount: 2,
+            },
+            expectedUsage: {
+                storedVideoBytes: 500,
+                pendingVideoBytes: 300,
+                videoCount: 2,
+                segmentCount: 4,
+                pendingVideoUploadCount: 1,
+            },
+        },
+        {
+            sourceStatus: "upload_failed" as const,
+            currentUsage: {
+                storedVideoBytes: 500,
+                pendingVideoBytes: 300,
+                videoCount: 3,
+                segmentCount: 4,
+                pendingVideoUploadCount: 1,
+            },
+            expectedUsage: {
+                storedVideoBytes: 500,
+                pendingVideoBytes: 300,
+                videoCount: 2,
+                segmentCount: 4,
+                pendingVideoUploadCount: 1,
+            },
+        },
+    ])(
+        "atomically releases $sourceStatus video quota during deletion",
+        async ({
+            sourceStatus,
+            currentUsage,
+            expectedUsage,
+        }) => {
+            const userID =
+                `integration-user-${randomUUID()}`;
+            const videoID =
+                `integration-video-${randomUUID()}`;
+            const videoKey = createVideoPrimaryKey({
+                userID,
+                videoID,
+            });
+            const quotaKey =
+                createUserQuotaUsagePrimaryKey(userID);
+
+            try {
+                await createVideo(connection, {
+                    videoID,
+                    userID,
+                    title: "Quota-counted video deletion",
+                    storageKey:
+                        `users/${userID}/videos/${videoID}.mp4`,
+                    storageProviderName: "awsS3",
+                    originalFileName: "video.mp4",
+                    fileSizeBytes: 1_000,
+                    status: sourceStatus,
+                    createdAt: new Date(),
+                });
+                await createUserQuotaUsage(connection, {
+                    userID,
+                    ...currentUsage,
+                });
+                await markVideoDeleting(connection, {
+                    userID,
+                    videoID,
+                });
+
+                await deleteVideoWithQuota(connection, {
+                    userID,
+                    videoID,
+                });
+
+                expect(
+                    await getVideoByID(connection, {
+                        userID,
+                        videoID,
+                    })
+                ).toBeNull();
+                expect(
+                    await getUserQuotaUsage(connection, userID)
+                ).toMatchObject(expectedUsage);
+
+                await expect(
+                    deleteVideoWithQuota(connection, {
+                        userID,
+                        videoID,
+                    })
+                ).resolves.toBeUndefined();
+                expect(
+                    await getUserQuotaUsage(connection, userID)
+                ).toMatchObject(expectedUsage);
+            } finally {
+                for (const key of [videoKey, quotaKey]) {
+                    await connection.documentClient.send(
+                        new DeleteCommand({
+                            TableName: connection.tableName,
+                            Key: key,
+                        })
+                    );
+                }
+            }
+        }
+    );
+
     it("deletes a video when it has no segments", async () => {
         const userID = `integration-user-${randomUUID()}`;
         const videoID = `integration-video-${randomUUID()}`;
