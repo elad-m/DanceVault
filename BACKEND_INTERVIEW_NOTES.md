@@ -142,14 +142,28 @@ periodic or on-demand reconciliation for derived data.
 ### Derive deterministic storage keys instead of storing them
 
 Segment thumbnail keys can be derived from stable identifiers, for example
-`users/{userID}/thumbnails/{segmentID}.jpg`. DanceVault should therefore derive
-the key when it needs it rather than also storing `thumbnailKey` in DynamoDB.
+`users/{userID}/thumbnails/segments/{segmentID}.jpg`. DanceVault should
+therefore derive the key when it needs it rather than also storing
+`thumbnailKey` in DynamoDB.
 
 This avoids a segment schema migration and removes duplicated state that could
 become inconsistent: the database cannot claim one key while the application
 writes the thumbnail to another. Store a key only when it contains information
 that cannot be reconstructed deterministically or when future key changes must
 be preserved per record.
+
+### S3 missing-object checks depend on IAM permissions
+
+S3 `HeadObject` can return `403 Forbidden`, rather than `404 Not Found`, when
+an object is absent and the caller lacks `s3:ListBucket`. This prevents callers
+without bucket visibility from learning which object keys exist.
+
+DanceVault's lazy thumbnail repair originally treated only `404` as missing,
+so existing videos produced backend `500` responses while newly uploaded
+videos worked. CloudWatch request logs exposed the S3 `403`. Granting the
+backend Lambda `s3:ListBucket` on only the video bucket restored the intended
+distinction without granting broader object access. The infrastructure test
+now protects that least-privilege requirement.
 
 ## Other DanceVault Topics To Revisit
 

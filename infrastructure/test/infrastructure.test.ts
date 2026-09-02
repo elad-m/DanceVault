@@ -375,6 +375,16 @@ test("creates the development backend Lambda", () => {
             ],
           },
         }),
+        Match.objectLike({
+          Effect: "Allow",
+          Action: "s3:ListBucket",
+          Resource: {
+            "Fn::GetAtt": [
+              Match.stringLikeRegexp("VideoBucket"),
+              "Arn",
+            ],
+          },
+        }),
       ]),
     },
   });

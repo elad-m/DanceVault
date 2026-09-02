@@ -1007,6 +1007,16 @@ export class InfrastructureStack extends cdk.Stack {
       }),
     );
 
+    // S3 returns 403 instead of 404 for a missing object unless the caller can
+    // list the bucket. Thumbnail existence checks need to distinguish missing
+    // objects from genuine authorization failures.
+    backendFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["s3:ListBucket"],
+        resources: [videoBucket.bucketArn],
+      }),
+    );
+
     const administratorUser = iam.User.fromUserName(
       this,
       'AdministratorUser',
