@@ -1,6 +1,8 @@
 // Contains business rules and application workflows for videos.
 import {
+    createVideoThumbnailStorageKey,
     createVideoStorageKey,
+    maxVideoThumbnailSizeBytes,
     maxVideoUploadSizeBytes,
     type SupportedVideoContentType,
 } from "../domain/video";
@@ -20,6 +22,7 @@ import {
     type VideoDeletionQueue,
 } from "../jobs/videoDeletionQueue";
 import {
+    createLegacySegmentThumbnailStorageKey,
     createSegmentThumbnailStorageKey,
 } from "../domain/segment";
 
@@ -223,6 +226,172 @@ export async function createVideoPlaybackUrl({
     };
 }
 
+type VideoThumbnailStorageInput = VideoStorageOperationInput & {
+    videoDataAccess: VideoDataAccess;
+};
+
+type VideoThumbnailAccessFailure =
+    | {
+        kind: "not_found";
+    }
+    | {
+        kind: "invalid_upload_state";
+    }
+    | {
+        kind: "not_ready";
+    };
+
+export type InitializeVideoThumbnailUploadResult =
+    | VideoThumbnailAccessFailure
+    | {
+        kind: "upload_ready";
+        uploadUrl: string;
+        expiresInSeconds: number;
+    };
+
+export async function initializeVideoThumbnailUpload(
+    input: VideoThumbnailStorageInput
+): Promise<InitializeVideoThumbnailUploadResult> {
+    const video = await input.videoDataAccess.getVideoByID({
+        videoID: input.videoId,
+        userID: input.userId,
+    });
+
+    if (!video) {
+        return { kind: "not_found" };
+    }
+
+    if (video.storageProvider !== input.videoStorageProvider.name) {
+        return { kind: "invalid_upload_state" };
+    }
+
+    if (video.status !== "ready") {
+        return { kind: "not_ready" };
+    }
+
+    const storageKey = createVideoThumbnailStorageKey({
+        userId: input.userId,
+        videoId: video.id,
+    });
+    const uploadUrl =
+        await input.videoStorageProvider
+            .createVideoThumbnailUploadUrl(storageKey);
+
+    return {
+        kind: "upload_ready",
+        uploadUrl,
+        expiresInSeconds: videoUrlExpirationSeconds,
+    };
+}
+
+export type CompleteVideoThumbnailUploadResult =
+    | VideoThumbnailAccessFailure
+    | {
+        kind: "upload_object_missing";
+    }
+    | {
+        kind: "upload_too_large";
+    }
+    | {
+        kind: "ready";
+    };
+
+export async function completeVideoThumbnailUpload(
+    input: VideoThumbnailStorageInput
+): Promise<CompleteVideoThumbnailUploadResult> {
+    const video = await input.videoDataAccess.getVideoByID({
+        videoID: input.videoId,
+        userID: input.userId,
+    });
+
+    if (!video) {
+        return { kind: "not_found" };
+    }
+
+    if (video.storageProvider !== input.videoStorageProvider.name) {
+        return { kind: "invalid_upload_state" };
+    }
+
+    if (video.status !== "ready") {
+        return { kind: "not_ready" };
+    }
+
+    const storageKey = createVideoThumbnailStorageKey({
+        userId: input.userId,
+        videoId: video.id,
+    });
+    const objectSizeBytes =
+        await input.videoStorageProvider
+            .getVideoThumbnailObjectSizeBytes(storageKey);
+
+    if (objectSizeBytes === null) {
+        return { kind: "upload_object_missing" };
+    }
+
+    if (objectSizeBytes > maxVideoThumbnailSizeBytes) {
+        await input.videoStorageProvider
+            .deleteVideoThumbnailObject(storageKey);
+
+        return { kind: "upload_too_large" };
+    }
+
+    return { kind: "ready" };
+}
+
+export type GetVideoThumbnailPlaybackUrlResult =
+    | VideoThumbnailAccessFailure
+    | {
+        kind: "thumbnail_missing";
+    }
+    | {
+        kind: "ready";
+        playbackUrl: string;
+        expiresInSeconds: number;
+    };
+
+export async function getVideoThumbnailPlaybackUrl(
+    input: VideoThumbnailStorageInput
+): Promise<GetVideoThumbnailPlaybackUrlResult> {
+    const video = await input.videoDataAccess.getVideoByID({
+        videoID: input.videoId,
+        userID: input.userId,
+    });
+
+    if (!video) {
+        return { kind: "not_found" };
+    }
+
+    if (video.storageProvider !== input.videoStorageProvider.name) {
+        return { kind: "invalid_upload_state" };
+    }
+
+    if (video.status !== "ready") {
+        return { kind: "not_ready" };
+    }
+
+    const storageKey = createVideoThumbnailStorageKey({
+        userId: input.userId,
+        videoId: video.id,
+    });
+    const objectSizeBytes =
+        await input.videoStorageProvider
+            .getVideoThumbnailObjectSizeBytes(storageKey);
+
+    if (objectSizeBytes === null) {
+        return { kind: "thumbnail_missing" };
+    }
+
+    const playbackUrl =
+        await input.videoStorageProvider
+            .createVideoThumbnailPlaybackUrl(storageKey);
+
+    return {
+        kind: "ready",
+        playbackUrl,
+        expiresInSeconds: videoUrlExpirationSeconds,
+    };
+}
+
 type RequestVideoDeletionInput = VideoScope & {
     videoDataAccess: VideoDataAccess;
     videoDeletionQueue: VideoDeletionQueue;
@@ -316,6 +485,16 @@ export async function executeVideoDeletion({
         video.storageKey
     );
 
+    const videoThumbnailStorageKey =
+        createVideoThumbnailStorageKey({
+            userId,
+            videoId: video.id,
+        });
+
+    await videoStorageProvider.deleteVideoThumbnailObject(
+        videoThumbnailStorageKey
+    );
+
     const segments =
         await segmentDataAccess.listSegmentsByVideo({
             videoID: video.id,
@@ -332,6 +511,17 @@ export async function executeVideoDeletion({
         await videoStorageProvider
             .deleteSegmentThumbnailObject(
                 thumbnailStorageKey
+            );
+
+        const legacyThumbnailStorageKey =
+            createLegacySegmentThumbnailStorageKey({
+                userId,
+                segmentId: segment.id,
+            });
+
+        await videoStorageProvider
+            .deleteSegmentThumbnailObject(
+                legacyThumbnailStorageKey
             );
 
         await segmentDataAccess.deleteSegment({

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    createLegacySegmentThumbnailStorageKey,
     createSegmentThumbnailStorageKey,
     maxSegmentThumbnailSizeBytes,
     segmentThumbnailContentType,
@@ -9,6 +10,17 @@ describe("segment thumbnail storage contract", () => {
     it("creates a user-scoped JPEG storage key", () => {
         expect(
             createSegmentThumbnailStorageKey({
+                userId: "user/with/slashes",
+                segmentId: "segment-1",
+            })
+        ).toBe(
+            "users/user%2Fwith%2Fslashes/thumbnails/segments/segment-1.jpg"
+        );
+    });
+
+    it("retains the legacy key while stored thumbnails are migrated", () => {
+        expect(
+            createLegacySegmentThumbnailStorageKey({
                 userId: "user/with/slashes",
                 segmentId: "segment-1",
             })

@@ -68,9 +68,15 @@ type DeleteSegmentThumbnailObject = (
     storageKey: string
 ) => Promise<void>;
 
+type DeleteVideoThumbnailObject = (
+    storageKey: string
+) => Promise<void>;
+
 function createFakeVideoStorageProvider(
     deleteVideoObject: DeleteVideoObject = async () => { },
     deleteSegmentThumbnailObject: DeleteSegmentThumbnailObject =
+        async () => { },
+    deleteVideoThumbnailObject: DeleteVideoThumbnailObject =
         async () => { }
 ): VideoStorageProvider {
     return {
@@ -91,6 +97,20 @@ function createFakeVideoStorageProvider(
             throw new Error("Not used by deletion tests");
         },
 
+        async createVideoThumbnailUploadUrl() {
+            throw new Error("Not used by deletion tests");
+        },
+
+        async createVideoThumbnailPlaybackUrl() {
+            throw new Error("Not used by deletion tests");
+        },
+
+        async getVideoThumbnailObjectSizeBytes() {
+            throw new Error("Not used by deletion tests");
+        },
+
+        deleteVideoThumbnailObject,
+
         async createSegmentThumbnailUploadUrl() {
             throw new Error("Not used by deletion tests");
         },
@@ -100,6 +120,10 @@ function createFakeVideoStorageProvider(
         },
 
         async getSegmentThumbnailObjectSizeBytes() {
+            throw new Error("Not used by deletion tests");
+        },
+
+        async moveSegmentThumbnailObject() {
             throw new Error("Not used by deletion tests");
         },
 
@@ -267,12 +291,16 @@ describe("executeVideoDeletion", () => {
         );
     });
 
-    it("deletes every segment thumbnail during video deletion", async () => {
-        const deletedThumbnailStorageKeys: string[] = [];
+    it("deletes the video and every segment thumbnail", async () => {
+        const deletedSegmentThumbnailStorageKeys: string[] = [];
+        const deletedVideoThumbnailStorageKeys: string[] = [];
         const videoStorageProvider = createFakeVideoStorageProvider(
             undefined,
             async (storageKey) => {
-                deletedThumbnailStorageKeys.push(storageKey);
+                deletedSegmentThumbnailStorageKeys.push(storageKey);
+            },
+            async (storageKey) => {
+                deletedVideoThumbnailStorageKeys.push(storageKey);
             }
         );
 
@@ -292,9 +320,15 @@ describe("executeVideoDeletion", () => {
         await expectTestUserQuotaUsage(
             emptyTestUserQuotaUsage
         );
-        expect(deletedThumbnailStorageKeys).toEqual([
+        expect(deletedVideoThumbnailStorageKeys).toEqual([
+            "users/test-user-1/thumbnails/videos/sample-video-1.jpg",
+        ]);
+        expect(deletedSegmentThumbnailStorageKeys).toEqual([
+            "users/test-user-1/thumbnails/segments/sample-segment-1.jpg",
             "users/test-user-1/thumbnails/sample-segment-1.jpg",
+            "users/test-user-1/thumbnails/segments/sample-segment-2.jpg",
             "users/test-user-1/thumbnails/sample-segment-2.jpg",
+            "users/test-user-1/thumbnails/segments/sample-segment-3.jpg",
             "users/test-user-1/thumbnails/sample-segment-3.jpg",
         ]);
     });

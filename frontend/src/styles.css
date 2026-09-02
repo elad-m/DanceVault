@@ -27,7 +27,7 @@ button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .52; }
 
 .app-shell { display: grid; grid-template-columns: 286px minmax(0, 1fr); min-height: 100vh; }
-.sidebar { background: var(--brand-black); color: #fff; padding: 22px 14px; border-right: 1px solid #2c2c28; overflow: visible; }
+.sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: var(--brand-black); color: #fff; padding: 22px 14px; border-right: 1px solid #2c2c28; overflow: hidden; }
 .brand-row { display: flex; align-items: center; gap: 11px; padding: 2px 6px 22px; }
 .brand-copy { min-width: 0; display: grid; gap: 1px; flex: 1; }
 .brand-row strong { font-size: 17px; font-weight: 650; }
@@ -49,11 +49,18 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .view-navigation button:hover { background: #24272b; color: white; }
 .view-navigation button.active { background: #292924; color: var(--brand-yellow); box-shadow: inset 3px 0 var(--brand-yellow); }
 .section-label { display: flex; justify-content: space-between; color: #858b92; font-size: 10px; font-weight: 650; text-transform: uppercase; padding: 0 8px 8px; }
-.video-list { display: grid; gap: 3px; }
-.video-list-item { width: 100%; display: grid; grid-template-columns: 32px minmax(0, 1fr) 8px; align-items: center; gap: 9px; border: 0; border-radius: 6px; padding: 10px 9px; color: #d3d6da; background: transparent; text-align: left; }
+.video-library { min-height: 0; display: flex; flex: 1; flex-direction: column; }
+.video-list { min-height: 0; display: grid; align-content: start; gap: 4px; overflow-y: auto; scrollbar-gutter: stable; }
+.video-list-item { width: 100%; min-height: 62px; display: grid; grid-template-columns: minmax(0, 1fr) 32px; align-items: stretch; border-radius: 6px; color: #d3d6da; background: transparent; }
 .video-list-item:hover { background: #24272b; }
 .video-list-item.selected { background: #2c3034; color: white; }
-.video-icon { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid #3b4045; border-radius: 6px; }
+.video-list-select { min-width: 0; display: grid; grid-template-columns: 72px minmax(0, 1fr) 8px; align-items: center; gap: 10px; border: 0; padding: 9px 7px; color: inherit; background: transparent; text-align: left; }
+.video-row-action { width: 32px; min-height: 32px; display: grid; place-items: center; align-self: center; border: 0; border-radius: 4px; color: var(--text-muted); background: transparent; }
+.video-row-action:hover { color: var(--brand-yellow); background: #4a4518; }
+.video-title-form { grid-column: 1 / -1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 32px 32px; align-items: center; gap: 5px; padding: 9px 7px; }
+.video-title-form input { min-width: 0; padding: 7px 8px; font-size: 13px; }
+.video-thumbnail { width: 72px; aspect-ratio: 16 / 9; display: grid; place-items: center; overflow: hidden; border: 1px solid #3b4045; border-radius: 4px; background: #050505; }
+.video-thumbnail img { width: 100%; height: 100%; object-fit: contain; }
 .video-list-copy { min-width: 0; display: grid; gap: 3px; }
 .video-list-copy strong, .video-list-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .video-list-copy strong { font-size: 13px; }
@@ -224,6 +231,7 @@ textarea { resize: vertical; }
     .app-shell { display: block; }
     .sidebar {
         position: static;
+        height: auto;
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
@@ -258,11 +266,12 @@ textarea { resize: vertical; }
         font-size: 12px;
     }
     .view-navigation button.active { box-shadow: inset 0 -3px var(--brand-yellow); }
-    .section-label { grid-column: 1 / -1; padding: 2px 4px 0; }
-    .video-list { display: flex; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
-    .video-list { grid-column: 1 / -1; margin: 0 -12px; padding: 0 12px 4px; }
-    .video-list::-webkit-scrollbar { display: none; }
-    .video-list-item { min-width: min(230px, calc(100vw - 36px)); min-height: 52px; }
+    .video-library { grid-column: 1 / -1; max-height: min(360px, 42vh); margin: 0 -4px; }
+    .section-label { padding: 2px 8px 7px; }
+    .video-list { padding: 0 4px 4px; }
+    .video-list-item { min-height: 64px; }
+    .video-list-select { grid-template-columns: 80px minmax(0, 1fr) 8px; padding: 9px 7px; }
+    .video-thumbnail { width: 80px; }
     .workspace { padding: 16px 12px 28px; }
     .practice-workspace { padding: 16px 12px 28px; }
     .workspace-header, .practice-header { align-items: flex-start; margin-bottom: 14px; }

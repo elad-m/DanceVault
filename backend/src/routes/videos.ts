@@ -6,13 +6,18 @@ import type {
 import { ApiErrorCode, sendApiError } from "../httpErrors";
 import {
     completeVideoUpload,
+    completeVideoThumbnailUpload,
     createVideoPlaybackUrl,
+    getVideoThumbnailPlaybackUrl,
+    initializeVideoThumbnailUpload,
     requestVideoDeletion,
     initializeVideoUpload,
 } from "../services/videoService";
 import {
+    maxVideoThumbnailSizeBytes,
     maxVideoUploadSizeBytes,
     supportedVideoContentTypeSchema,
+    videoThumbnailContentType,
     type SupportedVideoContentType,
 } from "../domain/video";
 import {
@@ -42,6 +47,12 @@ type VideoParams = {
 type UpdateVideoRequest = VideoParams & {
     Body: {
         title?: string;
+    };
+};
+
+type CreateVideoThumbnailUploadRequest = VideoParams & {
+    Body: {
+        fileSizeBytes: number;
     };
 };
 
@@ -113,6 +124,23 @@ const updateVideoRouteOptions = {
             minProperties: 1,
             properties: {
                 title: videoProperties.title,
+            },
+        },
+    },
+} as const;
+
+const createVideoThumbnailUploadRouteOptions = {
+    schema: {
+        body: {
+            type: "object",
+            additionalProperties: false,
+            required: ["fileSizeBytes"],
+            properties: {
+                fileSizeBytes: {
+                    type: "integer",
+                    minimum: 1,
+                    maximum: maxVideoThumbnailSizeBytes,
+                },
             },
         },
     },
@@ -378,6 +406,145 @@ async function getVideoPlaybackUrlHandler(
     };
 }
 
+async function initializeVideoThumbnailUploadHandler(
+    request: FastifyRequest<CreateVideoThumbnailUploadRequest>,
+    reply: FastifyReply,
+    videoStorageProvider: VideoStorageProvider,
+    videoDataAccess: VideoDataAccess
+) {
+    const result = await initializeVideoThumbnailUpload({
+        userId: request.userId,
+        videoId: request.params.videoId,
+        videoStorageProvider,
+        videoDataAccess,
+    });
+
+    if (result.kind === "not_found") {
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.VideoNotFound,
+        });
+    }
+
+    if (result.kind === "invalid_upload_state") {
+        return sendApiError(reply, {
+            statusCode: 409,
+            code: ApiErrorCode.InvalidVideoUploadState,
+        });
+    }
+
+    if (result.kind === "not_ready") {
+        return sendApiError(reply, {
+            statusCode: 409,
+            code: ApiErrorCode.VideoNotReady,
+        });
+    }
+
+    return {
+        uploadUrl: result.uploadUrl,
+        contentType: videoThumbnailContentType,
+        expiresInSeconds: result.expiresInSeconds,
+    };
+}
+
+async function completeVideoThumbnailUploadHandler(
+    request: FastifyRequest<VideoParams>,
+    reply: FastifyReply,
+    videoStorageProvider: VideoStorageProvider,
+    videoDataAccess: VideoDataAccess
+) {
+    const result = await completeVideoThumbnailUpload({
+        userId: request.userId,
+        videoId: request.params.videoId,
+        videoStorageProvider,
+        videoDataAccess,
+    });
+
+    if (result.kind === "not_found") {
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.VideoNotFound,
+        });
+    }
+
+    if (result.kind === "invalid_upload_state") {
+        return sendApiError(reply, {
+            statusCode: 409,
+            code: ApiErrorCode.InvalidVideoUploadState,
+        });
+    }
+
+    if (result.kind === "not_ready") {
+        return sendApiError(reply, {
+            statusCode: 409,
+            code: ApiErrorCode.VideoNotReady,
+        });
+    }
+
+    if (result.kind === "upload_object_missing") {
+        return sendApiError(reply, {
+            statusCode: 409,
+            code: ApiErrorCode.VideoThumbnailUploadNotFound,
+        });
+    }
+
+    if (result.kind === "upload_too_large") {
+        return sendApiError(reply, {
+            statusCode: 413,
+            code: ApiErrorCode.VideoThumbnailUploadTooLarge,
+        });
+    }
+
+    return reply.status(204).send();
+}
+
+async function getVideoThumbnailPlaybackUrlHandler(
+    request: FastifyRequest<VideoParams>,
+    reply: FastifyReply,
+    videoStorageProvider: VideoStorageProvider,
+    videoDataAccess: VideoDataAccess
+) {
+    const result = await getVideoThumbnailPlaybackUrl({
+        userId: request.userId,
+        videoId: request.params.videoId,
+        videoStorageProvider,
+        videoDataAccess,
+    });
+
+    if (result.kind === "not_found") {
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.VideoNotFound,
+        });
+    }
+
+    if (result.kind === "invalid_upload_state") {
+        return sendApiError(reply, {
+            statusCode: 409,
+            code: ApiErrorCode.InvalidVideoUploadState,
+        });
+    }
+
+    if (result.kind === "not_ready") {
+        return sendApiError(reply, {
+            statusCode: 409,
+            code: ApiErrorCode.VideoNotReady,
+        });
+    }
+
+    if (result.kind === "thumbnail_missing") {
+        return sendApiError(reply, {
+            statusCode: 404,
+            code: ApiErrorCode.VideoThumbnailNotFound,
+        });
+    }
+
+    return {
+        playbackUrl: result.playbackUrl,
+        expiresInSeconds: result.expiresInSeconds,
+    };
+}
+
 async function listVideosHandler(
     request: FastifyRequest,
     videoDataAccess: VideoDataAccess
@@ -533,6 +700,37 @@ export function registerVideoRoutes(
         "/videos/:videoId/playback-url",
         (request, reply) =>
             getVideoPlaybackUrlHandler(
+                request,
+                reply,
+                videoStorageProvider,
+                videoDataAccess
+            )
+    );
+    app.post<CreateVideoThumbnailUploadRequest>(
+        "/videos/:videoId/thumbnail-upload",
+        createVideoThumbnailUploadRouteOptions,
+        (request, reply) =>
+            initializeVideoThumbnailUploadHandler(
+                request,
+                reply,
+                videoStorageProvider,
+                videoDataAccess
+            )
+    );
+    app.post<VideoParams>(
+        "/videos/:videoId/thumbnail-upload/complete",
+        (request, reply) =>
+            completeVideoThumbnailUploadHandler(
+                request,
+                reply,
+                videoStorageProvider,
+                videoDataAccess
+            )
+    );
+    app.get<VideoParams>(
+        "/videos/:videoId/thumbnail-playback-url",
+        (request, reply) =>
+            getVideoThumbnailPlaybackUrlHandler(
                 request,
                 reply,
                 videoStorageProvider,

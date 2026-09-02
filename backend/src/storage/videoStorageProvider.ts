@@ -1,6 +1,7 @@
 // "S3" here means the S3-compatible storage protocol used by both AWS S3 and MinIO,
 // not specifically the AWS S3 service.
 import {
+    CopyObjectCommand,
     DeleteObjectCommand,
     GetObjectCommand,
     HeadObjectCommand,
@@ -18,6 +19,7 @@ import type {
     SupportedVideoContentType,
     VideoStorageProviderName,
 } from "../domain/video";
+import { videoThumbnailContentType } from "../domain/video";
 import { segmentThumbnailContentType } from "../domain/segment";
 
 export type VideoStorageProvider = {
@@ -33,10 +35,20 @@ export type VideoStorageProvider = {
     deleteVideoObject(storageKey: string): Promise<void>;
     listVideoObjectKeys(): Promise<string[]>;
 
+    // Video thumbnail storage operations
+    createVideoThumbnailUploadUrl(storageKey: string): Promise<string>;
+    createVideoThumbnailPlaybackUrl(storageKey: string): Promise<string>;
+    getVideoThumbnailObjectSizeBytes(storageKey: string): Promise<number | null>;
+    deleteVideoThumbnailObject(storageKey: string): Promise<void>;
+
     // Segment thumbnail storage operations
     createSegmentThumbnailUploadUrl(storageKey: string): Promise<string>;
     createSegmentThumbnailPlaybackUrl(storageKey: string): Promise<string>;
     getSegmentThumbnailObjectSizeBytes(storageKey: string): Promise<number | null>;
+    moveSegmentThumbnailObject(
+        sourceStorageKey: string,
+        destinationStorageKey: string
+    ): Promise<void>;
     deleteSegmentThumbnailObject(storageKey: string): Promise<void>;
 
     close(): void;
@@ -152,6 +164,74 @@ export function createVideoStorageProvider(
             return storageKeys.sort();
         },
 
+        async createVideoThumbnailUploadUrl(
+            storageKey: string
+        ): Promise<string> {
+            const command = new PutObjectCommand({
+                Bucket: bucketName,
+                Key: storageKey,
+                ContentType: videoThumbnailContentType,
+            });
+
+            return getSignedUrl(client, command, {
+                expiresIn: videoUrlExpirationSeconds,
+            });
+        },
+
+        async createVideoThumbnailPlaybackUrl(
+            storageKey: string
+        ): Promise<string> {
+            const command = new GetObjectCommand({
+                Bucket: bucketName,
+                Key: storageKey,
+            });
+
+            return getSignedUrl(client, command, {
+                expiresIn: videoUrlExpirationSeconds,
+            });
+        },
+
+        async getVideoThumbnailObjectSizeBytes(
+            storageKey: string
+        ): Promise<number | null> {
+            const command = new HeadObjectCommand({
+                Bucket: bucketName,
+                Key: storageKey,
+            });
+
+            try {
+                const response = await client.send(command);
+
+                if (response.ContentLength === undefined) {
+                    throw new Error(
+                        "Video thumbnail storage did not return an object size"
+                    );
+                }
+
+                return response.ContentLength;
+            } catch (error: unknown) {
+                if (
+                    error instanceof S3ServiceException &&
+                    error.$metadata.httpStatusCode === 404
+                ) {
+                    return null;
+                }
+
+                throw error;
+            }
+        },
+
+        async deleteVideoThumbnailObject(
+            storageKey: string
+        ): Promise<void> {
+            const command = new DeleteObjectCommand({
+                Bucket: bucketName,
+                Key: storageKey,
+            });
+
+            await client.send(command);
+        },
+
         async createSegmentThumbnailUploadUrl(
             storageKey: string
         ): Promise<string> {
@@ -218,6 +298,35 @@ export function createVideoStorageProvider(
             });
 
             await client.send(command);
+        },
+
+        async moveSegmentThumbnailObject(
+            sourceStorageKey: string,
+            destinationStorageKey: string
+        ): Promise<void> {
+            const encodedCopySource = [
+                bucketName,
+                ...sourceStorageKey.split("/"),
+            ]
+                .map(encodeURIComponent)
+                .join("/");
+
+            await client.send(
+                new CopyObjectCommand({
+                    Bucket: bucketName,
+                    CopySource: encodedCopySource,
+                    Key: destinationStorageKey,
+                    ContentType: segmentThumbnailContentType,
+                    MetadataDirective: "REPLACE",
+                })
+            );
+
+            await client.send(
+                new DeleteObjectCommand({
+                    Bucket: bucketName,
+                    Key: sourceStorageKey,
+                })
+            );
         },
 
         close(): void {

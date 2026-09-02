@@ -2,12 +2,15 @@ import type {
     CreateSegmentInput,
     Segment,
     UpdateSegmentInput,
+    UpdateVideoInput,
     Video,
 } from "./types";
 import { addAuthenticationHeaders } from "./auth/authentication";
 import { runtime } from "./runtime";
 
 const maxVideoUploadSizeBytes: number = 500_000_000;
+const maxVideoThumbnailSizeBytes = 250_000;
+const videoThumbnailContentType = "image/jpeg";
 const maxSegmentThumbnailSizeBytes = 250_000;
 const segmentThumbnailContentType = "image/jpeg";
 
@@ -31,9 +34,21 @@ function getVideoContentType(fileName: string): SupportedVideoContentType {
 
 type ApiErrorBody = {
     error?: {
+        code?: string;
         message?: string;
     };
 };
+
+class ApiRequestError extends Error {
+    constructor(
+        message: string,
+        readonly statusCode: number,
+        readonly code?: string
+    ) {
+        super(message);
+        this.name = "ApiRequestError";
+    }
+}
 
 async function requestJson<T>(
     path: string,
@@ -53,7 +68,11 @@ async function requestJson<T>(
 
     if (!response.ok) {
         const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
-        throw new Error(body.error?.message ?? `Request failed (${response.status})`);
+        throw new ApiRequestError(
+            body.error?.message ?? `Request failed (${response.status})`,
+            response.status,
+            body.error?.code
+        );
     }
 
     if (response.status === 204) {
@@ -71,6 +90,16 @@ export async function listVideos(): Promise<Video[]> {
 export async function deleteVideo(videoId: string): Promise<void> {
     return requestJson<void>(`/videos/${videoId}`, {
         method: "DELETE",
+    });
+}
+
+export async function updateVideo(
+    videoId: string,
+    input: UpdateVideoInput
+): Promise<Video> {
+    return requestJson<Video>(`/videos/${videoId}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
     });
 }
 
@@ -203,6 +232,78 @@ export async function getSegmentThumbnailPlaybackUrl(
     );
 
     return response.playbackUrl;
+}
+
+export async function uploadVideoThumbnail(
+    videoId: string,
+    thumbnail: Blob
+): Promise<void> {
+    if (thumbnail.type !== videoThumbnailContentType) {
+        throw new Error("Video thumbnails must be JPEG images");
+    }
+
+    if (thumbnail.size === 0) {
+        throw new Error("The video thumbnail is empty");
+    }
+
+    if (thumbnail.size > maxVideoThumbnailSizeBytes) {
+        throw new Error("Video thumbnails must be 250 KB or smaller");
+    }
+
+    const initialized = await requestJson<{
+        uploadUrl: string;
+        contentType: typeof videoThumbnailContentType;
+        expiresInSeconds: number;
+    }>(`/videos/${videoId}/thumbnail-upload`, {
+        method: "POST",
+        body: JSON.stringify({
+            fileSizeBytes: thumbnail.size,
+        }),
+    });
+
+    const uploadResponse = await fetch(initialized.uploadUrl, {
+        method: "PUT",
+        headers: {
+            "content-type": initialized.contentType,
+        },
+        body: thumbnail,
+    });
+
+    if (!uploadResponse.ok) {
+        throw new Error(
+            `Video thumbnail upload failed (${uploadResponse.status})`
+        );
+    }
+
+    await requestJson<void>(
+        `/videos/${videoId}/thumbnail-upload/complete`,
+        {
+            method: "POST",
+        }
+    );
+}
+
+export async function getVideoThumbnailPlaybackUrl(
+    videoId: string
+): Promise<string | null> {
+    try {
+        const response = await requestJson<{
+            playbackUrl: string;
+            expiresInSeconds: number;
+        }>(`/videos/${videoId}/thumbnail-playback-url`);
+
+        return response.playbackUrl;
+    } catch (caught) {
+        if (
+            caught instanceof ApiRequestError &&
+            caught.statusCode === 404 &&
+            caught.code === "VIDEO_THUMBNAIL_NOT_FOUND"
+        ) {
+            return null;
+        }
+
+        throw caught;
+    }
 }
 
 export async function uploadVideo(

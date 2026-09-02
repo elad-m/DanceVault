@@ -21,6 +21,11 @@ export const ApiErrorCode = {
     PendingVideoUploadQuotaExceeded:
         "PENDING_VIDEO_UPLOAD_QUOTA_EXCEEDED",
     VideoDeleting: "VIDEO_DELETING",
+    VideoThumbnailNotFound: "VIDEO_THUMBNAIL_NOT_FOUND",
+    VideoThumbnailUploadNotFound:
+        "VIDEO_THUMBNAIL_UPLOAD_NOT_FOUND",
+    VideoThumbnailUploadTooLarge:
+        "VIDEO_THUMBNAIL_UPLOAD_TOO_LARGE",
     SegmentThumbnailNotFound: "SEGMENT_THUMBNAIL_NOT_FOUND",
     SegmentThumbnailUploadNotFound:
         "SEGMENT_THUMBNAIL_UPLOAD_NOT_FOUND",
@@ -58,6 +63,12 @@ export const ApiErrorMessage: ApiErrorMessageMap = {
     [ApiErrorCode.PendingVideoUploadQuotaExceeded]:
         "Too many video uploads are currently pending",
     [ApiErrorCode.VideoDeleting]: "Video is being deleted",
+    [ApiErrorCode.VideoThumbnailNotFound]:
+        "Video thumbnail was not found",
+    [ApiErrorCode.VideoThumbnailUploadNotFound]:
+        "Uploaded video thumbnail was not found",
+    [ApiErrorCode.VideoThumbnailUploadTooLarge]:
+        "Video thumbnail exceeds the upload-size limit",
     [ApiErrorCode.SegmentThumbnailNotFound]:
         "Segment thumbnail was not found",
     [ApiErrorCode.SegmentThumbnailUploadNotFound]:

@@ -2,9 +2,9 @@
 
 ## Current Product Work
 
-1. Redesign **All videos** as a vertical, thumbnail-led list that scales to
-   larger libraries, and expose the existing video-title editing capability in
-   that view.
+1. **Done:** Redesign **All videos** as a vertical, thumbnail-led list that
+   scales to larger libraries, and expose the existing video-title editing
+   capability in that view.
 2. Replace the implicit practice-queue ordering rules with a clear user choice.
    First decide between selectable priority/confidence sorting and persistent
    manual ordering. Manual ordering should store queue membership and an order
@@ -193,7 +193,7 @@
     extension as selected text. Preserve a title the user has already edited.
 11. Replace the technical name "Practice queue" with a clearer user-facing
     name. Keep the current wording until a final choice is made.
-12. Redesign **All videos** as a vertical list with persistent video
+12. **Done:** Redesign **All videos** as a vertical list with persistent video
     thumbnails and inline title editing.
 13. Replace the current practice ordering formula with either explicit
     priority/confidence sort controls or persistent drag-and-drop manual order.
@@ -220,9 +220,16 @@
 
 - **Done:** Generate a thumbnail at the segment start time in the browser.
 - **Done:** Store it under an S3 key such as
-  `users/{userID}/thumbnails/{segmentID}.jpg`.
+  `users/{userID}/thumbnails/segments/{segmentID}.jpg`.
 - **Done:** Derive the deterministic thumbnail key from the segment ID and
   persist the image in MinIO or AWS S3 without adding another database field.
+- **Done:** Generate and persist video thumbnails under
+  `users/{userID}/thumbnails/videos/{videoID}.jpg`, repair thumbnails lazily for
+  existing videos, and limit browser repair work to visible video rows with two
+  concurrent requests.
+- **Done:** Lazily move legacy segment thumbnails from `thumbnails/{segmentID}`
+  to `thumbnails/segments/{segmentID}` when they are first requested, while
+  deletion cleans up both locations during the migration period.
 - Generate thumbnails asynchronously through a media-processing pipeline only
   if browser capture proves insufficient for future formats or workflows.
 
@@ -266,5 +273,8 @@
 - When adding the `prod` environment, remove the hardcoded `"dev"` value from
   DynamoDB video mapping. The persistence selector should provide the active
   runtime environment when it creates the DynamoDB data-access implementation.
+- After auditing storage to confirm no segment thumbnails remain under the
+  legacy `thumbnails/{segmentID}` path, remove the lazy migration and dual-path
+  deletion compatibility code.
 - Automated deployment, a production environment, a custom domain, and a
   broader backup strategy remain deferred.

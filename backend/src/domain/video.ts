@@ -11,6 +11,10 @@ export type SupportedVideoContentType =
     | "video/quicktime";
 export const maxVideoUploadSizeBytes: number = 500_000_000;
 
+export const videoThumbnailContentType = "image/jpeg" as const;
+
+export const maxVideoThumbnailSizeBytes = 250_000;
+
 export const supportedVideoContentTypeSchema = {
     type: "string",
     enum: ["video/mp4", "video/quicktime"],
@@ -40,4 +44,18 @@ export function createVideoStorageKey({
         videoFileExtensionByContentType[contentType];
 
     return `users/${safeUserId}/videos/${uploadId}${fileExtension}`;
+}
+
+type CreateVideoThumbnailStorageKeyInput = {
+    userId: string;
+    videoId: string;
+};
+
+export function createVideoThumbnailStorageKey({
+    userId,
+    videoId,
+}: CreateVideoThumbnailStorageKeyInput): string {
+    const safeUserId = encodeURIComponent(userId);
+
+    return `users/${safeUserId}/thumbnails/videos/${videoId}.jpg`;
 }

@@ -71,7 +71,7 @@ describe("S3 video storage integration", () => {
 
     it("uploads, downloads, and deletes a segment thumbnail", async () => {
         const storageKey =
-            `integration-tests/thumbnails/${randomUUID()}.jpg`;
+            `integration-tests/thumbnails/segments/${randomUUID()}.jpg`;
         const thumbnailBytes = new TextEncoder().encode(
             "DanceVault thumbnail integration test"
         );
@@ -123,6 +123,116 @@ describe("S3 video storage integration", () => {
             ).toBeNull();
         } finally {
             await videoStorageProvider.deleteSegmentThumbnailObject(
+                storageKey
+            );
+        }
+    });
+
+    it("moves a legacy segment thumbnail to the current directory", async () => {
+        const segmentId = randomUUID();
+        const legacyStorageKey =
+            `integration-tests/thumbnails/${segmentId}.jpg`;
+        const currentStorageKey =
+            `integration-tests/thumbnails/segments/${segmentId}.jpg`;
+        const thumbnailBytes = new TextEncoder().encode(
+            "DanceVault legacy thumbnail migration test"
+        );
+
+        try {
+            const uploadUrl =
+                await videoStorageProvider
+                    .createSegmentThumbnailUploadUrl(
+                        legacyStorageKey
+                    );
+            const uploadResponse = await fetch(uploadUrl, {
+                method: "PUT",
+                headers: {
+                    "content-type": "image/jpeg",
+                },
+                body: thumbnailBytes,
+            });
+            expect(uploadResponse.status).toBe(200);
+
+            await videoStorageProvider
+                .moveSegmentThumbnailObject(
+                    legacyStorageKey,
+                    currentStorageKey
+                );
+
+            expect(
+                await videoStorageProvider
+                    .getSegmentThumbnailObjectSizeBytes(
+                        legacyStorageKey
+                    )
+            ).toBeNull();
+            expect(
+                await videoStorageProvider
+                    .getSegmentThumbnailObjectSizeBytes(
+                        currentStorageKey
+                    )
+            ).toBe(thumbnailBytes.byteLength);
+        } finally {
+            await videoStorageProvider
+                .deleteSegmentThumbnailObject(legacyStorageKey);
+            await videoStorageProvider
+                .deleteSegmentThumbnailObject(currentStorageKey);
+        }
+    });
+
+    it("uploads, downloads, and deletes a video thumbnail", async () => {
+        const storageKey =
+            `integration-tests/thumbnails/videos/${randomUUID()}.jpg`;
+        const thumbnailBytes = new TextEncoder().encode(
+            "DanceVault video thumbnail integration test"
+        );
+
+        try {
+            expect(
+                await videoStorageProvider
+                    .getVideoThumbnailObjectSizeBytes(storageKey)
+            ).toBeNull();
+
+            const uploadUrl =
+                await videoStorageProvider
+                    .createVideoThumbnailUploadUrl(storageKey);
+
+            const uploadResponse = await fetch(uploadUrl, {
+                method: "PUT",
+                headers: {
+                    "content-type": "image/jpeg",
+                },
+                body: thumbnailBytes,
+            });
+
+            expect(uploadResponse.status).toBe(200);
+            expect(
+                await videoStorageProvider
+                    .getVideoThumbnailObjectSizeBytes(storageKey)
+            ).toBe(thumbnailBytes.byteLength);
+
+            const playbackUrl =
+                await videoStorageProvider
+                    .createVideoThumbnailPlaybackUrl(storageKey);
+
+            const playbackResponse = await fetch(playbackUrl);
+
+            expect(playbackResponse.status).toBe(200);
+            expect(
+                new Uint8Array(
+                    await playbackResponse.arrayBuffer()
+                )
+            ).toEqual(thumbnailBytes);
+
+            await videoStorageProvider.deleteVideoThumbnailObject(
+                storageKey
+            );
+
+            expect(
+                await videoStorageProvider
+                    .getVideoThumbnailObjectSizeBytes(storageKey)
+            ).toBeNull();
+        } finally {
+            await videoStorageProvider.deleteVideoThumbnailObject(
                 storageKey
             );
         }

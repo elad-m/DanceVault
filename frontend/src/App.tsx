@@ -1,6 +1,12 @@
 import { AlertCircle, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { deleteVideo, listVideos, uploadVideo } from "./api";
+import {
+    deleteVideo,
+    listVideos,
+    updateVideo,
+    uploadVideo,
+    uploadVideoThumbnail,
+} from "./api";
 import {
     getSignedInUserLabel,
     signOutUser,
@@ -12,6 +18,7 @@ import { VideoSidebar, type AppView } from "./components/VideoSidebar";
 import { VideoWorkspace } from "./components/VideoWorkspace";
 import { runtime } from "./runtime";
 import type { Segment, Video } from "./types";
+import { captureVideoThumbnail } from "./videoThumbnail";
 
 function getViewForPath(pathname: string): AppView {
     if (pathname.startsWith("/videos")) return "videos";
@@ -101,14 +108,42 @@ export default function App() {
     async function handleUpload(title: string, file: File) {
         setUploading(true);
         setError(null);
+
+        const thumbnailResultPromise = captureVideoThumbnail(file)
+            .then((thumbnail) => ({ thumbnail, error: null }))
+            .catch((caught: unknown) => ({
+                thumbnail: null,
+                error: caught,
+            }));
+
         try {
             const video = await uploadVideo(title, file);
+            const thumbnailResult = await thumbnailResultPromise;
+            let thumbnailWarning: string | null = null;
+
+            try {
+                if (!thumbnailResult.thumbnail) {
+                    throw thumbnailResult.error;
+                }
+
+                await uploadVideoThumbnail(
+                    video.id,
+                    thumbnailResult.thumbnail
+                );
+            } catch (caught) {
+                thumbnailWarning = caught instanceof Error
+                        ? `Video uploaded, but its thumbnail could not be created: ${caught.message}`
+                        : "Video uploaded, but its thumbnail could not be created";
+            }
+
             setVideos((current) => [...current, video]);
             setSelectedVideo(video);
             window.history.pushState({}, "", `/videos/${video.id}`);
             setReturnToView(null);
             setActiveView("videos");
             setUploadOpen(false);
+
+            if (thumbnailWarning) showError(thumbnailWarning);
         } catch (caught) {
             showError(caught instanceof Error ? caught.message : "Could not upload video");
         } finally {
@@ -146,6 +181,36 @@ export default function App() {
             );
         } finally {
             setDeletingVideo(false);
+        }
+    }
+
+    async function handleUpdateVideoTitle(
+        video: Video,
+        title: string
+    ): Promise<boolean> {
+        try {
+            const updatedVideo = await updateVideo(video.id, { title });
+
+            setVideos((current) =>
+                current.map((candidate) =>
+                    candidate.id === updatedVideo.id
+                        ? updatedVideo
+                        : candidate
+                )
+            );
+            setSelectedVideo((current) =>
+                current?.id === updatedVideo.id
+                    ? updatedVideo
+                    : current
+            );
+            return true;
+        } catch (caught) {
+            showError(
+                caught instanceof Error
+                    ? caught.message
+                    : "Could not update video title"
+            );
+            return false;
         }
     }
 
@@ -202,6 +267,7 @@ export default function App() {
                 }}
                 onRefresh={() => void refreshVideos()}
                 onUpload={() => setUploadOpen(true)}
+                onUpdateTitle={handleUpdateVideoTitle}
                 signedInUserLabel={signedInUserLabel}
                 onSignOut={
                     runtime.environment === "dev"

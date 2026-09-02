@@ -14,6 +14,10 @@ export type Video = {
     createdAt: string;
 };
 
+export type UpdateVideoInput = {
+    title: string;
+};
+
 export type Difficulty = "easy" | "medium" | "hard" | "very_hard";
 export type Confidence = "low" | "medium" | "high";
 export type PracticePriority = "low" | "medium" | "high";

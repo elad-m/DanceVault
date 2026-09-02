@@ -1,4 +1,5 @@
 import {
+    createLegacySegmentThumbnailStorageKey,
     createSegmentThumbnailStorageKey,
     type Confidence,
     type Difficulty,
@@ -178,9 +179,40 @@ export async function getSegmentThumbnailPlaybackUrl(
             .getSegmentThumbnailObjectSizeBytes(storageKey);
 
     if (objectSizeBytes === null) {
-        return {
-            kind: "thumbnail_missing",
-        };
+        const legacyStorageKey =
+            createLegacySegmentThumbnailStorageKey({
+                userId: input.userId,
+                segmentId: segment.id,
+            });
+        const legacyObjectSizeBytes =
+            await input.videoStorageProvider
+                .getSegmentThumbnailObjectSizeBytes(
+                    legacyStorageKey
+                );
+
+        if (legacyObjectSizeBytes === null) {
+            return {
+                kind: "thumbnail_missing",
+            };
+        }
+
+        try {
+            await input.videoStorageProvider
+                .moveSegmentThumbnailObject(
+                    legacyStorageKey,
+                    storageKey
+                );
+        } catch (error) {
+            const migratedObjectSizeBytes =
+                await input.videoStorageProvider
+                    .getSegmentThumbnailObjectSizeBytes(
+                        storageKey
+                    );
+
+            if (migratedObjectSizeBytes === null) {
+                throw error;
+            }
+        }
     }
 
     const playbackUrl =
@@ -216,6 +248,15 @@ export async function deleteSegmentWithThumbnail(
 
     await input.videoStorageProvider
         .deleteSegmentThumbnailObject(storageKey);
+
+    const legacyStorageKey =
+        createLegacySegmentThumbnailStorageKey({
+            userId: input.userId,
+            segmentId: segment.id,
+        });
+
+    await input.videoStorageProvider
+        .deleteSegmentThumbnailObject(legacyStorageKey);
 
     await input.segmentDataAccess.deleteSegment({
         userID: input.userId,

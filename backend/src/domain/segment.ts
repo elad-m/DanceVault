@@ -34,5 +34,14 @@ export function createSegmentThumbnailStorageKey({
 }: CreateSegmentThumbnailStorageKeyInput): string {
     const safeUserId = encodeURIComponent(userId); // even though we don't expect slashes in user IDs, we encode them to be safe
 
+    return `users/${safeUserId}/thumbnails/segments/${segmentId}.jpg`;
+}
+
+export function createLegacySegmentThumbnailStorageKey({
+    userId,
+    segmentId,
+}: CreateSegmentThumbnailStorageKeyInput): string {
+    const safeUserId = encodeURIComponent(userId);
+
     return `users/${safeUserId}/thumbnails/${segmentId}.jpg`;
 }

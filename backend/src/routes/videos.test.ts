@@ -58,6 +58,20 @@ const getVideoObjectSizeBytesMock = vi.fn(
 const deleteVideoObjectMock = vi.fn(
     async (_storageKey: string): Promise<void> => { }
 );
+const createVideoThumbnailUploadUrlMock = vi.fn(
+    async (storageKey: string): Promise<string> =>
+        `http://storage.test/${storageKey}?upload=test`
+);
+const createVideoThumbnailPlaybackUrlMock = vi.fn(
+    async (storageKey: string): Promise<string> =>
+        `http://storage.test/${storageKey}?playback=test`
+);
+const getVideoThumbnailObjectSizeBytesMock = vi.fn(
+    async (_storageKey: string): Promise<number | null> => null
+);
+const deleteVideoThumbnailObjectMock = vi.fn(
+    async (_storageKey: string): Promise<void> => { }
+);
 const fakeVideoStorageProvider: VideoStorageProvider = {
     name: "minio",
     bucketName: "test-video-bucket",
@@ -65,6 +79,14 @@ const fakeVideoStorageProvider: VideoStorageProvider = {
     createVideoUploadUrl: createVideoUploadUrlMock,
     deleteVideoObject: deleteVideoObjectMock,
     getVideoObjectSizeBytes: getVideoObjectSizeBytesMock,
+    createVideoThumbnailUploadUrl:
+        createVideoThumbnailUploadUrlMock,
+    createVideoThumbnailPlaybackUrl:
+        createVideoThumbnailPlaybackUrlMock,
+    getVideoThumbnailObjectSizeBytes:
+        getVideoThumbnailObjectSizeBytesMock,
+    deleteVideoThumbnailObject:
+        deleteVideoThumbnailObjectMock,
     createSegmentThumbnailUploadUrl: async () => {
         throw new Error("Not used by video route tests");
     },
@@ -72,6 +94,9 @@ const fakeVideoStorageProvider: VideoStorageProvider = {
         throw new Error("Not used by video route tests");
     },
     getSegmentThumbnailObjectSizeBytes: async () => {
+        throw new Error("Not used by video route tests");
+    },
+    moveSegmentThumbnailObject: async () => {
         throw new Error("Not used by video route tests");
     },
     deleteSegmentThumbnailObject: async () => {
@@ -175,6 +200,11 @@ beforeEach(async () => {
     deleteVideoObjectMock.mockClear();
     getVideoObjectSizeBytesMock.mockClear();
     getVideoObjectSizeBytesMock.mockResolvedValue(null);
+    createVideoThumbnailUploadUrlMock.mockClear();
+    createVideoThumbnailPlaybackUrlMock.mockClear();
+    getVideoThumbnailObjectSizeBytesMock.mockClear();
+    getVideoThumbnailObjectSizeBytesMock.mockResolvedValue(null);
+    deleteVideoThumbnailObjectMock.mockClear();
     enqueueVideoDeletionMock.mockClear();
     await resetDynamoDBTestDatabase({
         persistenceProvider,
@@ -909,6 +939,178 @@ describe("GET /videos/:videoId/playback-url", () => {
 
         expect(response.statusCode).toBe(404);
         expect(createVideoPlaybackUrlMock).not.toHaveBeenCalled();
+    });
+});
+
+describe("POST /videos/:videoId/thumbnail-upload", () => {
+    it("returns a signed upload URL for the user's ready video", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/sample-video-1/thumbnail-upload",
+            payload: {
+                fileSizeBytes: 100_000,
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({
+            uploadUrl:
+                "http://storage.test/users/test-user-1/" +
+                "thumbnails/videos/sample-video-1.jpg?upload=test",
+            contentType: "image/jpeg",
+            expiresInSeconds: 900,
+        });
+        expect(
+            createVideoThumbnailUploadUrlMock
+        ).toHaveBeenCalledExactlyOnceWith(
+            "users/test-user-1/thumbnails/videos/sample-video-1.jpg"
+        );
+    });
+
+    it("does not create an upload URL for another user's video", async () => {
+        await createOtherUserDynamoDBTestData({
+            persistenceProvider,
+        });
+
+        const response = await app.inject({
+            method: "POST",
+            url: `/videos/${OTHER_TEST_VIDEO_ID}/thumbnail-upload`,
+            payload: {
+                fileSizeBytes: 100_000,
+            },
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(
+            createVideoThumbnailUploadUrlMock
+        ).not.toHaveBeenCalled();
+    });
+
+    it("rejects an announced thumbnail size above the limit", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/videos/sample-video-1/thumbnail-upload",
+            payload: {
+                fileSizeBytes: 250_001,
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(
+            createVideoThumbnailUploadUrlMock
+        ).not.toHaveBeenCalled();
+    });
+});
+
+describe("POST /videos/:videoId/thumbnail-upload/complete", () => {
+    it("completes a thumbnail upload within the size limit", async () => {
+        getVideoThumbnailObjectSizeBytesMock.mockResolvedValueOnce(
+            100_000
+        );
+
+        const response = await app.inject({
+            method: "POST",
+            url:
+                "/videos/sample-video-1/" +
+                "thumbnail-upload/complete",
+        });
+
+        expect(response.statusCode).toBe(204);
+        expect(
+            getVideoThumbnailObjectSizeBytesMock
+        ).toHaveBeenCalledExactlyOnceWith(
+            "users/test-user-1/thumbnails/videos/sample-video-1.jpg"
+        );
+        expect(
+            deleteVideoThumbnailObjectMock
+        ).not.toHaveBeenCalled();
+    });
+
+    it("rejects completion when the uploaded object is missing", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url:
+                "/videos/sample-video-1/" +
+                "thumbnail-upload/complete",
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toEqual({
+            error: {
+                code: "VIDEO_THUMBNAIL_UPLOAD_NOT_FOUND",
+                message: "Uploaded video thumbnail was not found",
+            },
+        });
+    });
+
+    it("deletes and rejects an oversized uploaded thumbnail", async () => {
+        getVideoThumbnailObjectSizeBytesMock.mockResolvedValueOnce(
+            250_001
+        );
+
+        const response = await app.inject({
+            method: "POST",
+            url:
+                "/videos/sample-video-1/" +
+                "thumbnail-upload/complete",
+        });
+
+        expect(response.statusCode).toBe(413);
+        expect(response.json()).toEqual({
+            error: {
+                code: "VIDEO_THUMBNAIL_UPLOAD_TOO_LARGE",
+                message:
+                    "Video thumbnail exceeds the upload-size limit",
+            },
+        });
+        expect(
+            deleteVideoThumbnailObjectMock
+        ).toHaveBeenCalledExactlyOnceWith(
+            "users/test-user-1/thumbnails/videos/sample-video-1.jpg"
+        );
+    });
+});
+
+describe("GET /videos/:videoId/thumbnail-playback-url", () => {
+    it("returns a signed URL for an existing video thumbnail", async () => {
+        getVideoThumbnailObjectSizeBytesMock.mockResolvedValueOnce(
+            100_000
+        );
+
+        const response = await app.inject({
+            method: "GET",
+            url:
+                "/videos/sample-video-1/" +
+                "thumbnail-playback-url",
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({
+            playbackUrl:
+                "http://storage.test/users/test-user-1/" +
+                "thumbnails/videos/sample-video-1.jpg?playback=test",
+            expiresInSeconds: 900,
+        });
+    });
+
+    it("returns not found when the thumbnail object is missing", async () => {
+        const response = await app.inject({
+            method: "GET",
+            url:
+                "/videos/sample-video-1/" +
+                "thumbnail-playback-url",
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({
+            error: {
+                code: "VIDEO_THUMBNAIL_NOT_FOUND",
+                message: "Video thumbnail was not found",
+            },
+        });
+        expect(
+            createVideoThumbnailPlaybackUrlMock
+        ).not.toHaveBeenCalled();
     });
 });
 

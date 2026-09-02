@@ -46,6 +46,13 @@ const deleteSegmentThumbnailObjectMock = vi.fn(
     async (_storageKey: string): Promise<void> => { }
 );
 
+const moveSegmentThumbnailObjectMock = vi.fn(
+    async (
+        _sourceStorageKey: string,
+        _destinationStorageKey: string
+    ): Promise<void> => { }
+);
+
 const fakeVideoStorageProvider: VideoStorageProvider = {
     name: "minio",
     bucketName: "test-video-bucket",
@@ -65,6 +72,18 @@ const fakeVideoStorageProvider: VideoStorageProvider = {
     async listVideoObjectKeys() {
         throw new Error("Not used by segment route tests");
     },
+    async createVideoThumbnailUploadUrl() {
+        throw new Error("Not used by segment route tests");
+    },
+    async createVideoThumbnailPlaybackUrl() {
+        throw new Error("Not used by segment route tests");
+    },
+    async getVideoThumbnailObjectSizeBytes() {
+        throw new Error("Not used by segment route tests");
+    },
+    async deleteVideoThumbnailObject() {
+        throw new Error("Not used by segment route tests");
+    },
 
     createSegmentThumbnailUploadUrl:
         createSegmentThumbnailUploadUrlMock,
@@ -72,6 +91,8 @@ const fakeVideoStorageProvider: VideoStorageProvider = {
         createSegmentThumbnailPlaybackUrlMock,
     getSegmentThumbnailObjectSizeBytes:
         getSegmentThumbnailObjectSizeBytesMock,
+    moveSegmentThumbnailObject:
+        moveSegmentThumbnailObjectMock,
     deleteSegmentThumbnailObject:
         deleteSegmentThumbnailObjectMock,
 
@@ -91,6 +112,7 @@ registerTestAuthentication(app);
 beforeEach(async () => {
     vi.clearAllMocks();
     getSegmentThumbnailObjectSizeBytesMock.mockResolvedValue(null);
+    moveSegmentThumbnailObjectMock.mockClear();
     resetRuntimeForTest();
 
     await resetDynamoDBTestDatabase({
@@ -642,7 +664,14 @@ describe("DELETE /segments/:segmentId", () => {
         expect(response.statusCode).toBe(204);
         expect(
             deleteSegmentThumbnailObjectMock
-        ).toHaveBeenCalledExactlyOnceWith(
+        ).toHaveBeenNthCalledWith(
+            1,
+            "users/test-user-1/thumbnails/segments/sample-segment-3.jpg"
+        );
+        expect(
+            deleteSegmentThumbnailObjectMock
+        ).toHaveBeenNthCalledWith(
+            2,
             "users/test-user-1/thumbnails/sample-segment-3.jpg"
         );
 
@@ -943,14 +972,14 @@ describe("POST /segments/:segmentId/thumbnail-upload", () => {
         expect(response.statusCode).toBe(200);
         expect(response.json()).toEqual({
             uploadUrl:
-                "http://storage.test/users/test-user-1/thumbnails/sample-segment-1.jpg?upload=test",
+                "http://storage.test/users/test-user-1/thumbnails/segments/sample-segment-1.jpg?upload=test",
             contentType: "image/jpeg",
             expiresInSeconds: 900,
         });
         expect(
             createSegmentThumbnailUploadUrlMock
         ).toHaveBeenCalledExactlyOnceWith(
-            "users/test-user-1/thumbnails/sample-segment-1.jpg"
+            "users/test-user-1/thumbnails/segments/sample-segment-1.jpg"
         );
     });
 
@@ -1012,7 +1041,7 @@ describe("POST /segments/:segmentId/thumbnail-upload/complete",
             expect(
                 getSegmentThumbnailObjectSizeBytesMock
             ).toHaveBeenCalledExactlyOnceWith(
-                "users/test-user-1/thumbnails/sample-segment-1.jpg"
+                "users/test-user-1/thumbnails/segments/sample-segment-1.jpg"
             );
             expect(
                 deleteSegmentThumbnailObjectMock
@@ -1060,7 +1089,7 @@ describe("POST /segments/:segmentId/thumbnail-upload/complete",
             expect(
                 deleteSegmentThumbnailObjectMock
             ).toHaveBeenCalledExactlyOnceWith(
-                "users/test-user-1/thumbnails/sample-segment-1.jpg"
+                "users/test-user-1/thumbnails/segments/sample-segment-1.jpg"
             );
         });
 
@@ -1098,14 +1127,76 @@ describe(
             expect(response.json()).toEqual({
                 playbackUrl:
                     "http://storage.test/" +
-                    "users/test-user-1/thumbnails/" +
+                    "users/test-user-1/thumbnails/segments/" +
                     "sample-segment-1.jpg?playback=test",
                 expiresInSeconds: 900,
             });
             expect(
                 createSegmentThumbnailPlaybackUrlMock
             ).toHaveBeenCalledExactlyOnceWith(
+                "users/test-user-1/thumbnails/segments/sample-segment-1.jpg"
+            );
+        });
+
+        it("moves a legacy thumbnail before returning its playback URL", async () => {
+            getSegmentThumbnailObjectSizeBytesMock
+                .mockResolvedValueOnce(null)
+                .mockResolvedValueOnce(100_000);
+
+            const response = await app.inject({
+                method: "GET",
+                url:
+                    "/segments/sample-segment-1" +
+                    "/thumbnail-playback-url",
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(
+                getSegmentThumbnailObjectSizeBytesMock
+            ).toHaveBeenNthCalledWith(
+                1,
+                "users/test-user-1/thumbnails/segments/sample-segment-1.jpg"
+            );
+            expect(
+                getSegmentThumbnailObjectSizeBytesMock
+            ).toHaveBeenNthCalledWith(
+                2,
                 "users/test-user-1/thumbnails/sample-segment-1.jpg"
+            );
+            expect(
+                moveSegmentThumbnailObjectMock
+            ).toHaveBeenCalledExactlyOnceWith(
+                "users/test-user-1/thumbnails/sample-segment-1.jpg",
+                "users/test-user-1/thumbnails/segments/sample-segment-1.jpg"
+            );
+            expect(
+                createSegmentThumbnailPlaybackUrlMock
+            ).toHaveBeenCalledExactlyOnceWith(
+                "users/test-user-1/thumbnails/segments/sample-segment-1.jpg"
+            );
+        });
+
+        it("uses the migrated thumbnail when another request moved it first", async () => {
+            getSegmentThumbnailObjectSizeBytesMock
+                .mockResolvedValueOnce(null)
+                .mockResolvedValueOnce(100_000)
+                .mockResolvedValueOnce(100_000);
+            moveSegmentThumbnailObjectMock.mockRejectedValueOnce(
+                new Error("Legacy source no longer exists")
+            );
+
+            const response = await app.inject({
+                method: "GET",
+                url:
+                    "/segments/sample-segment-1" +
+                    "/thumbnail-playback-url",
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(
+                createSegmentThumbnailPlaybackUrlMock
+            ).toHaveBeenCalledExactlyOnceWith(
+                "users/test-user-1/thumbnails/segments/sample-segment-1.jpg"
             );
         });
 
