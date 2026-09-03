@@ -18,6 +18,7 @@ import type {
     DecodedVideoFrame,
     VideoFrameDecoder,
 } from "../media/VideoFrameDecoder";
+import { useVideoOrientationCorrection } from "../media/useVideoOrientationCorrection";
 import type { Segment, Video } from "../types";
 
 type FrameAction =
@@ -64,6 +65,7 @@ export function SegmentPlayer({
     onError,
 }: SegmentPlayerProps) {
     const shellRef = useRef<HTMLDivElement>(null);
+    const videoStageRef = useRef<HTMLDivElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const frameCanvasRef = useRef<HTMLCanvasElement>(null);
     const frameDecoderRef = useRef<VideoFrameDecoder | null>(null);
@@ -81,6 +83,14 @@ export function SegmentPlayer({
         useState<FramePosition | null>(null);
     const [frameLoading, setFrameLoading] = useState(false);
     const [frameError, setFrameError] = useState<string | null>(null);
+    const {
+        videoStyle,
+        updateVideoOrientation,
+    } = useVideoOrientationCorrection(
+        playbackUrl,
+        videoRef,
+        videoStageRef
+    );
 
     useEffect(() => {
         frameDecoderGenerationRef.current += 1;
@@ -440,6 +450,7 @@ export function SegmentPlayer({
             <div className="practice-player-shell" ref={shellRef}>
                 {playbackUrl ? (
                     <div
+                        ref={videoStageRef}
                         className={`practice-video-stage${
                             frameMode ? " frame-mode-active" : ""
                         }`}
@@ -449,10 +460,12 @@ export function SegmentPlayer({
                             src={playbackUrl}
                             crossOrigin="anonymous"
                             preload="metadata"
+                            style={videoStyle}
                             onClick={togglePlayback}
                             onLoadedMetadata={(event) => {
                                 const player = event.currentTarget;
                                 player.currentTime = segment.startMilliseconds / 1000;
+                                updateVideoOrientation();
                             }}
                             onLoadedData={(event) => captureSegmentThumbnail(event.currentTarget)}
                             onSeeked={(event) => captureSegmentThumbnail(event.currentTarget)}

@@ -29,6 +29,7 @@ import type {
     UpdateSegmentInput,
     Video,
 } from "../types";
+import { useVideoOrientationCorrection } from "../media/useVideoOrientationCorrection";
 import { DeleteSegmentDialog } from "./DeleteSegmentDialog";
 import { EditSegmentDialog } from "./EditSegmentDialog";
 import { SegmentEditor } from "./SegmentEditor";
@@ -54,6 +55,7 @@ const thumbnailHeight = 240;
 
 export function VideoWorkspace({ video, seekRequest, backNavigation, onDelete, onError }: VideoWorkspaceProps) {
     const playerShellRef = useRef<HTMLDivElement>(null);
+    const videoStageRef = useRef<HTMLDivElement>(null);
     const playerRef = useRef<HTMLVideoElement>(null);
     const thumbnailCaptureTimeoutRef =
         useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -74,6 +76,14 @@ export function VideoWorkspace({ video, seekRequest, backNavigation, onDelete, o
     const [segmentPendingDeletion, setSegmentPendingDeletion] =
         useState<Segment | null>(null);
     const [deletingSegment, setDeletingSegment] = useState(false);
+    const {
+        videoStyle,
+        updateVideoOrientation,
+    } = useVideoOrientationCorrection(
+        playbackUrl,
+        playerRef,
+        videoStageRef
+    );
 
     useEffect(() => {
         setPlaybackUrl(null);
@@ -448,17 +458,19 @@ export function VideoWorkspace({ video, seekRequest, backNavigation, onDelete, o
                             <div className="video-stage player-message"><LoaderCircle className="spin" /> Loading video...</div>
                         ) : playbackUrl ? (
                             <>
-                                <div className="video-stage">
+                                <div className="video-stage" ref={videoStageRef}>
                                     <video
                                         ref={playerRef}
                                         src={playbackUrl}
                                         crossOrigin="anonymous"
                                         preload="metadata"
+                                        style={videoStyle}
                                         onClick={togglePlayback}
                                         onDoubleClick={() => void enterFullscreen()}
                                         onLoadedMetadata={(event) => {
                                             const player = event.currentTarget;
                                             setDurationMilliseconds(Math.round(player.duration * 1000));
+                                            updateVideoOrientation();
                                             if (seekRequest) {
                                                 player.currentTime = seekRequest.milliseconds / 1000;
                                                 setCurrentMilliseconds(seekRequest.milliseconds);
