@@ -725,7 +725,7 @@ describe("DELETE /segments/:segmentId", () => {
 });
 
 describe("GET /practice-queue", () => {
-    it("selects weak or high-priority segments in practice order", async () => {
+    it("selects non-low-priority, non-high-confidence segments in practice order", async () => {
         for (const segmentID of [
             "sample-segment-1",
             "sample-segment-2",
@@ -749,7 +749,7 @@ describe("GET /practice-queue", () => {
             },
             {
                 segmentID: "queue-high-high",
-                name: "Queue high priority and high confidence",
+                name: "Not queued high-confidence segment",
                 startMilliseconds: 320000,
                 confidence: "high",
                 practicePriority: "high",
@@ -763,16 +763,23 @@ describe("GET /practice-queue", () => {
             },
             {
                 segmentID: "queue-medium-medium",
-                name: "Not queued medium segment",
+                name: "Queue medium priority and medium confidence",
                 startMilliseconds: 360000,
                 confidence: "medium",
                 practicePriority: "medium",
             },
             {
                 segmentID: "queue-low-high",
-                name: "Not queued low-priority segment",
+                name: "Not queued low-priority and high-confidence segment",
                 startMilliseconds: 380000,
                 confidence: "high",
+                practicePriority: "low",
+            },
+            {
+                segmentID: "queue-low-low",
+                name: "Not queued low-priority segment",
+                startMilliseconds: 400000,
+                confidence: "low",
                 practicePriority: "low",
             },
         ] as const;
@@ -806,9 +813,9 @@ describe("GET /practice-queue", () => {
 
         expect(firstPageSegmentIds).toEqual([
             "queue-high-low",
-            "queue-high-high",
+            "queue-medium-low",
         ]);
-        expect(firstPage.nextCursor).toBe("queue-high-high");
+        expect(firstPage.nextCursor).toBe("queue-medium-low");
 
         const secondPageResponse = await app.inject({
             method: "GET",
@@ -823,7 +830,7 @@ describe("GET /practice-queue", () => {
         );
 
         expect(secondPageSegmentIds).toEqual([
-            "queue-medium-low",
+            "queue-medium-medium",
         ]);
         expect(secondPage.nextCursor).toBeNull();
     });

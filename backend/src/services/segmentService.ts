@@ -445,8 +445,8 @@ export async function getPracticeQueue(
     const queueSegments = allSegments
         .filter(
             (segment) =>
-                segment.practicePriority === "high" ||
-                segment.confidence === "low"
+                segment.practicePriority !== "low" &&
+                segment.confidence !== "high"
         )
         .sort(
             (first, second) =>
