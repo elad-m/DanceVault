@@ -5,7 +5,7 @@
 1. **Done:** Redesign **All videos** as a vertical, thumbnail-led list that
    scales to larger libraries, and expose the existing video-title editing
    capability in that view.
-2. **Done locally:** Add **Main List** as the first/default tab, followed by
+2. **Done:** Add **Main List** as the first/default tab, followed by
    All videos and All segments. Users explicitly add/remove segments and
    reorder them with arrow controls or drag-and-drop. The backend API, focused
    watch-and-order UI, searchable thumbnail picker, persistent membership
@@ -14,7 +14,7 @@
    The ordered, versioned list is stored as one item per user (maximum 500
    segments), so no new DynamoDB index is needed. Deleted references are hidden
    on reads and removed from storage on the next list save. Conflicting saves
-   reload the saved list. Deployment remains.
+   reload the saved list. The feature is deployed.
    Practice queue and priority/confidence controls are hidden; their backend
    fields and route remain for compatibility and can be reconsidered later.
 
@@ -198,12 +198,12 @@
 10. **Done:** Improve video-title entry during upload. Label the field "Video title"
     and, after a file is selected, prefill it with the filename without its
     extension as selected text. Preserve a title the user has already edited.
-11. Replace the technical name "Practice queue" with a clearer user-facing
-    name. Keep the current wording until a final choice is made.
+11. **Done:** Replace the visible Practice queue workflow with Main List. The
+    legacy backend route remains for compatibility but is hidden from users.
 12. **Done:** Redesign **All videos** as a vertical list with persistent video
     thumbnails and inline title editing.
-13. Replace the current practice ordering formula with either explicit
-    priority/confidence sort controls or persistent drag-and-drop manual order.
+13. **Done:** Replace formula-driven practice ordering in the visible workflow
+    with the persistent, manually ordered Main List.
 
 ### Practice queue naming candidates
 
