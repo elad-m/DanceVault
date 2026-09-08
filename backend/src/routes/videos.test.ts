@@ -245,6 +245,7 @@ describe("video data access injection", () => {
         );
 
         const persistenceProvider: PersistenceProvider = {
+            mainListDataAccess: { async getMainList() { throw new Error("Unused"); }, async saveMainList() { throw new Error("Unused"); } },
             videoDataAccess: {
                 createVideo: vi.fn(async () => video),
                 updateVideoStatus: vi.fn(async () => video),
@@ -328,6 +329,7 @@ describe("video data access injection", () => {
         }));
 
         const persistenceProvider: PersistenceProvider = {
+            mainListDataAccess: { async getMainList() { throw new Error("Unused"); }, async saveMainList() { throw new Error("Unused"); } },
             videoDataAccess: {
                 createVideo: createVideoMock,
                 updateVideoStatus: vi.fn(async () => {
@@ -427,6 +429,7 @@ describe("video data access injection", () => {
             expectedMessage,
         }) => {
             const quotaPersistenceProvider: PersistenceProvider = {
+                mainListDataAccess: persistenceProvider.mainListDataAccess,
                 videoDataAccess: {
                     ...persistenceProvider.videoDataAccess,
                     createVideo: vi.fn(async () => {
@@ -781,6 +784,7 @@ describe("POST /video-uploads/:videoId/complete", () => {
     it("maps a completion storage quota failure to a stable response", async () => {
         const video = await createPendingUploadTestVideo();
         const quotaPersistenceProvider: PersistenceProvider = {
+            mainListDataAccess: persistenceProvider.mainListDataAccess,
             videoDataAccess: {
                 ...persistenceProvider.videoDataAccess,
                 finalizeVideoUpload: vi.fn(async () => {

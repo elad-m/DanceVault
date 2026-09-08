@@ -5,11 +5,18 @@
 1. **Done:** Redesign **All videos** as a vertical, thumbnail-led list that
    scales to larger libraries, and expose the existing video-title editing
    capability in that view.
-2. Replace the implicit practice-queue ordering rules with a clear user choice.
-   First decide between selectable priority/confidence sorting and persistent
-   manual ordering. Manual ordering should store queue membership and an order
-   value on segments; it does not require a new DynamoDB index at the current
-   scale because the service already loads and sorts the user's segments.
+2. **Done locally:** Add **Main List** as the first/default tab, followed by
+   All videos and All segments. Users explicitly add/remove segments and
+   reorder them with arrow controls or drag-and-drop. The backend API, focused
+   watch-and-order UI, searchable thumbnail picker, persistent membership
+   indicators, add-from-All-segments shortcut, conflict handling, and
+   mouse/touch/keyboard ordering are implemented and locally verified.
+   The ordered, versioned list is stored as one item per user (maximum 500
+   segments), so no new DynamoDB index is needed. Deleted references are hidden
+   on reads and removed from storage on the next list save. Conflicting saves
+   reload the saved list. Deployment remains.
+   Practice queue and priority/confidence controls are hidden; their backend
+   fields and route remain for compatibility and can be reconsidered later.
 
 ## Product Naming
 
@@ -247,6 +254,10 @@
   are active before registration is opened.
 
 ## Deferred Technical Follow-ups
+
+- Update the frontend's existing transitive Browserslist dependency and rerun
+  the build/audit: npm reports GHSA-c83g-rgw3-j3cx and GHSA-73wf-gq98-2v4g
+  for versions through 4.28.6. This is separate from the Main List dependencies.
 
 ### Manual AWS Deployment Process
 

@@ -39,7 +39,7 @@ type ApiErrorBody = {
     };
 };
 
-class ApiRequestError extends Error {
+export class ApiRequestError extends Error {
     constructor(
         message: string,
         readonly statusCode: number,
@@ -85,6 +85,23 @@ async function requestJson<T>(
 export async function listVideos(): Promise<Video[]> {
     const response = await requestJson<{ videos: Video[] }>("/videos");
     return response.videos;
+}
+
+export type MainList = {
+    version: number;
+    segmentIDs: string[];
+    segments: Segment[];
+};
+
+export function getMainList(): Promise<MainList> {
+    return requestJson<MainList>("/main-list");
+}
+
+export function saveMainList(segmentIDs: string[], expectedVersion: number) {
+    return requestJson<{ segmentIDs: string[]; version: number }>("/main-list", {
+        method: "PUT",
+        body: JSON.stringify({ segmentIDs, expectedVersion }),
+    });
 }
 
 export async function deleteVideo(videoId: string): Promise<void> {

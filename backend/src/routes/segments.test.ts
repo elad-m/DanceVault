@@ -182,6 +182,7 @@ describe("POST /videos/:videoId/segments", () => {
             expectedMessage,
         }) => {
             const quotaPersistenceProvider: PersistenceProvider = {
+                mainListDataAccess: persistenceProvider.mainListDataAccess,
                 videoDataAccess:
                     persistenceProvider.videoDataAccess,
                 segmentDataAccess: {

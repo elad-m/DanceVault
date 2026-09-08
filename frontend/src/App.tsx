@@ -23,7 +23,7 @@ import { captureVideoThumbnail } from "./videoThumbnail";
 function getViewForPath(pathname: string): AppView {
     if (pathname.startsWith("/videos")) return "videos";
     if (pathname.startsWith("/segments")) return "segments";
-    return "practice";
+    return "main";
 }
 
 export default function App() {
@@ -39,11 +39,11 @@ export default function App() {
     const [activeView, setActiveView] = useState<AppView>(() =>
         getViewForPath(window.location.pathname)
     );
-    const [practiceSegmentId, setPracticeSegmentId] = useState<string | null>(null);
+    const [mainSegmentId, setMainSegmentId] = useState<string | null>(null);
     const [allSegmentsSegmentId, setAllSegmentsSegmentId] =
         useState<string | null>(null);
     const [returnToView, setReturnToView] =
-        useState<"practice" | "segments" | null>(null);
+        useState<"main" | "segments" | null>(null);
     const [seekRequest, setSeekRequest] = useState<{
         id: string;
         milliseconds: number;
@@ -78,7 +78,7 @@ export default function App() {
 
     useEffect(() => {
         if (window.location.pathname === "/") {
-            window.history.replaceState({}, "", "/practice");
+            window.history.replaceState({}, "", "/main-list");
         }
     }, []);
 
@@ -93,9 +93,7 @@ export default function App() {
     }, []);
 
     function navigateToView(view: AppView) {
-        const path = view === "practice"
-            ? "/practice"
-            : view === "segments"
+        const path = view === "main" ? "/main-list" : view === "segments"
                 ? "/segments"
                 : selectedVideo
                     ? `/videos/${selectedVideo.id}`
@@ -224,7 +222,7 @@ export default function App() {
 
     function handleOpenFullVideo(
         segment: Segment,
-        fromView: "practice" | "segments"
+        fromView: "main" | "segments"
     ) {
         const video = videos.find((candidate) => candidate.id === segment.videoId);
         if (!video) {
@@ -237,8 +235,8 @@ export default function App() {
             id: segment.id,
             milliseconds: segment.startMilliseconds,
         });
-        if (fromView === "practice") {
-            setPracticeSegmentId(segment.id);
+        if (fromView === "main") {
+            setMainSegmentId(segment.id);
         } else {
             setAllSegmentsSegmentId(segment.id);
         }
@@ -280,27 +278,25 @@ export default function App() {
                     video={selectedVideo}
                     seekRequest={seekRequest}
                     backNavigation={returnToView ? {
-                        label: returnToView === "practice"
-                            ? "Back to practice queue"
-                            : "Back to all segments",
+                        label: returnToView === "main" ? "Back to Main List" : "Back to all segments",
                         onBack: () => window.history.back(),
                     } : undefined}
                     onDelete={setVideoPendingDeletion}
                     onError={showError}
                 />
-            ) : activeView === "practice" ? (
+            ) : activeView === "main" ? (
                 <SegmentBrowser
-                    mode="practice"
+                    key="main"
+                    mode="main"
                     videos={videos}
-                    initialSelectedSegmentId={practiceSegmentId}
-                    onSelectSegment={setPracticeSegmentId}
-                    onOpenFullVideo={(segment) =>
-                        handleOpenFullVideo(segment, "practice")
-                    }
+                    initialSelectedSegmentId={mainSegmentId}
+                    onSelectSegment={setMainSegmentId}
+                    onOpenFullVideo={(segment) => handleOpenFullVideo(segment, "main")}
                     onError={showError}
                 />
             ) : (
                 <SegmentBrowser
+                    key="all"
                     mode="all"
                     videos={videos}
                     initialSelectedSegmentId={allSegmentsSegmentId}

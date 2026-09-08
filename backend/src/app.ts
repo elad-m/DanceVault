@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import type { FastifyError } from "fastify";
 import { ApiErrorCode, sendApiError } from "./httpErrors";
 import { registerSegmentRoutes } from "./routes/segments";
+import { registerMainListRoutes } from "./routes/mainList";
 import { registerVideoRoutes } from "./routes/videos";
 import {
     createLiveAuthenticationDependencies,
@@ -114,6 +115,7 @@ export function buildApp(
         persistenceProvider.videoDataAccess,
         persistenceProvider.segmentDataAccess
     );
+    registerMainListRoutes(app, persistenceProvider);
 
     return app;
 }

@@ -1,11 +1,6 @@
 import { LoaderCircle, Save, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import type {
-    Confidence,
-    PracticePriority,
-    Segment,
-    UpdateSegmentInput,
-} from "../types";
+import type { Segment, UpdateSegmentInput } from "../types";
 
 type EditSegmentDialogProps = {
     segment: Segment | null;
@@ -43,19 +38,11 @@ function EditSegmentForm({
     onSave,
 }: EditSegmentDialogProps & { segment: Segment }) {
     const [name, setName] = useState(segment.name);
-    const [confidence, setConfidence] = useState<Confidence>(
-        segment.confidence
-    );
-    const [practicePriority, setPracticePriority] =
-        useState<PracticePriority>(segment.practicePriority);
-
     async function submit(event: FormEvent) {
         event.preventDefault();
 
         await onSave(segment, {
             name: name.trim(),
-            confidence,
-            practicePriority,
         });
     }
 
@@ -71,7 +58,7 @@ function EditSegmentForm({
                 <header className="modal-header">
                     <div>
                         <h2 id="edit-segment-title">Edit segment</h2>
-                        <p>Update movement details and practice settings.</p>
+                        <p>Update the segment name.</p>
                     </div>
                     <button
                         type="button"
@@ -92,39 +79,6 @@ function EditSegmentForm({
                         autoFocus
                     />
                 </label>
-
-                <div className="select-grid segment-practice-fields">
-                    <label>
-                        Confidence
-                        <select
-                            value={confidence}
-                            onChange={(event) =>
-                                setConfidence(
-                                    event.target.value as Confidence
-                                )
-                            }
-                        >
-                            <option value="low">Low</option>
-                            <option value="medium">Medium</option>
-                            <option value="high">High</option>
-                        </select>
-                    </label>
-                    <label>
-                        Priority
-                        <select
-                            value={practicePriority}
-                            onChange={(event) =>
-                                setPracticePriority(
-                                    event.target.value as PracticePriority
-                                )
-                            }
-                        >
-                            <option value="low">Low</option>
-                            <option value="medium">Medium</option>
-                            <option value="high">High</option>
-                        </select>
-                    </label>
-                </div>
 
                 <footer className="modal-footer">
                     <button

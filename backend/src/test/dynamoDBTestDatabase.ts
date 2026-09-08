@@ -1,4 +1,5 @@
 import type { PersistenceProvider } from "../persistence";
+import { createDynamoDBMainListDataAccess } from "../persistence/dynamoDBMainListDataAccess";
 import { createDynamoDBConnection } from "../persistence/dynamoDBConnection";
 import { createDynamoDBSegmentDataAccess } from "../persistence/dynamoDBSegmentDataAccess";
 import { createDynamoDBVideoDataAccess } from "../persistence/dynamoDBVideoDataAccess";
@@ -135,6 +136,7 @@ export function createDynamoDBTestPersistenceProvider(): PersistenceProvider {
 
     return {
         videoDataAccess: createDynamoDBVideoDataAccess(connection),
+        mainListDataAccess: createDynamoDBMainListDataAccess(connection),
         segmentDataAccess: createDynamoDBSegmentDataAccess(connection),
 
         async close() {

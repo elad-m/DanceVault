@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronUp, Flag, Plus, Save } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { formatDuration } from "../format";
-import type { Confidence, CreateSegmentInput, PracticePriority } from "../types";
+import type { CreateSegmentInput } from "../types";
 
 type SegmentEditorProps = {
     currentMilliseconds: number;
@@ -20,8 +20,6 @@ export function SegmentEditor({
     const [name, setName] = useState("");
     const [startMilliseconds, setStartMilliseconds] = useState(0);
     const [endMilliseconds, setEndMilliseconds] = useState(0);
-    const [confidence, setConfidence] = useState<Confidence>("medium");
-    const [practicePriority, setPracticePriority] = useState<PracticePriority>("medium");
 
     async function submit(event: FormEvent) {
         event.preventDefault();
@@ -29,8 +27,6 @@ export function SegmentEditor({
             name: name.trim(),
             startMilliseconds,
             endMilliseconds,
-            confidence,
-            practicePriority,
         });
         setName("");
         setStartMilliseconds(0);
@@ -84,10 +80,6 @@ export function SegmentEditor({
                             <Flag size={15} /> Set end
                         </button>
                         <output>{formatDuration(endMilliseconds)}</output>
-                    </div>
-                    <div className="select-grid segment-practice-fields">
-                        <label>Confidence<select value={confidence} onChange={(event) => setConfidence(event.target.value as Confidence)}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
-                        <label>Priority<select value={practicePriority} onChange={(event) => setPracticePriority(event.target.value as PracticePriority)}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
                     </div>
                     <button className="primary-button full-width" disabled={!name.trim() || endMilliseconds <= startMilliseconds || saving}>
                         {saving ? <Save size={17} /> : <Plus size={17} />} {saving ? "Saving..." : "Save segment"}

@@ -2,7 +2,6 @@ import {
     Check,
     Film,
     List,
-    ListChecks,
     LoaderCircle,
     Pencil,
     Plus,
@@ -25,7 +24,7 @@ import type { Video } from "../types";
 import { captureVideoThumbnailFromURL } from "../videoThumbnail";
 import { AccountMenu } from "./AccountMenu";
 
-export type AppView = "practice" | "videos" | "segments";
+export type AppView = "main" | "videos" | "segments";
 
 type VideoSidebarProps = {
     videos: Video[];
@@ -258,8 +257,8 @@ export function VideoSidebar({
             </div>
 
             <nav className="view-navigation" aria-label="Main views">
-                <button className={activeView === "practice" ? "active" : ""} onClick={() => onViewChange("practice")}>
-                    <ListChecks size={16} /> Practice queue
+                <button className={activeView === "main" ? "active" : ""} onClick={() => onViewChange("main")}>
+                    <List size={16} /> Main List
                 </button>
                 <button className={activeView === "videos" ? "active" : ""} onClick={() => onViewChange("videos")}>
                     <Film size={16} /> All videos
