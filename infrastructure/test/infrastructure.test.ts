@@ -559,6 +559,7 @@ test("creates an HTTP API connected to the backend Lambda", () => {
       AllowMethods: [
         "GET",
         "POST",
+        "PUT",
         "PATCH",
         "DELETE",
       ],

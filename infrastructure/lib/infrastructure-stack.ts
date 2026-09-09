@@ -686,6 +686,7 @@ export class InfrastructureStack extends cdk.Stack {
           allowMethods: [
             apiGateway.CorsHttpMethod.GET,
             apiGateway.CorsHttpMethod.POST,
+            apiGateway.CorsHttpMethod.PUT,
             apiGateway.CorsHttpMethod.PATCH,
             apiGateway.CorsHttpMethod.DELETE,
           ],
