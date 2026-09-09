@@ -1,4 +1,4 @@
-import { ShieldCheck, Upload, X } from "lucide-react";
+import { LoaderCircle, ShieldCheck, Upload, X } from "lucide-react";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 type UploadDialogProps = {
@@ -80,42 +80,61 @@ export function UploadDialog({ open, uploading, onClose, onUpload }: UploadDialo
                         <X size={18} />
                     </button>
                 </div>
-                <label>
-                    Video title
-                    <input
-                        ref={titleInputRef}
-                        value={title}
-                        onChange={updateTitle}
-                        placeholder="Video title"
-                        autoFocus
-                    />
-                </label>
-                <label>
-                    Video file
-                    <input
-                        type="file"
-                        accept="video/mp4,video/quicktime,.mp4,.mov"
-                        onChange={selectFile}
-                    />
-                </label>
-                <div className="upload-legal-notice">
-                    <ShieldCheck size={17} aria-hidden="true" />
-                    <p>
-                        Upload only videos you have the right and permission
-                        to use. By uploading, you agree to the{" "}
-                        <a href="/terms" target="_blank" rel="noreferrer">
-                            Terms of Use
-                        </a>{" "}
-                        and acknowledge the{" "}
-                        <a href="/privacy" target="_blank" rel="noreferrer">
-                            Privacy Notice
-                        </a>.
-                    </p>
-                </div>
+                {uploading ? (
+                    <div className="video-upload-progress" role="status" aria-live="polite">
+                        <LoaderCircle className="spin video-upload-spinner" size={48} aria-hidden="true" />
+                        <div className="video-upload-copy">
+                            <strong>Uploading video...</strong>
+                            <span>This can take a few minutes. Keep this window open.</span>
+                        </div>
+                        <div className="video-upload-progress-track" aria-hidden="true">
+                            <span />
+                        </div>
+                        <span className="video-upload-file" title={file?.name}>
+                            {file?.name}
+                        </span>
+                    </div>
+                ) : (
+                    <>
+                        <label>
+                            Video title
+                            <input
+                                ref={titleInputRef}
+                                value={title}
+                                onChange={updateTitle}
+                                placeholder="Video title"
+                                autoFocus
+                            />
+                        </label>
+                        <label>
+                            Video file
+                            <input
+                                type="file"
+                                accept="video/mp4,video/quicktime,.mp4,.mov"
+                                onChange={selectFile}
+                            />
+                        </label>
+                        <div className="upload-legal-notice">
+                            <ShieldCheck size={17} aria-hidden="true" />
+                            <p>
+                                Upload only videos you have the right and permission
+                                to use. By uploading, you agree to the{" "}
+                                <a href="/terms" target="_blank" rel="noreferrer">
+                                    Terms of Use
+                                </a>{" "}
+                                and acknowledge the{" "}
+                                <a href="/privacy" target="_blank" rel="noreferrer">
+                                    Privacy Notice
+                                </a>.
+                            </p>
+                        </div>
+                    </>
+                )}
                 <div className="modal-footer">
                     <button type="button" className="secondary-button" onClick={closeDialog} disabled={uploading}>Cancel</button>
                     <button className="primary-button" disabled={!file || !title.trim() || uploading}>
-                        <Upload size={17} /> {uploading ? "Uploading..." : "Upload video"}
+                        {uploading ? <LoaderCircle className="spin" size={17} /> : <Upload size={17} />}
+                        {uploading ? "Uploading..." : "Upload video"}
                     </button>
                 </div>
             </form>

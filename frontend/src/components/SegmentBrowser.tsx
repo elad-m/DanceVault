@@ -12,7 +12,7 @@ import {
     Trash2,
     X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
     deleteSegment,
     ApiRequestError,
@@ -84,6 +84,8 @@ export function SegmentBrowser({
     const activeThumbnailRequestCountRef = useRef(0);
     const thumbnailRequestGenerationRef = useRef(0);
     const requestedThumbnailIdsRef = useRef(new Set<string>());
+    const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
+    const loadingMoreRef = useRef(false);
 
     useEffect(() => {
         const thumbnailObjectUrls = thumbnailObjectUrlsRef.current;
@@ -306,8 +308,9 @@ export function SegmentBrowser({
         }
     }
 
-    async function loadMore() {
-        if (!nextCursor) return;
+    const loadMore = useCallback(async () => {
+        if (!nextCursor || loadingMoreRef.current) return;
+        loadingMoreRef.current = true;
         setLoading(true);
         try {
             const response = await getAllSegments(nextCursor);
@@ -316,9 +319,25 @@ export function SegmentBrowser({
         } catch (error) {
             onError(error instanceof Error ? error.message : "Could not load more segments");
         } finally {
+            loadingMoreRef.current = false;
             setLoading(false);
         }
-    }
+    }, [nextCursor, onError]);
+
+    useEffect(() => {
+        const sentinel = loadMoreSentinelRef.current;
+        if (mode !== "all" || !nextCursor || loading || !sentinel) return;
+
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry?.isIntersecting) void loadMore();
+            },
+            { threshold: 0.01 }
+        );
+
+        observer.observe(sentinel);
+        return () => observer.disconnect();
+    }, [loadMore, loading, mode, nextCursor]);
 
     async function updatePracticeFields(
         segment: Segment,
@@ -526,14 +545,19 @@ export function SegmentBrowser({
                                 {mode === "main" ? "Your Main List is empty." : "You have no segments yet."}
                             </div>
                         )}
+                        {nextCursor && (
+                            <div
+                                ref={loadMoreSentinelRef}
+                                className="segment-load-sentinel"
+                                aria-live="polite"
+                            >
+                                {loading && segments.length > 0 && (
+                                    <><LoaderCircle className="spin" /> Loading more segments...</>
+                                )}
+                            </div>
+                        )}
                     </div>
                     </SortableSegmentList>
-
-                    {nextCursor && (
-                        <button className="secondary-button load-more" onClick={() => void loadMore()} disabled={loading}>
-                            {loading ? "Loading..." : "Load more"}
-                        </button>
-                    )}
                 </section>
             </div>
             {addingSegments && <AddMainListSegmentsDialog

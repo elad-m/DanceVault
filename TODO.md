@@ -204,6 +204,12 @@
     thumbnails and inline title editing.
 13. **Done:** Replace formula-driven practice ordering in the visible workflow
     with the persistent, manually ordered Main List.
+14. **Done locally:** Replace the All segments "Load more" button with automatic
+    cursor pagination when the user reaches the end of the visible list.
+15. **Done locally:** Add a prominent long-video upload state using the application colors, an
+    indeterminate spinner and progress strip, the selected filename, and clear
+    text explaining that the upload may take several minutes. Do not display a
+    percentage until the upload transport can report real byte progress.
 
 ### Practice queue naming candidates
 
