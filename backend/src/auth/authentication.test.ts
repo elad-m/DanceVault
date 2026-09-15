@@ -38,6 +38,8 @@ function buildAuthenticationTestApp(
 
     testApp.get("/authenticated-user", async (request) => ({
         userId: request.userId,
+        identityProviderUserId:
+            request.identityProviderUserId,
     }));
 
     return testApp;
@@ -50,6 +52,7 @@ describe("Cognito authentication", () => {
 
             return {
                 sub: "cognito-user-123",
+                username: "cognito-internal-username",
             };
         });
 
@@ -68,6 +71,8 @@ describe("Cognito authentication", () => {
         expect(response.statusCode).toBe(200);
         expect(response.json()).toEqual({
             userId: "cognito-user-123",
+            identityProviderUserId:
+                "cognito-internal-username",
         });
         expect(verify).toHaveBeenCalledOnce();
     });

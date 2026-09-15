@@ -51,8 +51,8 @@ test('creates a private encrypted development video bucket', () => {
   });
 
   template.hasResource('AWS::S3::Bucket', {
-    DeletionPolicy: 'Delete',
-    UpdateReplacePolicy: 'Delete',
+    DeletionPolicy: 'Retain',
+    UpdateReplacePolicy: 'Retain',
   });
 });
 
@@ -180,6 +180,12 @@ test('creates Cognito authentication for the development web app', () => {
     MfaConfiguration: 'OPTIONAL',
     UsernameAttributes: ['email'],
     UserPoolTier: 'ESSENTIALS',
+    DeletionProtection: 'ACTIVE',
+  });
+
+  template.hasResource('AWS::Cognito::UserPool', {
+    DeletionPolicy: 'Retain',
+    UpdateReplacePolicy: 'Retain',
   });
 
   template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
@@ -198,6 +204,10 @@ test('creates Cognito authentication for the development web app', () => {
     ],
     PreventUserExistenceErrors: 'ENABLED',
     AuthSessionValidity: 15,
+    AccessTokenValidity: 60,
+    TokenValidityUnits: {
+      AccessToken: "minutes",
+    },
   });
 
   template.resourceCountIs('AWS::Cognito::UserPoolDomain', 1);
@@ -276,11 +286,16 @@ test('creates an encrypted on-demand DanceVault data table', () => {
       PointInTimeRecoveryEnabled: true,
       RecoveryPeriodInDays: 35,
     },
+    DeletionProtectionEnabled: true,
+    TimeToLiveSpecification: {
+      AttributeName: "expiresAt",
+      Enabled: true,
+    },
   });
 
   template.hasResource('AWS::DynamoDB::Table', {
-    DeletionPolicy: 'Delete',
-    UpdateReplacePolicy: 'Delete',
+    DeletionPolicy: 'Retain',
+    UpdateReplacePolicy: 'Retain',
   });
 });
 
@@ -351,6 +366,9 @@ test("creates the development backend Lambda", () => {
         VIDEO_DELETION_QUEUE_URL: {
           Ref: Match.stringLikeRegexp("VideoDeletionQueue"),
         },
+        ACCOUNT_DELETION_QUEUE_URL: {
+          Ref: Match.stringLikeRegexp("AccountDeletionQueue"),
+        },
         AWS_SQS_REGION: {
           Ref: "AWS::Region",
         },
@@ -370,6 +388,20 @@ test("creates the development backend Lambda", () => {
             "Fn::GetAtt": [
               Match.stringLikeRegexp(
                 "VideoDeletionQueue",
+              ),
+              "Arn",
+            ],
+          },
+        }),
+        Match.objectLike({
+          Effect: "Allow",
+          Action: Match.arrayWith([
+            "sqs:SendMessage",
+          ]),
+          Resource: {
+            "Fn::GetAtt": [
+              Match.stringLikeRegexp(
+                "AccountDeletionQueue",
               ),
               "Arn",
             ],
@@ -538,6 +570,165 @@ test("creates the video deletion worker Lambda", () => {
 
 });
 
+test("creates the account deletion worker Lambda", () => {
+  const app = new cdk.App();
+  const stack = new InfrastructureStack(
+    app,
+    "TestStack",
+  );
+  const template = Template.fromStack(stack);
+
+  template.hasResourceProperties(
+    "AWS::Lambda::Function",
+    {
+      FunctionName:
+        "DanceVaultDevelopmentAccountDeletionWorker",
+      Runtime: "nodejs24.x",
+      Architectures: ["arm64"],
+      Handler: "index.handler",
+      MemorySize: 512,
+      Timeout: 900,
+      Environment: {
+        Variables: Match.objectLike({
+          APP_ENVIRONMENT: "dev",
+          AWS_DYNAMODB_REGION: {
+            Ref: "AWS::Region",
+          },
+          DYNAMODB_TABLE_NAME: {
+            Ref: Match.stringLikeRegexp(
+              "DataTable",
+            ),
+          },
+          AWS_S3_REGION: {
+            Ref: "AWS::Region",
+          },
+          AWS_S3_BUCKET: {
+            Ref: Match.stringLikeRegexp(
+              "VideoBucket",
+            ),
+          },
+          AWS_COGNITO_REGION: {
+            Ref: "AWS::Region",
+          },
+          COGNITO_USER_POOL_ID: {
+            Ref: Match.stringLikeRegexp(
+              "UserPool",
+            ),
+          },
+        }),
+      },
+    },
+  );
+
+  template.hasResourceProperties(
+    "AWS::Lambda::EventSourceMapping",
+    {
+      BatchSize: 1,
+      EventSourceArn: {
+        "Fn::GetAtt": [
+          Match.stringLikeRegexp(
+            "AccountDeletionQueue",
+          ),
+          "Arn",
+        ],
+      },
+      FunctionName: {
+        Ref: Match.stringLikeRegexp(
+          "AccountDeletionWorkerFunction",
+        ),
+      },
+    },
+  );
+
+  template.hasResourceProperties(
+    "AWS::Logs::LogGroup",
+    {
+      LogGroupName:
+        "/aws/lambda/DanceVaultDevelopmentAccountDeletionWorker",
+      RetentionInDays: 7,
+    },
+  );
+
+  const functions = template.findResources(
+    "AWS::Lambda::Function",
+  );
+  const workerFunction = Object.values(functions).find(
+    (resource) =>
+      resource.Properties?.FunctionName ===
+      "DanceVaultDevelopmentAccountDeletionWorker",
+  );
+
+  if (!workerFunction) {
+    throw new Error(
+      "Account deletion worker Lambda was not found",
+    );
+  }
+
+  const workerRoleLogicalID =
+    workerFunction.Properties.Role["Fn::GetAtt"][0];
+  const policies = template.findResources(
+    "AWS::IAM::Policy",
+  );
+  const workerPolicy = Object.values(policies).find(
+    (resource) =>
+      JSON.stringify(resource.Properties?.Roles).includes(
+        workerRoleLogicalID,
+      ),
+  );
+
+  if (!workerPolicy) {
+    throw new Error(
+      "Account deletion worker IAM policy was not found",
+    );
+  }
+
+  const statements =
+    workerPolicy.Properties.PolicyDocument.Statement;
+
+  expect(statements).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        Effect: "Allow",
+        Action: expect.arrayContaining([
+          "sqs:ReceiveMessage",
+          "sqs:ChangeMessageVisibility",
+          "sqs:DeleteMessage",
+        ]),
+      }),
+      expect.objectContaining({
+        Effect: "Allow",
+        Action: expect.arrayContaining([
+          "dynamodb:GetItem",
+          "dynamodb:Query",
+          "dynamodb:BatchWriteItem",
+          "dynamodb:DeleteItem",
+        ]),
+      }),
+      expect.objectContaining({
+        Effect: "Allow",
+        Action: "dynamodb:TransactWriteItems",
+      }),
+      expect.objectContaining({
+        Effect: "Allow",
+        Action: "s3:ListBucket",
+        Condition: {
+          StringLike: {
+            "s3:prefix": ["users/*"],
+          },
+        },
+      }),
+      expect.objectContaining({
+        Effect: "Allow",
+        Action: "s3:DeleteObject",
+      }),
+      expect.objectContaining({
+        Effect: "Allow",
+        Action: "cognito-idp:AdminDeleteUser",
+      }),
+    ]),
+  );
+});
+
 test("creates an HTTP API connected to the backend Lambda", () => {
   const app = new cdk.App();
   const stack = new InfrastructureStack(app, "TestStack");
@@ -656,7 +847,7 @@ test("monitors development backend failures and emails operations alerts", () =>
     },
   });
 
-  template.resourceCountIs("AWS::CloudWatch::Alarm", 5);
+  template.resourceCountIs("AWS::CloudWatch::Alarm", 6);
 
   for (const alarmName of [
     "DanceVaultDevelopment-LambdaErrors",
@@ -664,6 +855,7 @@ test("monitors development backend failures and emails operations alerts", () =>
     "DanceVaultDevelopment-APIServerErrors",
     "DanceVaultDevelopment-DynamoDBThrottles",
     "DanceVaultDevelopment-VideoDeletionDeadLetters",
+    "DanceVaultDevelopment-AccountDeletionDeadLetters",
   ]) {
     template.hasResourceProperties("AWS::CloudWatch::Alarm", {
       AlarmName: alarmName,
@@ -684,6 +876,28 @@ test("monitors development backend failures and emails operations alerts", () =>
     AlarmName: "DanceVaultDevelopment-LambdaErrors",
     Namespace: "AWS/Lambda",
     MetricName: "Errors",
+  });
+
+  template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+    AlarmName:
+      "DanceVaultDevelopment-AccountDeletionDeadLetters",
+    Namespace: "AWS/SQS",
+    MetricName:
+      "ApproximateNumberOfMessagesVisible",
+    Statistic: "Maximum",
+    Dimensions: Match.arrayWith([
+      Match.objectLike({
+        Name: "QueueName",
+        Value: {
+          "Fn::GetAtt": [
+            Match.stringLikeRegexp(
+              "AccountDeletionDeadLetterQueue",
+            ),
+            "QueueName",
+          ],
+        },
+      }),
+    ]),
   });
 
   template.hasResourceProperties("AWS::CloudWatch::Alarm", {
@@ -728,7 +942,7 @@ test("monitors development backend failures and emails operations alerts", () =>
     "Recent API failures",
   );
   expect(JSON.stringify(dashboards)).toContain(
-    "Failed video deletion jobs",
+    "Failed deletion jobs",
   );
 });
 
@@ -801,12 +1015,12 @@ test("hosts the frontend through CloudFront", () => {
   );
 });
 
-test("creates retryable video deletion queues", () => {
+test("creates retryable deletion queues", () => {
   const app = new cdk.App();
   const stack = new InfrastructureStack(app, "TestStack");
   const template = Template.fromStack(stack);
 
-  template.resourceCountIs("AWS::SQS::Queue", 2);
+  template.resourceCountIs("AWS::SQS::Queue", 4);
 
   template.hasResourceProperties("AWS::SQS::Queue", {
     QueueName:
@@ -825,6 +1039,32 @@ test("creates retryable video deletion queues", () => {
         "Fn::GetAtt": [
           Match.stringLikeRegexp(
             "VideoDeletionDeadLetterQueue",
+          ),
+          "Arn",
+        ],
+      },
+      maxReceiveCount: 5,
+    },
+  });
+
+  template.hasResourceProperties("AWS::SQS::Queue", {
+    QueueName:
+      "DanceVaultDevelopmentAccountDeletionDeadLetters",
+    MessageRetentionPeriod: 1_209_600,
+    SqsManagedSseEnabled: true,
+  });
+
+  template.hasResourceProperties("AWS::SQS::Queue", {
+    QueueName: "DanceVaultDevelopmentAccountDeletionJobs",
+    DelaySeconds: 900,
+    MessageRetentionPeriod: 345_600,
+    VisibilityTimeout: 5_400,
+    SqsManagedSseEnabled: true,
+    RedrivePolicy: {
+      deadLetterTargetArn: {
+        "Fn::GetAtt": [
+          Match.stringLikeRegexp(
+            "AccountDeletionDeadLetterQueue",
           ),
           "Arn",
         ],

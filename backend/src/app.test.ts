@@ -53,3 +53,14 @@ describe("Authentication", () => {
         });
     });
 });
+
+describe("Account routes", () => {
+    it("registers authenticated account deletion", () => {
+        expect(
+            app.hasRoute({
+                method: "DELETE",
+                url: "/account",
+            })
+        ).toBe(true);
+    });
+});

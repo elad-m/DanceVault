@@ -44,6 +44,7 @@ import type {
     VideoDataAccess,
     VideoDataAccessItem,
 } from "./videoDataAccess";
+import { createActiveUserAccountConditionCheck } from "./dynamoDBUserAccountConditions";
 
 
 const USER_CONTENT_BY_CREATION_TIME_INDEX_NAME =
@@ -203,6 +204,10 @@ export async function createPendingVideoWithQuotaReservation(
             await connection.documentClient.send(
                 new TransactWriteCommand({
                     TransactItems: [
+                        createActiveUserAccountConditionCheck(
+                            connection.tableName,
+                            input.userID
+                        ),
                         {
                             Put: {
                                 TableName: connection.tableName,
@@ -421,36 +426,67 @@ type UpdateDynamoDBVideoItemInput = {
         string | number
     >;
     additionalConditionExpression?: string;
+    requireActiveAccount?: boolean;
 };
 
 async function updateDynamoDBVideoItem(
     connection: DynamoDBConnection,
     input: UpdateDynamoDBVideoItemInput
 ): Promise<DynamoDBVideoItem> {
+    const update = {
+        TableName: connection.tableName,
+        Key: createVideoPrimaryKey(input),
+        UpdateExpression: input.updateExpression,
+        ConditionExpression:
+            "attribute_exists(PK) " +
+            "AND attribute_exists(SK) " +
+            "AND #entityType = :videoEntityType " +
+            "AND #schemaVersion = :schemaVersion" +
+            (input.additionalConditionExpression
+                ? ` AND ${input.additionalConditionExpression}`
+                : ""),
+        ExpressionAttributeNames: {
+            ...input.expressionAttributeNames,
+            "#entityType": "entityType",
+            "#schemaVersion": "schemaVersion",
+        },
+        ExpressionAttributeValues: {
+            ...input.expressionAttributeValues,
+            ":videoEntityType": "video",
+            ":schemaVersion": CURRENT_VIDEO_SCHEMA_VERSION,
+        },
+    };
+
+    if (input.requireActiveAccount) {
+        await connection.documentClient.send(
+            new TransactWriteCommand({
+                TransactItems: [
+                    createActiveUserAccountConditionCheck(
+                        connection.tableName,
+                        input.userID
+                    ),
+                    { Update: update },
+                ],
+            })
+        );
+
+        const updatedVideo = await getVideoByID(
+            connection,
+            input
+        );
+
+        if (!updatedVideo) {
+            throw new Error(
+                "DynamoDB did not return the updated video"
+            );
+        }
+
+        return updatedVideo;
+    }
+
     const result = await connection.documentClient.send(
         new UpdateCommand({
-            TableName: connection.tableName,
-            Key: createVideoPrimaryKey(input),
-            UpdateExpression: input.updateExpression,
-            ConditionExpression:
-                "attribute_exists(PK) " +
-                "AND attribute_exists(SK) " +
-                "AND #entityType = :videoEntityType " +
-                "AND #schemaVersion = :schemaVersion" +
-                (input.additionalConditionExpression
-                    ? ` AND ${input.additionalConditionExpression}`
-                    : ""),
-            ExpressionAttributeNames: {
-                ...input.expressionAttributeNames,
-                "#entityType": "entityType",
-                "#schemaVersion": "schemaVersion",
-            },
-            ExpressionAttributeValues: {
-                ...input.expressionAttributeValues,
-                ":videoEntityType": "video",
-                ":schemaVersion":
-                    CURRENT_VIDEO_SCHEMA_VERSION,
-            },
+            ...update,
             ReturnValues: "ALL_NEW",
         })
     );
@@ -486,6 +522,7 @@ export async function updateVideoTitle(
         expressionAttributeValues: {
             ":title": input.title,
         },
+        requireActiveAccount: true,
     });
 }
 
@@ -659,6 +696,10 @@ export async function finalizeVideoUploadWithQuota(
             await connection.documentClient.send(
                 new TransactWriteCommand({
                     TransactItems: [
+                        createActiveUserAccountConditionCheck(
+                            connection.tableName,
+                            input.userID
+                        ),
                         {
                             Update: {
                                 TableName: connection.tableName,
@@ -825,6 +866,10 @@ export async function markVideoUploadFailedWithQuota(
             await connection.documentClient.send(
                 new TransactWriteCommand({
                     TransactItems: [
+                        createActiveUserAccountConditionCheck(
+                            connection.tableName,
+                            input.userID
+                        ),
                         {
                             Update: {
                                 TableName: connection.tableName,

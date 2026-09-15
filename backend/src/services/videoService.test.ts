@@ -133,6 +133,10 @@ function createFakeVideoStorageProvider(
             throw new Error("Not used by deletion tests");
         },
 
+        async deleteUserObjects() {
+            throw new Error("Not used by deletion tests");
+        },
+
         close(): void { },
     };
 }

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
     deleteVideo,
     listVideos,
+    requestAccountDeletion,
     updateVideo,
     uploadVideo,
     uploadVideoThumbnail,
@@ -12,6 +13,7 @@ import {
     signOutUser,
 } from "./auth/authentication";
 import { DeleteVideoDialog } from "./components/DeleteVideoDialog";
+import { DeleteAccountDialog } from "./components/DeleteAccountDialog";
 import { UploadDialog } from "./components/UploadDialog";
 import { SegmentBrowser } from "./components/SegmentBrowser";
 import { VideoSidebar, type AppView } from "./components/VideoSidebar";
@@ -34,6 +36,8 @@ export default function App() {
     const [uploading, setUploading] = useState(false);
     const [videoPendingDeletion, setVideoPendingDeletion] = useState<Video | null>(null);
     const [deletingVideo, setDeletingVideo] = useState(false);
+    const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+    const [deletingAccount, setDeletingAccount] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [signedInUserLabel, setSignedInUserLabel] = useState("Loading account...");
     const [activeView, setActiveView] = useState<AppView>(() =>
@@ -220,6 +224,28 @@ export default function App() {
         }
     }
 
+    async function handleDeleteAccount() {
+        setDeletingAccount(true);
+        setError(null);
+        let deletionAccepted = false;
+
+        try {
+            await requestAccountDeletion();
+            deletionAccepted = true;
+            await signOutUser();
+        } catch (caught) {
+            showError(
+                deletionAccepted
+                    ? "Account deletion was scheduled, but automatic sign out failed"
+                    : caught instanceof Error
+                        ? caught.message
+                        : "Could not schedule account deletion"
+            );
+        } finally {
+            setDeletingAccount(false);
+        }
+    }
+
     function handleOpenFullVideo(
         segment: Segment,
         fromView: "main" | "segments"
@@ -272,6 +298,11 @@ export default function App() {
                         ? () => void handleSignOut()
                         : undefined
                 }
+                onDeleteAccount={
+                    runtime.environment === "dev"
+                        ? () => setDeleteAccountOpen(true)
+                        : undefined
+                }
             />
             {activeView === "videos" ? (
                 <VideoWorkspace
@@ -313,6 +344,12 @@ export default function App() {
                 deleting={deletingVideo}
                 onCancel={() => setVideoPendingDeletion(null)}
                 onConfirm={handleDeleteVideo}
+            />
+            <DeleteAccountDialog
+                open={deleteAccountOpen}
+                deleting={deletingAccount}
+                onCancel={() => setDeleteAccountOpen(false)}
+                onConfirm={handleDeleteAccount}
             />
             {error && (
                 <div className="error-toast" role="alert">

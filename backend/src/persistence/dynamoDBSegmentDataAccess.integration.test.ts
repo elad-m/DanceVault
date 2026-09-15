@@ -21,6 +21,7 @@ import {
 } from "./dynamoDBVideoDataAccess";
 import {
     createSegmentPrimaryKey,
+    createUserAccountPrimaryKey,
     createUserQuotaUsagePrimaryKey,
     createVideoPrimaryKey,
 } from "./dynamoDBKeys";
@@ -36,6 +37,7 @@ import type {
     CreateSegmentItemInput,
     SegmentItem,
 } from "./dynamoDBItems";
+import { createDynamoDBUserAccountDataAccess } from "./dynamoDBUserAccountDataAccess";
 
 const connection = createDynamoDBConnection();
 
@@ -234,6 +236,160 @@ describe("DynamoDB segment data access integration", () => {
             });
         } finally {
             for (const key of [segmentKey, videoKey, quotaKey]) {
+                await connection.documentClient.send(
+                    new DeleteCommand({
+                        TableName: connection.tableName,
+                        Key: key,
+                    })
+                );
+            }
+        }
+    });
+
+    it("does not create a segment after account deletion starts", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+        const segmentID = `integration-segment-${randomUUID()}`;
+        const userAccountDataAccess =
+            createDynamoDBUserAccountDataAccess(connection);
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Deleting account video",
+                storageKey:
+                    `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
+                fileSizeBytes: 1_000,
+                status: "ready",
+                createdAt: new Date(),
+            });
+            await createUserQuotaUsage(connection, {
+                userID,
+                storedVideoBytes: 1_000,
+                pendingVideoBytes: 0,
+                videoCount: 1,
+                segmentCount: 0,
+                pendingVideoUploadCount: 0,
+            });
+            await userAccountDataAccess.startUserAccountDeletion({
+                userID,
+                requestedAt: new Date(),
+            });
+
+            await expect(
+                createSegmentWithQuota(connection, {
+                    segmentID,
+                    videoID,
+                    userID,
+                    name: "Rejected segment",
+                    description: null,
+                    startMilliseconds: 1_000,
+                    endMilliseconds: 2_000,
+                    tags: [],
+                    difficulty: "easy",
+                    confidence: "low",
+                    practicePriority: "high",
+                    createdAt: new Date(),
+                })
+            ).rejects.toBeInstanceOf(
+                TransactionCanceledException
+            );
+
+            expect(
+                await getSegmentByID(connection, {
+                    userID,
+                    segmentID,
+                })
+            ).toBeNull();
+            expect(
+                await getVideoByID(connection, {
+                    userID,
+                    videoID,
+                })
+            ).toMatchObject({ segmentCount: 0 });
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toMatchObject({ segmentCount: 0 });
+        } finally {
+            for (const key of [
+                createSegmentPrimaryKey({ userID, segmentID }),
+                createVideoPrimaryKey({ userID, videoID }),
+                createUserQuotaUsagePrimaryKey(userID),
+                createUserAccountPrimaryKey(userID),
+            ]) {
+                await connection.documentClient.send(
+                    new DeleteCommand({
+                        TableName: connection.tableName,
+                        Key: key,
+                    })
+                );
+            }
+        }
+    });
+
+    it("does not update segment metadata after account deletion starts", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+        const segmentID = `integration-segment-${randomUUID()}`;
+        const userAccountDataAccess =
+            createDynamoDBUserAccountDataAccess(connection);
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Deleting account video",
+                storageKey:
+                    `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
+                status: "ready",
+                createdAt: new Date(),
+            });
+            await createSegment(connection, {
+                segmentID,
+                videoID,
+                userID,
+                name: "Original name",
+                description: null,
+                startMilliseconds: 1_000,
+                endMilliseconds: 2_000,
+                tags: [],
+                difficulty: "easy",
+                confidence: "low",
+                practicePriority: "high",
+                createdAt: new Date(),
+            });
+            await userAccountDataAccess.startUserAccountDeletion({
+                userID,
+                requestedAt: new Date(),
+            });
+
+            await expect(
+                updateSegmentMetadata(connection, {
+                    userID,
+                    segmentID,
+                    name: "Changed name",
+                })
+            ).rejects.toBeInstanceOf(
+                TransactionCanceledException
+            );
+
+            expect(
+                await getSegmentByID(connection, {
+                    userID,
+                    segmentID,
+                })
+            ).toMatchObject({ name: "Original name" });
+        } finally {
+            for (const key of [
+                createSegmentPrimaryKey({ userID, segmentID }),
+                createVideoPrimaryKey({ userID, videoID }),
+                createUserAccountPrimaryKey(userID),
+            ]) {
                 await connection.documentClient.send(
                     new DeleteCommand({
                         TableName: connection.tableName,
@@ -1047,7 +1203,7 @@ describe("DynamoDB segment data access integration", () => {
                     practicePriority: "high",
                 })
             ).rejects.toBeInstanceOf(
-                ConditionalCheckFailedException
+                TransactionCanceledException
             );
 
             const storedSegment = await getSegmentByID(connection, {
@@ -1081,7 +1237,7 @@ describe("DynamoDB segment data access integration", () => {
                 practicePriority: "high",
             })
         ).rejects.toBeInstanceOf(
-            ConditionalCheckFailedException
+            TransactionCanceledException
         );
     });
 

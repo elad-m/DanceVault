@@ -29,6 +29,8 @@ import { resetRuntimeForTest } from "../runtime";
 import type { PersistenceProvider } from "../persistence";
 import type { VideoDataAccess } from "../persistence/videoDataAccess";
 import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
+import type { UserAccountDataAccess } from "../persistence/userAccountDataAccess";
+import type { UserAccountDeletionDataAccess } from "../persistence/userAccountDeletionDataAccess";
 import {
     clearDynamoDBTestDatabase,
     createDynamoDBTestPersistenceProvider,
@@ -103,6 +105,9 @@ const fakeVideoStorageProvider: VideoStorageProvider = {
         throw new Error("Not used by video route tests");
     },
     listVideoObjectKeys: async () => [],
+    deleteUserObjects: async () => {
+        throw new Error("Not used by video route tests");
+    },
     close: () => { },
 };
 
@@ -123,6 +128,24 @@ const unusedSegmentDataAccess: SegmentDataAccess = {
         throw new Error("Not used by video route tests");
     },
     async deleteSegment() {
+        throw new Error("Not used by video route tests");
+    },
+};
+
+const unusedUserAccountDataAccess: UserAccountDataAccess = {
+    async getUserAccountLifecycle() {
+        return null;
+    },
+    async startUserAccountDeletion() {
+        throw new Error("Not used by video route tests");
+    },
+};
+
+const unusedUserAccountDeletionDataAccess: UserAccountDeletionDataAccess = {
+    async deleteUserData() {
+        throw new Error("Not used by video route tests");
+    },
+    async completeUserAccountDeletion() {
         throw new Error("Not used by video route tests");
     },
 };
@@ -245,6 +268,9 @@ describe("video data access injection", () => {
         );
 
         const persistenceProvider: PersistenceProvider = {
+            userAccountDataAccess: unusedUserAccountDataAccess,
+            userAccountDeletionDataAccess:
+                unusedUserAccountDeletionDataAccess,
             mainListDataAccess: { async getMainList() { throw new Error("Unused"); }, async saveMainList() { throw new Error("Unused"); } },
             videoDataAccess: {
                 createVideo: vi.fn(async () => video),
@@ -329,6 +355,9 @@ describe("video data access injection", () => {
         }));
 
         const persistenceProvider: PersistenceProvider = {
+            userAccountDataAccess: unusedUserAccountDataAccess,
+            userAccountDeletionDataAccess:
+                unusedUserAccountDeletionDataAccess,
             mainListDataAccess: { async getMainList() { throw new Error("Unused"); }, async saveMainList() { throw new Error("Unused"); } },
             videoDataAccess: {
                 createVideo: createVideoMock,
@@ -429,6 +458,9 @@ describe("video data access injection", () => {
             expectedMessage,
         }) => {
             const quotaPersistenceProvider: PersistenceProvider = {
+                userAccountDataAccess: unusedUserAccountDataAccess,
+                userAccountDeletionDataAccess:
+                    unusedUserAccountDeletionDataAccess,
                 mainListDataAccess: persistenceProvider.mainListDataAccess,
                 videoDataAccess: {
                     ...persistenceProvider.videoDataAccess,
@@ -784,6 +816,9 @@ describe("POST /video-uploads/:videoId/complete", () => {
     it("maps a completion storage quota failure to a stable response", async () => {
         const video = await createPendingUploadTestVideo();
         const quotaPersistenceProvider: PersistenceProvider = {
+            userAccountDataAccess: unusedUserAccountDataAccess,
+            userAccountDeletionDataAccess:
+                unusedUserAccountDeletionDataAccess,
             mainListDataAccess: persistenceProvider.mainListDataAccess,
             videoDataAccess: {
                 ...persistenceProvider.videoDataAccess,

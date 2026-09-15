@@ -10,6 +10,7 @@ import { registerLocalAuthentication } from "./localAuth";
 declare module "fastify" {
     interface FastifyRequest {
         userId: string;
+        identityProviderUserId: string;
     }
 }
 
@@ -42,6 +43,7 @@ export function registerAuthentication(
     authenticationDependencies: AuthenticationDependencies
 ) {
     app.decorateRequest("userId", "");
+    app.decorateRequest("identityProviderUserId", "");
 
     if (authenticationDependencies.environment === "local") {
         registerLocalAuthentication(app);

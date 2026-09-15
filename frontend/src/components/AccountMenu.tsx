@@ -3,17 +3,20 @@ import {
     FileText,
     LogOut,
     ShieldCheck,
+    UserRoundX,
 } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 type AccountMenuProperties = {
     signedInUserLabel: string;
     onSignOut?: () => void;
+    onDeleteAccount?: () => void;
 };
 
 export function AccountMenu({
     signedInUserLabel,
     onSignOut,
+    onDeleteAccount,
 }: AccountMenuProperties) {
     const detailsRef = useRef<HTMLDetailsElement>(null);
 
@@ -93,6 +96,19 @@ export function AccountMenu({
                     >
                         <LogOut size={16} />
                         Sign out
+                    </button>
+                )}
+                {onDeleteAccount && (
+                    <button
+                        type="button"
+                        className="account-menu-danger"
+                        onClick={() => {
+                            closeMenu();
+                            onDeleteAccount();
+                        }}
+                    >
+                        <UserRoundX size={16} />
+                        Delete account
                     </button>
                 )}
             </div>

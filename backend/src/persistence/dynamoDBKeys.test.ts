@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     createSegmentItemKeys,
+    createUserAccountPrimaryKey,
     createUserPartitionKey,
     createUserQuotaUsagePrimaryKey,
     createDynamoDBVideoItemKeys,
@@ -81,6 +82,17 @@ describe("createUserQuotaUsagePrimaryKey", () => {
         ).toEqual({
             PK: "USER#user-1",
             SK: "QUOTA_USAGE",
+        });
+    });
+});
+
+describe("createUserAccountPrimaryKey", () => {
+    it("creates the fixed key for one user's account lifecycle", () => {
+        expect(
+            createUserAccountPrimaryKey("user-1")
+        ).toEqual({
+            PK: "USER#user-1",
+            SK: "ACCOUNT",
         });
     });
 });

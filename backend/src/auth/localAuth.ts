@@ -21,5 +21,6 @@ export function registerLocalAuthentication(app: FastifyInstance) {
         }
 
         request.userId = userId;
+        request.identityProviderUserId = userId;
     });
 }

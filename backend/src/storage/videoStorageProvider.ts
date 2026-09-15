@@ -3,6 +3,7 @@
 import {
     CopyObjectCommand,
     DeleteObjectCommand,
+    DeleteObjectsCommand,
     GetObjectCommand,
     HeadObjectCommand,
     ListObjectsV2Command,
@@ -34,6 +35,7 @@ export type VideoStorageProvider = {
     ): Promise<number | null>;
     deleteVideoObject(storageKey: string): Promise<void>;
     listVideoObjectKeys(): Promise<string[]>;
+    deleteUserObjects(input: { userID: string }): Promise<void>;
 
     // Video thumbnail storage operations
     createVideoThumbnailUploadUrl(storageKey: string): Promise<string>;
@@ -162,6 +164,50 @@ export function createVideoStorageProvider(
             } while (continuationToken);
 
             return storageKeys.sort();
+        },
+
+        async deleteUserObjects({ userID }): Promise<void> {
+            const prefix = `users/${encodeURIComponent(userID)}/`;
+            const storageKeys: string[] = [];
+            let continuationToken: string | undefined;
+
+            do {
+                const response = await client.send(
+                    new ListObjectsV2Command({
+                        Bucket: bucketName,
+                        Prefix: prefix,
+                        ContinuationToken: continuationToken,
+                    })
+                );
+
+                for (const object of response.Contents ?? []) {
+                    if (object.Key) {
+                        storageKeys.push(object.Key);
+                    }
+                }
+
+                continuationToken = response.NextContinuationToken;
+            } while (continuationToken);
+
+            for (let index = 0; index < storageKeys.length; index += 1_000) {
+                const response = await client.send(
+                    new DeleteObjectsCommand({
+                        Bucket: bucketName,
+                        Delete: {
+                            Objects: storageKeys
+                                .slice(index, index + 1_000)
+                                .map((Key) => ({ Key })),
+                            Quiet: true,
+                        },
+                    })
+                );
+
+                if ((response.Errors?.length ?? 0) > 0) {
+                    throw new Error(
+                        "Storage did not delete every user object"
+                    );
+                }
+            }
         },
 
         async createVideoThumbnailUploadUrl(

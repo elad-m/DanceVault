@@ -72,6 +72,9 @@ const fakeVideoStorageProvider: VideoStorageProvider = {
     async listVideoObjectKeys() {
         throw new Error("Not used by segment route tests");
     },
+    async deleteUserObjects() {
+        throw new Error("Not used by segment route tests");
+    },
     async createVideoThumbnailUploadUrl() {
         throw new Error("Not used by segment route tests");
     },
@@ -182,6 +185,10 @@ describe("POST /videos/:videoId/segments", () => {
             expectedMessage,
         }) => {
             const quotaPersistenceProvider: PersistenceProvider = {
+                userAccountDataAccess:
+                    persistenceProvider.userAccountDataAccess,
+                userAccountDeletionDataAccess:
+                    persistenceProvider.userAccountDeletionDataAccess,
                 mainListDataAccess: persistenceProvider.mainListDataAccess,
                 videoDataAccess:
                     persistenceProvider.videoDataAccess,

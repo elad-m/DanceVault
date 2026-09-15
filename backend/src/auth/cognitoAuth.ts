@@ -5,7 +5,10 @@ import { ApiErrorCode, sendApiError } from "../httpErrors";
 import { isRunningUnderVitest } from "../testEnvironmentSafety";
 
 export type CognitoAccessTokenVerifier = {
-    verify(accessToken: string): Promise<{ sub: string }>;
+    verify(accessToken: string): Promise<{
+        sub: string;
+        username: string;
+    }>;
 };
 
 export function createCognitoAccessTokenVerifier(): CognitoAccessTokenVerifier {
@@ -72,7 +75,18 @@ export function registerCognitoAuthentication(
 
         try {
             const payload = await accessTokenVerifier.verify(accessToken);
+
+            if (
+                typeof payload.sub !== "string" ||
+                payload.sub.length === 0 ||
+                typeof payload.username !== "string" ||
+                payload.username.length === 0
+            ) {
+                throw new Error("Cognito token has no user identity");
+            }
+
             request.userId = payload.sub;
+            request.identityProviderUserId = payload.username;
         } catch {
             return sendApiError(reply, {
                 statusCode: 401,

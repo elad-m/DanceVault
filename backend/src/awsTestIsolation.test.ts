@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCognitoAccessTokenVerifier } from "./auth/cognitoAuth";
+import { createLiveCognitoUserIdentityProvider } from "./auth/cognitoUserIdentityProvider";
 import { createSQSVideoDeletionQueue } from "./jobs/sqsVideoDeletionQueue";
+import { createSQSAccountDeletionQueue } from "./jobs/sqsAccountDeletionQueue";
 import {
     createDynamoDBClientConfiguration,
     createDynamoDBConnection,
@@ -101,11 +103,17 @@ describe("AWS test isolation", () => {
         expect(() => createSQSVideoDeletionQueue()).toThrow(
             "Tests must inject a fake video deletion queue"
         );
+        expect(() => createSQSAccountDeletionQueue()).toThrow(
+            "Tests must inject a fake account deletion queue"
+        );
     });
 
     it("requires tests to inject a Cognito verifier fake", () => {
         expect(() => createCognitoAccessTokenVerifier()).toThrow(
             "Tests must inject a fake Cognito access token verifier"
+        );
+        expect(() => createLiveCognitoUserIdentityProvider()).toThrow(
+            "Tests must inject a fake Cognito user identity provider"
         );
     });
 });

@@ -139,7 +139,13 @@ offered.
 - **Done:** Draft a basic privacy policy, terms of use, acceptable-use and copyright
   rules, retention policy, and face-recording consent expectations.
 - **Done:** Define account and user-data deletion rights and a private contact
-  route for exercising them. Account deletion is currently handled manually.
+  route for exercising them.
+- **Done locally:** Add authenticated self-service account deletion with an
+  explicit frontend confirmation. Deletion blocks new writes, retries through
+  SQS, removes DynamoDB and S3 data before the Cognito identity, retains a
+  temporary deleted-account tombstone, and alerts if retries reach the DLQ.
+  Deploy and verify this workflow with a disposable Cognito user before opening
+  registration.
 - Obtain an Israeli privacy lawyer's review before opening public registration.
 
 ### Owner setup required before inviting external users
@@ -207,10 +213,14 @@ offered.
 
 - **Done:** Retry partial S3 and DynamoDB video-deletion failures through SQS,
   with a dead-letter queue for repeatedly failing jobs.
-- Add complete account deletion covering videos, thumbnails, segments,
-  DynamoDB records, and the Cognito user.
-- Before inviting real users, enable DynamoDB table deletion protection and
-  change its CloudFormation removal policy from `DESTROY` to `RETAIN`.
+- **Done locally:** Add complete retryable account deletion covering videos,
+  thumbnails, segments, lists, quota records, remaining DynamoDB records, S3
+  objects, and the Cognito user. Block writes during deletion, retain a
+  seven-day tombstone against unexpired tokens, and monitor the account-deletion
+  dead-letter queue.
+- **Done locally:** Protect persistent user data from infrastructure teardown:
+  enable deletion protection and `RETAIN` policies for DynamoDB and Cognito,
+  and retain the video S3 bucket without automatically deleting its objects.
 
 ## 5. iPhone MOV Support and Media Normalization
 
@@ -320,7 +330,11 @@ offered.
   including provider setup, callback configuration, and account-linking rules
   for users who previously registered with the same email address.
 - Require acceptance of the current legal documents.
-- Add account deletion, password recovery, and abuse controls.
+- **Done locally:** Add authenticated self-service account deletion with
+  destructive confirmation and automatic sign-out after acceptance.
+- Verify the Cognito password-recovery experience through the hosted sign-in
+  UI.
+- Add signup-abuse controls before opening registration.
 - Display the privacy notice and terms during registration.
 - Record the accepted policy versions and acceptance timestamp.
 - Verify that the privacy, security, and developer/support contact addresses

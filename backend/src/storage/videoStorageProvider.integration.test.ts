@@ -69,6 +69,60 @@ describe("S3 video storage integration", () => {
         }
     });
 
+    it("deletes every object owned by one user only", async () => {
+        const userID = `storage-sweep-${randomUUID()}`;
+        const otherUserID = `storage-sweep-${randomUUID()}`;
+        const userStorageKeys = [
+            `users/${userID}/videos/video.mp4`,
+            `users/${userID}/thumbnails/videos/video.jpg`,
+            `users/${userID}/thumbnails/segments/segment.jpg`,
+        ];
+        const otherUserStorageKey =
+            `users/${otherUserID}/videos/video.mp4`;
+        const allStorageKeys = [
+            ...userStorageKeys,
+            otherUserStorageKey,
+        ];
+        const objectBytes = new TextEncoder().encode("test object");
+
+        try {
+            for (const storageKey of allStorageKeys) {
+                const uploadUrl =
+                    await videoStorageProvider.createVideoUploadUrl({
+                        storageKey,
+                        contentType: "video/mp4",
+                    });
+                const response = await fetch(uploadUrl, {
+                    method: "PUT",
+                    headers: {
+                        "content-type": "video/mp4",
+                    },
+                    body: objectBytes,
+                });
+
+                expect(response.status).toBe(200);
+            }
+
+            await videoStorageProvider.deleteUserObjects({ userID });
+            await videoStorageProvider.deleteUserObjects({ userID });
+
+            for (const storageKey of userStorageKeys) {
+                await expect(
+                    videoStorageProvider.getVideoObjectSizeBytes(storageKey)
+                ).resolves.toBeNull();
+            }
+            await expect(
+                videoStorageProvider.getVideoObjectSizeBytes(
+                    otherUserStorageKey
+                )
+            ).resolves.toBe(objectBytes.byteLength);
+        } finally {
+            for (const storageKey of allStorageKeys) {
+                await videoStorageProvider.deleteVideoObject(storageKey);
+            }
+        }
+    });
+
     it("uploads, downloads, and deletes a segment thumbnail", async () => {
         const storageKey =
             `integration-tests/thumbnails/segments/${randomUUID()}.jpg`;

@@ -4,6 +4,7 @@ import { ApiErrorCode, sendApiError } from "./httpErrors";
 import { registerSegmentRoutes } from "./routes/segments";
 import { registerMainListRoutes } from "./routes/mainList";
 import { registerVideoRoutes } from "./routes/videos";
+import { registerAccountRoutes } from "./routes/account";
 import {
     createLiveAuthenticationDependencies,
     registerAuthentication,
@@ -23,11 +24,15 @@ import {
 import type {
     VideoDeletionQueue,
 } from "./jobs/videoDeletionQueue";
+import { registerAccountWriteGuard } from "./auth/accountWriteGuard";
+import { createAccountDeletionQueue } from "./jobs/createAccountDeletionQueue";
+import type { AccountDeletionQueue } from "./jobs/accountDeletionQueue";
 
 type BuildAppOptions = {
     videoStorageProvider?: VideoStorageProvider;
     persistenceProvider?: PersistenceProvider;
     videoDeletionQueue?: VideoDeletionQueue;
+    accountDeletionQueue?: AccountDeletionQueue;
 };
 
 export function buildApp(
@@ -50,6 +55,13 @@ export function buildApp(
             persistenceProvider,
         });
 
+    const accountDeletionQueue =
+        options.accountDeletionQueue ??
+        createAccountDeletionQueue({
+            videoStorageProvider,
+            persistenceProvider,
+        });
+
     const app = Fastify({
         logger: true,
         ajv: {
@@ -61,6 +73,7 @@ export function buildApp(
     });
 
     app.addHook("onClose", async () => {
+        accountDeletionQueue.close();
         videoDeletionQueue.close();
         videoStorageProvider.close();
         await persistenceProvider.close();
@@ -102,6 +115,10 @@ export function buildApp(
         app,
         createLiveAuthenticationDependencies()
     );
+    registerAccountWriteGuard(
+        app,
+        persistenceProvider.userAccountDataAccess
+    );
     registerVideoRoutes(
         app,
         videoStorageProvider,
@@ -116,6 +133,11 @@ export function buildApp(
         persistenceProvider.segmentDataAccess
     );
     registerMainListRoutes(app, persistenceProvider);
+    registerAccountRoutes(
+        app,
+        persistenceProvider.userAccountDataAccess,
+        accountDeletionQueue
+    );
 
     return app;
 }

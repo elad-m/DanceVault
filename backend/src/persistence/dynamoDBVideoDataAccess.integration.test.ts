@@ -26,10 +26,14 @@ import {
     createSegment,
     getSegmentByID,
 } from "./dynamoDBSegmentDataAccess";
-import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
+import {
+    ConditionalCheckFailedException,
+    TransactionCanceledException,
+} from "@aws-sdk/client-dynamodb";
 import type { DynamoDBVideoItem } from "./dynamoDBItems";
 import {
     createSegmentPrimaryKey,
+    createUserAccountPrimaryKey,
     createUserQuotaUsagePrimaryKey,
     createVideoPrimaryKey,
 } from "./dynamoDBKeys";
@@ -37,6 +41,7 @@ import {
     createUserQuotaUsage,
     getUserQuotaUsage,
 } from "./dynamoDBUserQuotaUsageDataAccess";
+import { createDynamoDBUserAccountDataAccess } from "./dynamoDBUserAccountDataAccess";
 
 const connection = createDynamoDBConnection();
 const videoDataAccess =
@@ -200,6 +205,147 @@ describe("DynamoDB video data access integration", () => {
             for (const key of [
                 createVideoPrimaryKey({ userID, videoID }),
                 createUserQuotaUsagePrimaryKey(userID),
+            ]) {
+                await connection.documentClient.send(
+                    new DeleteCommand({
+                        TableName: connection.tableName,
+                        Key: key,
+                    })
+                );
+            }
+        }
+    });
+
+    it("does not initialize an upload after account deletion starts", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+        const userAccountDataAccess =
+            createDynamoDBUserAccountDataAccess(connection);
+
+        try {
+            await userAccountDataAccess.startUserAccountDeletion({
+                userID,
+                requestedAt: new Date(),
+            });
+
+            await expect(
+                createPendingVideoWithQuotaReservation(
+                    connection,
+                    {
+                        videoID,
+                        userID,
+                        title: "Rejected upload",
+                        storageKey:
+                            `users/${userID}/videos/${videoID}.mp4`,
+                        storageProviderName: "awsS3",
+                        originalFileName: "video.mp4",
+                        fileSizeBytes: 250,
+                        status: "pending_upload",
+                        createdAt: new Date(),
+                    }
+                )
+            ).rejects.toBeInstanceOf(
+                TransactionCanceledException
+            );
+
+            expect(
+                await getVideoByID(connection, {
+                    userID,
+                    videoID,
+                })
+            ).toBeNull();
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toBeNull();
+        } finally {
+            for (const key of [
+                createVideoPrimaryKey({ userID, videoID }),
+                createUserQuotaUsagePrimaryKey(userID),
+                createUserAccountPrimaryKey(userID),
+            ]) {
+                await connection.documentClient.send(
+                    new DeleteCommand({
+                        TableName: connection.tableName,
+                        Key: key,
+                    })
+                );
+            }
+        }
+    });
+
+    it("does not complete or rename a video after account deletion starts", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const videoID = `integration-video-${randomUUID()}`;
+        const userAccountDataAccess =
+            createDynamoDBUserAccountDataAccess(connection);
+
+        try {
+            await createVideo(connection, {
+                videoID,
+                userID,
+                title: "Original title",
+                storageKey:
+                    `users/${userID}/videos/${videoID}.mp4`,
+                storageProviderName: "awsS3",
+                originalFileName: "video.mp4",
+                fileSizeBytes: 250,
+                status: "pending_upload",
+                createdAt: new Date(),
+            });
+            await createUserQuotaUsage(connection, {
+                userID,
+                storedVideoBytes: 0,
+                pendingVideoBytes: 250,
+                videoCount: 1,
+                segmentCount: 0,
+                pendingVideoUploadCount: 1,
+            });
+            await userAccountDataAccess.startUserAccountDeletion({
+                userID,
+                requestedAt: new Date(),
+            });
+
+            await expect(
+                finalizeVideoUploadWithQuota(connection, {
+                    userID,
+                    videoID,
+                    fileSizeBytes: 200,
+                })
+            ).rejects.toBeInstanceOf(
+                TransactionCanceledException
+            );
+            await expect(
+                updateVideoTitle(connection, {
+                    userID,
+                    videoID,
+                    title: "Changed title",
+                })
+            ).rejects.toBeInstanceOf(
+                TransactionCanceledException
+            );
+
+            expect(
+                await getVideoByID(connection, {
+                    userID,
+                    videoID,
+                })
+            ).toMatchObject({
+                title: "Original title",
+                status: "pending_upload",
+                fileSizeBytes: 250,
+            });
+            expect(
+                await getUserQuotaUsage(connection, userID)
+            ).toMatchObject({
+                storedVideoBytes: 0,
+                pendingVideoBytes: 250,
+                pendingVideoUploadCount: 1,
+            });
+        } finally {
+            for (const key of [
+                createVideoPrimaryKey({ userID, videoID }),
+                createUserQuotaUsagePrimaryKey(userID),
+                createUserAccountPrimaryKey(userID),
             ]) {
                 await connection.documentClient.send(
                     new DeleteCommand({
@@ -1121,7 +1267,7 @@ describe("DynamoDB video data access integration", () => {
                     title: "Unauthorized title",
                 })
             ).rejects.toBeInstanceOf(
-                ConditionalCheckFailedException
+                TransactionCanceledException
             );
 
             const storedVideo = await getVideoByID(connection, {

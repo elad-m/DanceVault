@@ -61,8 +61,9 @@ export class InfrastructureStack extends cdk.Stack {
           pointInTimeRecoveryEnabled: true,
           recoveryPeriodInDays: 35,
         },
-        deletionProtection: false,
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        deletionProtection: true,
+        timeToLiveAttribute: "expiresAt",
+        removalPolicy: cdk.RemovalPolicy.RETAIN,
       },
     );
 
@@ -124,6 +125,36 @@ export class InfrastructureStack extends cdk.Stack {
       },
     );
 
+    const accountDeletionDeadLetterQueue = new sqs.Queue(
+      this,
+      "AccountDeletionDeadLetterQueue",
+      {
+        queueName:
+          "DanceVaultDevelopmentAccountDeletionDeadLetters",
+        encryption: sqs.QueueEncryption.SQS_MANAGED,
+        retentionPeriod: cdk.Duration.days(14),
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
+
+    const accountDeletionQueue = new sqs.Queue(
+      this,
+      "AccountDeletionQueue",
+      {
+        queueName:
+          "DanceVaultDevelopmentAccountDeletionJobs",
+        encryption: sqs.QueueEncryption.SQS_MANAGED,
+        deliveryDelay: cdk.Duration.minutes(15),
+        retentionPeriod: cdk.Duration.days(4),
+        visibilityTimeout: cdk.Duration.minutes(90),
+        deadLetterQueue: {
+          queue: accountDeletionDeadLetterQueue,
+          maxReceiveCount: 5,
+        },
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
+
     const userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: 'DanceVaultDevelopmentUsers',
       featurePlan: cognito.FeaturePlan.ESSENTIALS,
@@ -140,7 +171,8 @@ export class InfrastructureStack extends cdk.Stack {
         sms: false,
         otp: true,
       },
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      deletionProtection: true,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
     const userPoolClient = userPool.addClient('WebClient', {
@@ -148,6 +180,7 @@ export class InfrastructureStack extends cdk.Stack {
       generateSecret: false,
       preventUserExistenceErrors: true,
       authSessionValidity: cdk.Duration.minutes(15),
+      accessTokenValidity: cdk.Duration.hours(1),
       oAuth: {
         flows: {
           authorizationCodeGrant: true,
@@ -417,8 +450,7 @@ export class InfrastructureStack extends cdk.Stack {
           abortIncompleteMultipartUploadAfter: cdk.Duration.days(1),
         },
       ],
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      autoDeleteObjects: true,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
     const frontendBucket = new s3.Bucket(
@@ -554,12 +586,15 @@ export class InfrastructureStack extends cdk.Stack {
           COGNITO_USER_POOL_ID: userPool.userPoolId,
           COGNITO_CLIENT_ID: userPoolClient.userPoolClientId,
           VIDEO_DELETION_QUEUE_URL: videoDeletionQueue.queueUrl,
+          ACCOUNT_DELETION_QUEUE_URL:
+            accountDeletionQueue.queueUrl,
           AWS_SQS_REGION: this.region,
         },
       },
     );
 
     videoDeletionQueue.grantSendMessages(backendFunction);
+    accountDeletionQueue.grantSendMessages(backendFunction);
 
     const videoDeletionWorkerFunctionName =
       "DanceVaultDevelopmentVideoDeletionWorker";
@@ -636,6 +671,108 @@ export class InfrastructureStack extends cdk.Stack {
     );
     videoBucket.grantDelete(
       videoDeletionWorkerFunction,
+    );
+
+    const accountDeletionWorkerFunctionName =
+      "DanceVaultDevelopmentAccountDeletionWorker";
+
+    const accountDeletionWorkerLogGroup = new logs.LogGroup(
+      this,
+      "AccountDeletionWorkerLogGroup",
+      {
+        logGroupName:
+          `/aws/lambda/${accountDeletionWorkerFunctionName}`,
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
+
+    const accountDeletionWorkerFunction =
+      new lambdaNodejs.NodejsFunction(
+        this,
+        "AccountDeletionWorkerFunction",
+        {
+          functionName: accountDeletionWorkerFunctionName,
+          logGroup: accountDeletionWorkerLogGroup,
+          entry: path.join(
+            __dirname,
+            "../../backend/src/jobs/accountDeletionWorkerHandler.ts",
+          ),
+          projectRoot: path.join(
+            __dirname,
+            "../../backend",
+          ),
+          depsLockFilePath: path.join(
+            __dirname,
+            "../../backend/package-lock.json",
+          ),
+          handler: "handler",
+          runtime: lambda.Runtime.NODEJS_24_X,
+          architecture: lambda.Architecture.ARM_64,
+          memorySize: 512,
+          timeout: cdk.Duration.minutes(15),
+          bundling: {
+            bundleAwsSDK: true,
+            sourceMap: true,
+          },
+          environment: {
+            APP_ENVIRONMENT: "dev",
+            AWS_DYNAMODB_REGION: this.region,
+            DYNAMODB_TABLE_NAME: dataTable.tableName,
+            AWS_S3_REGION: this.region,
+            AWS_S3_BUCKET: videoBucket.bucketName,
+            AWS_COGNITO_REGION: this.region,
+            COGNITO_USER_POOL_ID: userPool.userPoolId,
+          },
+        },
+      );
+
+    accountDeletionWorkerFunction.addEventSource(
+      new lambdaEventSources.SqsEventSource(
+        accountDeletionQueue,
+        {
+          batchSize: 1,
+        },
+      ),
+    );
+
+    dataTable.grantReadWriteData(
+      accountDeletionWorkerFunction,
+    );
+    accountDeletionWorkerFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["dynamodb:TransactWriteItems"],
+        resources: [dataTable.tableArn],
+      }),
+    );
+    accountDeletionWorkerFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["s3:ListBucket"],
+        resources: [videoBucket.bucketArn],
+        conditions: {
+          StringLike: {
+            "s3:prefix": ["users/*"],
+          },
+        },
+      }),
+    );
+    accountDeletionWorkerFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["s3:DeleteObject"],
+        resources: [`${videoBucket.bucketArn}/users/*`],
+      }),
+    );
+    accountDeletionWorkerFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "cognito-idp:AdminDeleteUser",
+        ],
+        resources: [userPool.userPoolArn],
+      }),
     );
 
     const backendIntegration =
@@ -794,6 +931,12 @@ export class InfrastructureStack extends cdk.Stack {
           period: monitoringPeriod,
           statistic: "Maximum",
         });
+    const failedAccountDeletionJobs =
+      accountDeletionDeadLetterQueue
+        .metricApproximateNumberOfMessagesVisible({
+          period: monitoringPeriod,
+          statistic: "Maximum",
+        });
 
     const operationsAlertTopic = new sns.Topic(
       this,
@@ -903,12 +1046,34 @@ export class InfrastructureStack extends cdk.Stack {
         },
       );
 
+    const accountDeletionDeadLetterAlarm =
+      new cloudWatch.Alarm(
+        this,
+        "AccountDeletionDeadLetterAlarm",
+        {
+          alarmName:
+            "DanceVaultDevelopment-AccountDeletionDeadLetters",
+          alarmDescription:
+            "At least one account deletion job exhausted all retries.",
+          metric: failedAccountDeletionJobs,
+          threshold: 1,
+          evaluationPeriods: 1,
+          datapointsToAlarm: 1,
+          comparisonOperator:
+            cloudWatch.ComparisonOperator
+              .GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+          treatMissingData:
+            cloudWatch.TreatMissingData.NOT_BREACHING,
+        },
+      );
+
     for (const alarm of [
       lambdaErrorAlarm,
       lambdaThrottleAlarm,
       apiServerErrorAlarm,
       dynamoDBThrottleAlarm,
       videoDeletionDeadLetterAlarm,
+      accountDeletionDeadLetterAlarm,
     ]) {
       alarm.addAlarmAction(
         new cloudWatchActions.SnsAction(operationsAlertTopic),
@@ -968,8 +1133,11 @@ export class InfrastructureStack extends cdk.Stack {
         width: 12,
       }),
       new cloudWatch.GraphWidget({
-        title: "Failed video deletion jobs",
-        left: [failedVideoDeletionJobs],
+        title: "Failed deletion jobs",
+        left: [
+          failedVideoDeletionJobs,
+          failedAccountDeletionJobs,
+        ],
         width: 12,
       }),
     );

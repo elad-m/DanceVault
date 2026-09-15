@@ -16,6 +16,8 @@ import {
 import { assertSafeDynamoDBTestTarget } from "../testEnvironmentSafety";
 import type { UserQuotaUsage } from "../domain/userQuota";
 import { getUserQuotaUsage } from "../persistence/dynamoDBUserQuotaUsageDataAccess";
+import { createDynamoDBUserAccountDataAccess } from "../persistence/dynamoDBUserAccountDataAccess";
+import { createDynamoDBUserAccountDeletionDataAccess } from "../persistence/dynamoDBUserAccountDeletionDataAccess";
 
 type ResetDynamoDBTestDatabaseInput = {
     persistenceProvider: PersistenceProvider;
@@ -135,6 +137,10 @@ export function createDynamoDBTestPersistenceProvider(): PersistenceProvider {
     const connection = createDynamoDBConnection();
 
     return {
+        userAccountDataAccess:
+            createDynamoDBUserAccountDataAccess(connection),
+        userAccountDeletionDataAccess:
+            createDynamoDBUserAccountDeletionDataAccess(connection),
         videoDataAccess: createDynamoDBVideoDataAccess(connection),
         mainListDataAccess: createDynamoDBMainListDataAccess(connection),
         segmentDataAccess: createDynamoDBSegmentDataAccess(connection),

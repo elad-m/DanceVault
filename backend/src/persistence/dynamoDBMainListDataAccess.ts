@@ -1,8 +1,12 @@
-import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
-import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
+import { GetCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
+import {
+    ConditionalCheckFailedException,
+    TransactionCanceledException,
+} from "@aws-sdk/client-dynamodb";
 import type { DynamoDBConnection } from "./dynamoDBConnection";
 import { createUserPartitionKey } from "./dynamoDBKeys";
 import { MAX_MAIN_LIST_SEGMENTS, type MainListDataAccess } from "./mainListDataAccess";
+import { createActiveUserAccountConditionCheck } from "./dynamoDBUserAccountConditions";
 
 const MAIN_LIST_SCHEMA_VERSION = 1;
 
@@ -43,23 +47,38 @@ export function createDynamoDBMainListDataAccess(
             }
             const result = { segmentIDs, version: expectedVersion + 1 };
             try {
-                await connection.documentClient.send(new PutCommand({
-                    TableName: connection.tableName,
-                    Item: { ...key(userID), entityType: "mainList",
-                        schemaVersion: MAIN_LIST_SCHEMA_VERSION, ...result },
-                    // Creation must not replace an existing list; later saves compare its version.
-                    ConditionExpression: expectedVersion === 0
-                        ? "attribute_not_exists(PK)"
-                        : "#version = :expected AND entityType = :entity AND schemaVersion = :schema",
-                    ...(expectedVersion === 0 ? {} : {
-                        ExpressionAttributeNames: { "#version": "version" },
-                        ExpressionAttributeValues: { ":expected": expectedVersion,
-                            ":entity": "mainList", ":schema": MAIN_LIST_SCHEMA_VERSION },
-                    }),
-                }));
+                await connection.documentClient.send(
+                    new TransactWriteCommand({
+                        TransactItems: [
+                            createActiveUserAccountConditionCheck(
+                                connection.tableName,
+                                userID
+                            ),
+                            {
+                                Put: {
+                                    TableName: connection.tableName,
+                                    Item: { ...key(userID), entityType: "mainList",
+                                        schemaVersion: MAIN_LIST_SCHEMA_VERSION, ...result },
+                                    // Creation must not replace an existing list; later saves compare its version.
+                                    ConditionExpression: expectedVersion === 0
+                                        ? "attribute_not_exists(PK)"
+                                        : "#version = :expected AND entityType = :entity AND schemaVersion = :schema",
+                                    ...(expectedVersion === 0 ? {} : {
+                                        ExpressionAttributeNames: { "#version": "version" },
+                                        ExpressionAttributeValues: { ":expected": expectedVersion,
+                                            ":entity": "mainList", ":schema": MAIN_LIST_SCHEMA_VERSION },
+                                    }),
+                                },
+                            },
+                        ],
+                    })
+                );
                 return result;
             } catch (error) {
-                if (error instanceof ConditionalCheckFailedException) return null;
+                if (
+                    error instanceof ConditionalCheckFailedException ||
+                    error instanceof TransactionCanceledException
+                ) return null;
                 throw error;
             }
         },

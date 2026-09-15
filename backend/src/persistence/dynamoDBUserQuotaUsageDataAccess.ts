@@ -1,10 +1,14 @@
 // Persists and validates the aggregate counters used for per-user quotas.
 
-import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
+import {
+    ConditionalCheckFailedException,
+    TransactionCanceledException,
+} from "@aws-sdk/client-dynamodb";
 import {
     GetCommand,
     PutCommand,
     ScanCommand,
+    TransactWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type {
     QuotaCountedVideo,
@@ -23,6 +27,7 @@ import {
     type SegmentItem,
 } from "./dynamoDBItems";
 import { createUserQuotaUsagePrimaryKey } from "./dynamoDBKeys";
+import { createActiveUserAccountConditionCheck } from "./dynamoDBUserAccountConditions";
 
 function parseDynamoDBUserQuotaUsageItem(
     item: Record<string, unknown>
@@ -65,6 +70,35 @@ export async function createUserQuotaUsage(
     return item;
 }
 
+async function createUserQuotaUsageForActiveAccount(
+    connection: DynamoDBConnection,
+    input: CreateDynamoDBUserQuotaUsageItemInput
+): Promise<DynamoDBUserQuotaUsageItem> {
+    const item = createDynamoDBUserQuotaUsageItem(input);
+
+    await connection.documentClient.send(
+        new TransactWriteCommand({
+            TransactItems: [
+                createActiveUserAccountConditionCheck(
+                    connection.tableName,
+                    input.userID
+                ),
+                {
+                    Put: {
+                        TableName: connection.tableName,
+                        Item: item,
+                        ConditionExpression:
+                            "attribute_not_exists(PK) " +
+                            "AND attribute_not_exists(SK)",
+                    },
+                },
+            ],
+        })
+    );
+
+    return item;
+}
+
 export async function getUserQuotaUsage(
     connection: DynamoDBConnection,
     userID: string
@@ -100,7 +134,7 @@ export async function getOrCreateUserQuotaUsage(
     }
 
     try {
-        return await createUserQuotaUsage(connection, {
+        return await createUserQuotaUsageForActiveAccount(connection, {
             userID,
             storedVideoBytes: 0,
             pendingVideoBytes: 0,
@@ -110,7 +144,7 @@ export async function getOrCreateUserQuotaUsage(
         });
     } catch (error: unknown) {
         if (
-            !(error instanceof ConditionalCheckFailedException)
+            !(error instanceof TransactionCanceledException)
         ) {
             throw error;
         }

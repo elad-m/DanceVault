@@ -43,3 +43,26 @@ it("rejects unknown segments, duplicates and oversized lists", async () => {
             payload: { segmentIDs, expectedVersion: 0 } })).statusCode).toBe(400);
     }
 });
+
+it("does not save a Main List after account deletion starts", async () => {
+    await persistence.userAccountDataAccess.startUserAccountDeletion({
+        userID: TEST_USER_ID,
+        requestedAt: new Date("2026-09-10T12:00:00.000Z"),
+    });
+
+    await expect(
+        persistence.mainListDataAccess.saveMainList({
+            userID: TEST_USER_ID,
+            segmentIDs: ["sample-segment-1"],
+            expectedVersion: 0,
+        })
+    ).resolves.toBeNull();
+    await expect(
+        persistence.mainListDataAccess.getMainList({
+            userID: TEST_USER_ID,
+        })
+    ).resolves.toEqual({
+        segmentIDs: [],
+        version: 0,
+    });
+});

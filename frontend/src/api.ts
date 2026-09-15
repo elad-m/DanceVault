@@ -110,6 +110,12 @@ export async function deleteVideo(videoId: string): Promise<void> {
     });
 }
 
+export function requestAccountDeletion(): Promise<{ jobID: string }> {
+    return requestJson<{ jobID: string }>("/account", {
+        method: "DELETE",
+    });
+}
+
 export async function updateVideo(
     videoId: string,
     input: UpdateVideoInput

@@ -43,6 +43,8 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .account-menu-user strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .account-menu-popover > a, .account-menu-popover > button { width: 100%; min-height: 38px; display: flex; align-items: center; gap: 9px; padding: 8px 9px; border: 0; border-radius: 5px; background: transparent; color: var(--text-primary); font-size: 12px; font-weight: 600; text-align: left; text-decoration: none; }
 .account-menu-popover > a:hover, .account-menu-popover > button:hover { background: var(--surface-hover); }
+.account-menu-popover > .account-menu-danger { margin-top: 5px; border-top: 1px solid var(--border); border-radius: 0 0 5px 5px; color: #f2aaa4; }
+.account-menu-popover > .account-menu-danger:hover { background: #442522; }
 .sidebar-actions { display: grid; grid-template-columns: 1fr 38px; gap: 8px; margin-bottom: 24px; }
 .view-navigation { display: grid; gap: 4px; margin: 0 0 22px; padding-bottom: 18px; border-bottom: 1px solid #2d3034; }
 .view-navigation button { width: 100%; border: 0; border-radius: 6px; background: transparent; color: #b2b6bc; padding: 10px; display: flex; align-items: center; gap: 9px; text-align: left; font-size: 13px; font-weight: 600; }
@@ -165,6 +167,10 @@ textarea { resize: vertical; }
 .video-upload-progress-track { width: min(100%, 340px); height: 5px; overflow: hidden; border-radius: 3px; background: var(--surface-muted); }
 .video-upload-progress-track span { display: block; width: 42%; height: 100%; border-radius: inherit; background: var(--brand-yellow); animation: video-upload-progress 1.45s ease-in-out infinite; }
 .delete-video-dialog { width: min(460px, 100%); }
+.delete-account-dialog { width: min(500px, 100%); }
+.delete-account-copy { display: grid; gap: 16px; }
+.delete-account-copy p { margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.55; }
+.delete-account-copy label strong { color: var(--text-primary); }
 .delete-video-copy { margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.55; }
 .delete-video-copy strong { color: var(--text-primary); }
 .edit-segment-dialog { width: min(620px, 100%); max-height: calc(100vh - 40px); overflow-y: auto; }

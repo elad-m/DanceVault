@@ -38,6 +38,7 @@ type VideoSidebarProps = {
     onUpdateTitle: (video: Video, title: string) => Promise<boolean>;
     signedInUserLabel: string;
     onSignOut?: () => void;
+    onDeleteAccount?: () => void;
 };
 
 const maximumConcurrentVideoThumbnailRequests = 2;
@@ -111,6 +112,7 @@ export function VideoSidebar({
     onUpdateTitle,
     signedInUserLabel,
     onSignOut,
+    onDeleteAccount,
 }: VideoSidebarProps) {
     const [thumbnailUrls, setThumbnailUrls] =
         useState<Record<string, string>>({});
@@ -239,6 +241,7 @@ export function VideoSidebar({
                 <AccountMenu
                     signedInUserLabel={signedInUserLabel}
                     onSignOut={onSignOut}
+                    onDeleteAccount={onDeleteAccount}
                 />
             </div>
 

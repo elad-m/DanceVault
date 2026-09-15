@@ -6,7 +6,6 @@ import {
     GetCommand,
     QueryCommand,
     TransactWriteCommand,
-    UpdateCommand,
     type QueryCommandInput,
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBConnection } from "./dynamoDBConnection";
@@ -40,6 +39,7 @@ import {
     getOrCreateUserQuotaUsage,
 } from "./dynamoDBUserQuotaUsageDataAccess";
 import { getVideoByID } from "./dynamoDBVideoDataAccess";
+import { createActiveUserAccountConditionCheck } from "./dynamoDBUserAccountConditions";
 
 const SEGMENTS_BY_VIDEO_INDEX_NAME = "SegmentsByVideo";
 export const MAX_SEGMENTS_BY_VIDEO_PAGE_SIZE = 50;
@@ -237,6 +237,10 @@ export async function createSegmentWithQuota(
             await connection.documentClient.send(
                 new TransactWriteCommand({
                     TransactItems: [
+                        createActiveUserAccountConditionCheck(
+                            connection.tableName,
+                            input.userID
+                        ),
                         {
                             Update: {
                                 TableName: connection.tableName,
@@ -551,31 +555,46 @@ export async function updateSegmentMetadata(
         ]),
     ]);
 
-    const result = await connection.documentClient.send(
-        new UpdateCommand({
-            TableName: connection.tableName,
-            Key: createSegmentPrimaryKey(input),
-            UpdateExpression: `SET ${updateExpressions.join(", ")}`,
-            ConditionExpression:
-                "attribute_exists(PK) " +
-                "AND attribute_exists(SK) " +
-                "AND #entityType = :segmentEntityType " +
-                "AND #schemaVersion = :segmentSchemaVersion",
-            ExpressionAttributeNames:
-                expressionAttributeNames,
-            ExpressionAttributeValues:
-                expressionAttributeValues,
-            ReturnValues: "ALL_NEW",
+    await connection.documentClient.send(
+        new TransactWriteCommand({
+            TransactItems: [
+                createActiveUserAccountConditionCheck(
+                    connection.tableName,
+                    input.userID
+                ),
+                {
+                    Update: {
+                        TableName: connection.tableName,
+                        Key: createSegmentPrimaryKey(input),
+                        UpdateExpression:
+                            `SET ${updateExpressions.join(", ")}`,
+                        ConditionExpression:
+                            "attribute_exists(PK) " +
+                            "AND attribute_exists(SK) " +
+                            "AND #entityType = :segmentEntityType " +
+                            "AND #schemaVersion = :segmentSchemaVersion",
+                        ExpressionAttributeNames:
+                            expressionAttributeNames,
+                        ExpressionAttributeValues:
+                            expressionAttributeValues,
+                    },
+                },
+            ],
         })
     );
 
-    if (!result.Attributes) {
+    const updatedSegment = await getSegmentByID(
+        connection,
+        input
+    );
+
+    if (!updatedSegment) {
         throw new Error(
             "DynamoDB updated a segment without returning its new value"
         );
     }
 
-    return requireSupportedSegmentItem(result.Attributes);
+    return updatedSegment;
 }
 
 type DeleteSegmentInput = {
