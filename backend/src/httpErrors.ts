@@ -22,6 +22,7 @@ export const ApiErrorCode = {
         "PENDING_VIDEO_UPLOAD_QUOTA_EXCEEDED",
     VideoDeleting: "VIDEO_DELETING",
     AccountDeleting: "ACCOUNT_DELETING",
+    LegalAcceptanceRequired: "LEGAL_ACCEPTANCE_REQUIRED",
     VideoThumbnailNotFound: "VIDEO_THUMBNAIL_NOT_FOUND",
     VideoThumbnailUploadNotFound:
         "VIDEO_THUMBNAIL_UPLOAD_NOT_FOUND",
@@ -65,6 +66,8 @@ export const ApiErrorMessage: ApiErrorMessageMap = {
         "Too many video uploads are currently pending",
     [ApiErrorCode.VideoDeleting]: "Video is being deleted",
     [ApiErrorCode.AccountDeleting]: "Account is being deleted",
+    [ApiErrorCode.LegalAcceptanceRequired]:
+        "Current Terms of Use and Privacy Notice must be accepted",
     [ApiErrorCode.VideoThumbnailNotFound]:
         "Video thumbnail was not found",
     [ApiErrorCode.VideoThumbnailUploadNotFound]:

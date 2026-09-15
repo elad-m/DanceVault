@@ -116,6 +116,38 @@ export function requestAccountDeletion(): Promise<{ jobID: string }> {
     });
 }
 
+export type LegalPolicyVersions = {
+    privacyNotice: string;
+    termsOfUse: string;
+};
+
+export type LegalAcceptanceStatus = {
+    required: boolean;
+    currentVersions: LegalPolicyVersions;
+    acceptance: (LegalPolicyVersions & {
+        acceptedAt: string;
+    }) | null;
+};
+
+export function getLegalAcceptanceStatus():
+Promise<LegalAcceptanceStatus> {
+    return requestJson<LegalAcceptanceStatus>(
+        "/account/legal-acceptance"
+    );
+}
+
+export function acceptLegalPolicies(
+    versions: LegalPolicyVersions
+): Promise<LegalAcceptanceStatus> {
+    return requestJson<LegalAcceptanceStatus>(
+        "/account/legal-acceptance",
+        {
+            method: "POST",
+            body: JSON.stringify(versions),
+        }
+    );
+}
+
 export async function updateVideo(
     videoId: string,
     input: UpdateVideoInput

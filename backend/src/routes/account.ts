@@ -6,6 +6,15 @@ import type {
 import type { AccountDeletionQueue } from "../jobs/accountDeletionQueue";
 import type { UserAccountDataAccess } from "../persistence/userAccountDataAccess";
 import { requestAccountDeletion } from "../services/accountService";
+import {
+    currentLegalPolicyVersions,
+    isCurrentLegalAcceptance,
+    type LegalPolicyVersions,
+} from "../domain/legalAcceptance";
+
+type LegalAcceptanceRequest = FastifyRequest<{
+    Body: LegalPolicyVersions;
+}>;
 
 async function deleteAccountHandler(
     request: FastifyRequest,
@@ -57,6 +66,66 @@ export function registerAccountRoutes(
     userAccountDataAccess: UserAccountDataAccess,
     accountDeletionQueue: AccountDeletionQueue
 ) {
+    app.get("/account/legal-acceptance", async (request) => {
+        const acceptance =
+            await userAccountDataAccess.getUserLegalAcceptance({
+                userID: request.userId,
+            });
+
+        return {
+            required: !isCurrentLegalAcceptance(acceptance),
+            currentVersions: currentLegalPolicyVersions,
+            acceptance,
+        };
+    });
+
+    app.post(
+        "/account/legal-acceptance",
+        {
+            schema: {
+                body: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: ["privacyNotice", "termsOfUse"],
+                    properties: {
+                        privacyNotice: {
+                            type: "string",
+                            const: currentLegalPolicyVersions.privacyNotice,
+                        },
+                        termsOfUse: {
+                            type: "string",
+                            const: currentLegalPolicyVersions.termsOfUse,
+                        },
+                    },
+                },
+            },
+        },
+        async (request: LegalAcceptanceRequest, reply) => {
+            const acceptance =
+                await userAccountDataAccess.acceptLegalPolicies({
+                    userID: request.userId,
+                    versions: request.body,
+                    acceptedAt: new Date(),
+                });
+
+            request.log.info(
+                {
+                    event: "legal_policies_accepted",
+                    userId: request.userId,
+                    ...request.body,
+                    acceptedAt: acceptance.acceptedAt,
+                },
+                "Current legal policies accepted"
+            );
+
+            return reply.status(200).send({
+                required: false,
+                currentVersions: currentLegalPolicyVersions,
+                acceptance,
+            });
+        }
+    );
+
     app.delete("/account", (request, reply) =>
         deleteAccountHandler(
             request,

@@ -136,6 +136,12 @@ const unusedUserAccountDataAccess: UserAccountDataAccess = {
     async getUserAccountLifecycle() {
         return null;
     },
+    async getUserLegalAcceptance() {
+        return null;
+    },
+    async acceptLegalPolicies() {
+        throw new Error("Not used by video route tests");
+    },
     async startUserAccountDeletion() {
         throw new Error("Not used by video route tests");
     },

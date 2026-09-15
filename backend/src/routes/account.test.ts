@@ -7,6 +7,10 @@ import {
     it,
 } from "vitest";
 import type { UserAccountLifecycle } from "../domain/userAccount";
+import {
+    currentLegalPolicyVersions,
+    type UserLegalAcceptance,
+} from "../domain/legalAcceptance";
 import type {
     AccountDeletionJob,
     AccountDeletionQueue,
@@ -18,17 +22,31 @@ import { registerAccountRoutes } from "./account";
 describe("account routes", () => {
     let app: FastifyInstance;
     let lifecycle: UserAccountLifecycle | null;
+    let legalAcceptance: UserLegalAcceptance | null;
     let queuedJobs: AccountDeletionJob[];
     let accountDeletionQueue: AccountDeletionQueue;
     let userAccountDataAccess: UserAccountDataAccess;
 
     beforeEach(() => {
         lifecycle = null;
+        legalAcceptance = null;
         queuedJobs = [];
 
         userAccountDataAccess = {
             async getUserAccountLifecycle() {
                 return lifecycle;
+            },
+
+            async getUserLegalAcceptance() {
+                return legalAcceptance;
+            },
+
+            async acceptLegalPolicies(input) {
+                legalAcceptance = {
+                    ...input.versions,
+                    acceptedAt: input.acceptedAt.toISOString(),
+                };
+                return legalAcceptance;
             },
 
             async startUserAccountDeletion(input) {
@@ -67,6 +85,56 @@ describe("account routes", () => {
 
     afterEach(async () => {
         await app.close();
+    });
+
+    it("reports and records current legal-policy acceptance", async () => {
+        const initialResponse = await app.inject({
+            method: "GET",
+            url: "/account/legal-acceptance",
+        });
+
+        expect(initialResponse.statusCode).toBe(200);
+        expect(initialResponse.json()).toEqual({
+            required: true,
+            currentVersions: currentLegalPolicyVersions,
+            acceptance: null,
+        });
+
+        const acceptanceResponse = await app.inject({
+            method: "POST",
+            url: "/account/legal-acceptance",
+            payload: currentLegalPolicyVersions,
+        });
+
+        expect(acceptanceResponse.statusCode).toBe(200);
+        expect(acceptanceResponse.json()).toEqual({
+            required: false,
+            currentVersions: currentLegalPolicyVersions,
+            acceptance: {
+                ...currentLegalPolicyVersions,
+                acceptedAt: expect.any(String),
+            },
+        });
+
+        const currentResponse = await app.inject({
+            method: "GET",
+            url: "/account/legal-acceptance",
+        });
+        expect(currentResponse.json().required).toBe(false);
+    });
+
+    it("rejects acceptance for outdated policy versions", async () => {
+        const response = await app.inject({
+            method: "POST",
+            url: "/account/legal-acceptance",
+            payload: {
+                privacyNotice: "older",
+                termsOfUse: currentLegalPolicyVersions.termsOfUse,
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(legalAcceptance).toBeNull();
     });
 
     it("queues deletion for the authenticated user", async () => {

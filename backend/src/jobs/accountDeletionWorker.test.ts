@@ -75,6 +75,12 @@ function createWorkerTestContext(input: {
                         deletionRequestedAt: timestamp,
                     };
             },
+            async getUserLegalAcceptance() {
+                return null;
+            },
+            async acceptLegalPolicies() {
+                throw new Error("Not used by worker tests");
+            },
             async startUserAccountDeletion() {
                 throw new Error("Not used by worker tests");
             },

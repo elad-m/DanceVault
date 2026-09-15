@@ -27,6 +27,7 @@ import type {
 import { registerAccountWriteGuard } from "./auth/accountWriteGuard";
 import { createAccountDeletionQueue } from "./jobs/createAccountDeletionQueue";
 import type { AccountDeletionQueue } from "./jobs/accountDeletionQueue";
+import { registerLegalAcceptanceGuard } from "./auth/legalAcceptanceGuard";
 
 type BuildAppOptions = {
     videoStorageProvider?: VideoStorageProvider;
@@ -111,9 +112,13 @@ export function buildApp(
         return reply.status(204).send();
     });
 
-    registerAuthentication(
+    const authenticationDependencies =
+        createLiveAuthenticationDependencies();
+    registerAuthentication(app, authenticationDependencies);
+    registerLegalAcceptanceGuard(
         app,
-        createLiveAuthenticationDependencies()
+        persistenceProvider.userAccountDataAccess,
+        authenticationDependencies.environment
     );
     registerAccountWriteGuard(
         app,

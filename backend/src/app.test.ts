@@ -55,6 +55,21 @@ describe("Authentication", () => {
 });
 
 describe("Account routes", () => {
+    it("registers legal acceptance status and submission", () => {
+        expect(
+            app.hasRoute({
+                method: "GET",
+                url: "/account/legal-acceptance",
+            })
+        ).toBe(true);
+        expect(
+            app.hasRoute({
+                method: "POST",
+                url: "/account/legal-acceptance",
+            })
+        ).toBe(true);
+    });
+
     it("registers authenticated account deletion", () => {
         expect(
             app.hasRoute({

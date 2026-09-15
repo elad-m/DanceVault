@@ -1,4 +1,10 @@
-import { Film, LoaderCircle, LogIn } from "lucide-react";
+import {
+    Film,
+    LoaderCircle,
+    LogIn,
+    LogOut,
+    RefreshCw,
+} from "lucide-react";
 import {
     type ReactNode,
     useEffect,
@@ -8,10 +14,20 @@ import { Hub } from "aws-amplify/utils";
 import {
     isUserAuthenticated,
     startSignIn,
+    signOutUser,
 } from "../auth/authentication";
+import {
+    acceptLegalPolicies,
+    getLegalAcceptanceStatus,
+    type LegalPolicyVersions,
+} from "../api";
+import { runtime } from "../runtime";
+import { LegalAcceptanceScreen } from "./LegalAcceptanceScreen";
 
 type AuthenticationStatus =
     | "checking"
+    | "acceptance-error"
+    | "acceptance-required"
     | "authenticated"
     | "unauthenticated";
 
@@ -25,6 +41,10 @@ export function AuthenticationGate({
     const [status, setStatus] =
         useState<AuthenticationStatus>("checking");
     const [error, setError] = useState<string | null>(null);
+    const [currentVersions, setCurrentVersions] =
+        useState<LegalPolicyVersions | null>(null);
+    const [accepting, setAccepting] = useState(false);
+    const [authenticationCheck, setAuthenticationCheck] = useState(0);
 
     useEffect(() => {
         let isMounted = true;
@@ -43,11 +63,33 @@ export function AuthenticationGate({
                 window.history.replaceState({}, "", "/practice");
             }
 
-            setStatus(
-                isAuthenticated
-                    ? "authenticated"
-                    : "unauthenticated"
-            );
+            if (!isAuthenticated) {
+                setStatus("unauthenticated");
+                return;
+            }
+
+            if (runtime.environment === "local") {
+                setStatus("authenticated");
+                return;
+            }
+
+            try {
+                const legalStatus =
+                    await getLegalAcceptanceStatus();
+
+                if (!isMounted) return;
+
+                setCurrentVersions(legalStatus.currentVersions);
+                setStatus(
+                    legalStatus.required
+                        ? "acceptance-required"
+                        : "authenticated"
+                );
+            } catch {
+                if (!isMounted) return;
+                setError("Could not check the current legal policies");
+                setStatus("acceptance-error");
+            }
         }
 
         const stopListening = Hub.listen(
@@ -75,7 +117,32 @@ export function AuthenticationGate({
             isMounted = false;
             stopListening();
         };
-    }, []);
+    }, [authenticationCheck]);
+
+    async function handleAcceptLegalPolicies() {
+        if (!currentVersions) return;
+
+        setAccepting(true);
+        setError(null);
+
+        try {
+            await acceptLegalPolicies(currentVersions);
+            setStatus("authenticated");
+        } catch {
+            setError("Could not save your acceptance. Please try again.");
+        } finally {
+            setAccepting(false);
+        }
+    }
+
+    async function handleAcceptanceSignOut() {
+        setError(null);
+        try {
+            await signOutUser();
+        } catch {
+            setError("Could not sign out");
+        }
+    }
 
     if (status === "checking") {
         return (
@@ -128,6 +195,57 @@ export function AuthenticationGate({
                         <a href="/privacy">Privacy Notice</a>
                         <a href="/terms">Terms of Use</a>
                     </nav>
+                </section>
+            </main>
+        );
+    }
+
+    if (status === "acceptance-required" && currentVersions) {
+        return (
+            <LegalAcceptanceScreen
+                versions={currentVersions}
+                accepting={accepting}
+                error={error}
+                onAccept={handleAcceptLegalPolicies}
+                onSignOut={handleAcceptanceSignOut}
+            />
+        );
+    }
+
+    if (status === "acceptance-error") {
+        return (
+            <main className="authentication-screen">
+                <section className="authentication-panel">
+                    <span className="authentication-brand-mark">
+                        <Film size={24} />
+                    </span>
+                    <div className="authentication-copy">
+                        <span>Account check unavailable</span>
+                        <h1>Could not open DanceVault</h1>
+                        <p role="alert">{error}</p>
+                    </div>
+                    <div className="legal-acceptance-actions">
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => void handleAcceptanceSignOut()}
+                        >
+                            <LogOut size={16} />
+                            Sign out
+                        </button>
+                        <button
+                            type="button"
+                            className="primary-button"
+                            onClick={() => {
+                                setError(null);
+                                setStatus("checking");
+                                setAuthenticationCheck((value) => value + 1);
+                            }}
+                        >
+                            <RefreshCw size={16} />
+                            Try again
+                        </button>
+                    </div>
                 </section>
             </main>
         );

@@ -4,6 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { createDynamoDBConnection } from "./dynamoDBConnection";
 import { createUserAccountPrimaryKey } from "./dynamoDBKeys";
 import { createDynamoDBUserAccountDataAccess } from "./dynamoDBUserAccountDataAccess";
+import { currentLegalPolicyVersions } from "../domain/legalAcceptance";
 
 const connection = createDynamoDBConnection();
 const userAccountDataAccess =
@@ -12,6 +13,52 @@ const userAccountDataAccess =
 describe("DynamoDB user account data access integration", () => {
     afterAll(() => {
         connection.close();
+    });
+
+    it("stores current legal acceptance only for an active account", async () => {
+        const userID = `integration-user-${randomUUID()}`;
+        const acceptedAt = new Date("2026-09-15T12:00:00.000Z");
+
+        try {
+            await expect(
+                userAccountDataAccess.getUserLegalAcceptance({ userID })
+            ).resolves.toBeNull();
+
+            const acceptance =
+                await userAccountDataAccess.acceptLegalPolicies({
+                    userID,
+                    versions: currentLegalPolicyVersions,
+                    acceptedAt,
+                });
+
+            expect(acceptance).toEqual({
+                ...currentLegalPolicyVersions,
+                acceptedAt: acceptedAt.toISOString(),
+            });
+            await expect(
+                userAccountDataAccess.getUserLegalAcceptance({ userID })
+            ).resolves.toEqual(acceptance);
+
+            await userAccountDataAccess.startUserAccountDeletion({
+                userID,
+                requestedAt: new Date("2026-09-15T13:00:00.000Z"),
+            });
+
+            await expect(
+                userAccountDataAccess.acceptLegalPolicies({
+                    userID,
+                    versions: currentLegalPolicyVersions,
+                    acceptedAt: new Date("2026-09-15T14:00:00.000Z"),
+                })
+            ).rejects.toThrow();
+        } finally {
+            await connection.documentClient.send(
+                new DeleteCommand({
+                    TableName: connection.tableName,
+                    Key: createUserAccountPrimaryKey(userID),
+                })
+            );
+        }
     });
 
     it("creates one deleting marker and preserves its first request time", async () => {

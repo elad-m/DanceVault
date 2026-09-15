@@ -409,6 +409,24 @@ textarea { resize: vertical; }
 .authentication-legal a:hover { color: var(--brand-gold-text); }
 .authentication-loading { display: flex; align-items: center; gap: 14px; color: var(--text-muted); }
 
+.legal-acceptance-panel {
+    width: min(100%, 520px);
+    display: grid;
+    gap: 22px;
+    padding: 4px;
+}
+.legal-acceptance-copy { display: grid; gap: 9px; }
+.legal-acceptance-copy > span { color: var(--brand-gold-text); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.legal-acceptance-copy h1 { margin: 0; font-size: 28px; }
+.legal-acceptance-copy p { margin: 0; color: var(--text-muted); line-height: 1.6; }
+.legal-acceptance-copy a { color: var(--brand-gold-text); }
+.legal-acceptance-check { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 11px; align-items: start; padding: 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); line-height: 1.5; cursor: pointer; }
+.legal-acceptance-check input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--brand-yellow); }
+.legal-version-note { margin: -10px 0 0; color: var(--text-muted); font-size: 11px; }
+.legal-acceptance-error { margin: 0; padding: 10px; border: 1px solid #6a302c; border-radius: 6px; background: #302321; color: #f2aaa4; font-size: 12px; }
+.legal-acceptance-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.legal-acceptance-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+
 .authentication-spinner {
     animation: authentication-spin 1s linear infinite;
 }

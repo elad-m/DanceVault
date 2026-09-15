@@ -15,6 +15,12 @@ async function createTestApp(
             lifecycleReads.push(requestedUserID);
             return lifecycle;
         },
+        async getUserLegalAcceptance() {
+            return null;
+        },
+        async acceptLegalPolicies() {
+            throw new Error("Not used by write guard tests");
+        },
         async startUserAccountDeletion() {
             throw new Error("Not used by write guard tests");
         },

@@ -22,6 +22,14 @@ function createAccountDeletionTestContext() {
             return lifecycle;
         },
 
+        async getUserLegalAcceptance() {
+            return null;
+        },
+
+        async acceptLegalPolicies() {
+            throw new Error("Not used by account deletion tests");
+        },
+
         async startUserAccountDeletion(input) {
             events.push("lifecycle-persisted");
 
