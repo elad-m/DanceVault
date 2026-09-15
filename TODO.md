@@ -24,19 +24,86 @@
   secure storage rather than the app's actual purpose.
 - The core product loop is: save a useful dance-video segment, revisit and
   practice it, reassess confidence, and update what deserves attention next.
-- Useful naming roots include **Loop**, **Repertoire**, **Practice**,
-  **Replay**, **Refine**, and **Review**.
-- Current candidates: **DanceLoop**, **PracticeLoop**, **MoveLoop**,
-  **DanceReplay**, **MoveReplay**, **DanceRefine**, **Repertoire**,
-  **My Repertoire**, **Practice Repertoire**, **DanceReview**,
-  **MoveReview**, **PracticeDeck**, and **MoveDeck**.
-- **Current leading candidate:** `DanceLoop`. It is easy to say and connects
-  video repetition with the recurring practice and reassessment cycle. Its
-  weakness is that it does not explicitly communicate a personal saved
-  repertoire.
-- `DanceLog` remains a possible direction, but it emphasizes recording what
-  was learned more than repeated practice, prioritization, and confidence
-  updates.
+- Strongest earlier candidates:
+  - **DanceLoop:** Easy to say and connects video repetition with recurring
+    practice, but does not communicate a personal saved repertoire.
+  - **DanceLog:** Sounds natural and describes recording what was learned, but
+    emphasizes keeping a history more than repeatedly practicing it.
+  - **Repertoire:** Expresses the personal collection the user builds, but is a
+    common word and does not imply video or repetition.
+  - **PracticeDeck:** Suggests an ordered collection for repeated review, but
+    feels more like a study tool than a dance product.
+  - **DanceReplay:** Clearly connects dance and video review, but is more
+    descriptive and less distinctive as a brand.
+
+### Invented name candidates
+
+1. **Encoreo**
+   **Encore + choreo**. An encore means doing it again; choreo anchors it in
+   dance. Spoken: "Let's open Encoreo and review it."
+2. **Reperto**
+   A shortened transformation of **repertoire**. The application gradually
+   becomes the dancer's personal repertoire.
+   Spoken: "It's already in my Reperto."
+   **Taken:** Existing music-practice and repertoire apps use this name for
+   tracking practice, organizing pieces, storing reference media, and managing
+   setlists.
+3. **Memotion**
+   **Memory + motion**, with "emotion" embedded in the sound. It describes
+   movement becoming remembered without explicitly describing the app.
+   Spoken: "I saved that combination in Memotion."
+   **Taken:** An existing memo and daily-planner app uses this name, and an
+   active US software trademark also covers `MEMOTION` for emotion-recognition
+   training.
+4. **Echoreo**
+   **Echo + choreo**. Choreography is captured and echoed back until you learn
+   it. More distinctive, although pronunciation needs testing.
+   Spoken: "I have that move in Echoreo."
+5. **Movemo**
+   **Move + memo**. A personal record of movements you want to remember. Short,
+   friendly, and easy to turn into an icon.
+   Spoken: "Did you add it to Movemo?"
+   **Taken:** Moving, delivery, and driver-management businesses already use
+   Movemo as a product or company name.
+
+### Preliminary name screening (2026-09-10)
+
+This is an initial product search, not formal legal clearance. A finalist still
+needs a professional trademark search in the countries where the app will be
+offered.
+
+1. **Encoreo - keep.** "Open Encoreo" and "I saved it in Encoreo" sound
+   natural, although the pronunciation should be tested with other people.
+   `encoreo.com` is registered. GitHub has four repository-name matches but no
+   exact `encoreo` repository, and the Apple search returned no app title or
+   developer containing the name. No obvious exact-name app or trademark
+   collision surfaced in this preliminary search.
+2. **Reperto - park.** It is concise and works naturally in speech, but it has
+   direct product collisions: Apple lists both **Reperto - Music Practice Log**
+   and **Reperto: Stage & Chord Book**, while Google Play lists **Reperto:
+   Chords & Setlists**. These products also cover practice, repertoire, media,
+   and ordered lists. `reperto.com` is registered and GitHub has six exact-name
+   repositories.
+3. **Memotion - reject unless professionally cleared.** The spoken form can be
+   heard as "me-motion" or "emotion." `memotion.com` is registered, GitHub has
+   17 exact-name repositories, and Apple already lists **Memotion-Daily Planer
+   memos**. More importantly, an active US registration covers the `MEMOTION`
+   word mark for training software, and a 2026 Indian application covers video
+   and entertainment services.
+4. **Echoreo - keep.** It has the cleanest preliminary availability: no
+   `echoreo.com` registration was found, GitHub returned no repository-name
+   matches, and the Apple search returned no app title or developer containing
+   the name. Its weakness is speech rather than collision: people may disagree
+   between "echo-ree-oh" and "eh-core-ee-oh" or confuse it with Encoreo.
+5. **Movemo - park.** "Add it to Movemo" is short and usable, but the name can
+   be pronounced "move-mo" or "move-em-oh." `movemo.com` is registered,
+   GitHub has two exact-name repositories, Apple has a developer named
+   **Movemo srl**, and active logistics products already use Movemo as a brand.
+
+- Current screening result: continue ordinary-speech testing with **Encoreo**
+  and **Echoreo**. Keep **Reperto** and **Movemo** only as comparison points;
+  remove **Memotion** from serious consideration unless legal advice changes
+  the assessment.
 
 ### Rename impact and recommended scope
 
