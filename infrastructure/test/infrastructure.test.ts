@@ -174,7 +174,7 @@ test('creates Cognito authentication for the development web app', () => {
   template.resourceCountIs('AWS::Cognito::UserPool', 1);
   template.hasResourceProperties('AWS::Cognito::UserPool', {
     AdminCreateUserConfig: {
-      AllowAdminCreateUserOnly: true,
+      AllowAdminCreateUserOnly: false,
     },
     AutoVerifiedAttributes: ['email'],
     MfaConfiguration: 'OPTIONAL',
@@ -810,6 +810,10 @@ test("creates an HTTP API connected to the backend Lambda", () => {
 
   template.hasResourceProperties("AWS::ApiGatewayV2::Stage", {
     StageName: "$default",
+    DefaultRouteSettings: {
+      ThrottlingBurstLimit: 20,
+      ThrottlingRateLimit: 10,
+    },
     AccessLogSettings: {
       DestinationArn: {
         "Fn::GetAtt": [
@@ -847,7 +851,7 @@ test("monitors development backend failures and emails operations alerts", () =>
     },
   });
 
-  template.resourceCountIs("AWS::CloudWatch::Alarm", 6);
+  template.resourceCountIs("AWS::CloudWatch::Alarm", 9);
 
   for (const alarmName of [
     "DanceVaultDevelopment-LambdaErrors",
@@ -856,6 +860,7 @@ test("monitors development backend failures and emails operations alerts", () =>
     "DanceVaultDevelopment-DynamoDBThrottles",
     "DanceVaultDevelopment-VideoDeletionDeadLetters",
     "DanceVaultDevelopment-AccountDeletionDeadLetters",
+    "DanceVaultDevelopment-SignUpThrottles",
   ]) {
     template.hasResourceProperties("AWS::CloudWatch::Alarm", {
       AlarmName: alarmName,
@@ -907,6 +912,49 @@ test("monitors development backend failures and emails operations alerts", () =>
   });
 
   template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+    AlarmName: "DanceVaultDevelopment-UnusualSignUpVolume",
+    Threshold: 10,
+    Metrics: Match.arrayWith([
+      Match.objectLike({
+        MetricStat: Match.objectLike({
+          Metric: Match.objectLike({
+            Namespace: "AWS/Cognito",
+            MetricName: "SignUpSuccesses",
+          }),
+          Period: 300,
+          Stat: "Sum",
+        }),
+      }),
+    ]),
+  });
+
+  template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+    AlarmName: "DanceVaultDevelopment-FailedSignUpVolume",
+    Threshold: 25,
+    Metrics: Match.arrayWith([
+      Match.objectLike({
+        Expression: "attempts - successes",
+      }),
+    ]),
+  });
+
+  template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+    AlarmName: "DanceVaultDevelopment-SignUpThrottles",
+    Metrics: Match.arrayWith([
+      Match.objectLike({
+        MetricStat: Match.objectLike({
+          Metric: Match.objectLike({
+            Namespace: "AWS/Cognito",
+            MetricName: "SignUpThrottles",
+          }),
+          Period: 300,
+          Stat: "Sum",
+        }),
+      }),
+    ]),
+  });
+
+  template.hasResourceProperties("AWS::CloudWatch::Alarm", {
     AlarmName:
       "DanceVaultDevelopment-VideoDeletionDeadLetters",
     Namespace: "AWS/SQS",
@@ -943,6 +991,9 @@ test("monitors development backend failures and emails operations alerts", () =>
   );
   expect(JSON.stringify(dashboards)).toContain(
     "Failed deletion jobs",
+  );
+  expect(JSON.stringify(dashboards)).toContain(
+    "User registration",
   );
 });
 

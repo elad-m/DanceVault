@@ -1,7 +1,7 @@
 # DanceVault Privacy Notice
 
-**Effective date:** August 3, 2026  
-**Status:** Development draft for the invite-only DanceVault service
+**Effective date:** September 15, 2026<br>
+**Status:** Development draft for the DanceVault development service
 
 DanceVault is operated by **Elad Musba**, the controller responsible for the
 personal information described in this notice. Privacy and data requests can
@@ -99,13 +99,16 @@ limited to:
 - Deleting a video through the application is intended to delete its stored
   video object and associated video and segment records.
 - Backend application logs are configured to expire after seven days.
-- Cognito account information remains until an administrator deletes the
-  account.
+- Cognito account information remains until the user requests account deletion
+  through the application or an administrator deletes the account.
 - Local development copies remain on the developer's computer until manually
   deleted.
 
-DanceVault does not yet provide automated account deletion. During the
-invite-only development period, account deletion requests are handled manually.
+DanceVault provides authenticated self-service account deletion. The deletion
+workflow blocks new writes, retries partial failures, removes the user's stored
+content and Cognito identity, and temporarily retains a deletion tombstone for
+up to seven days to reject unexpired access tokens. Users can also contact the
+privacy address below if the self-service workflow is unavailable.
 
 ## User Requests
 
@@ -138,5 +141,6 @@ updated when the notice changes.
 
 ## Current Availability
 
-DanceVault is currently an invite-only development service and is not open for
-public registration.
+DanceVault is a development service with self-service registration. New users
+must verify their email address and accept the current Privacy Notice and Terms
+of Use before using the authenticated application.

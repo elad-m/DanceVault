@@ -1,6 +1,6 @@
 export const currentLegalPolicyVersions = {
-    privacyNotice: "2026-08-03",
-    termsOfUse: "2026-08-03",
+    privacyNotice: "2026-09-15",
+    termsOfUse: "2026-09-15",
 } as const;
 
 export type LegalPolicyVersions = {

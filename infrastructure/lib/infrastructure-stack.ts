@@ -158,7 +158,7 @@ export class InfrastructureStack extends cdk.Stack {
     const userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: 'DanceVaultDevelopmentUsers',
       featurePlan: cognito.FeaturePlan.ESSENTIALS,
-      selfSignUpEnabled: false,
+      selfSignUpEnabled: true,
       signInAliases: {
         email: true,
       },
@@ -856,6 +856,10 @@ export class InfrastructureStack extends cdk.Stack {
         errorMessage: "$context.error.message",
       }),
     };
+    backendAPICfnStage.defaultRouteSettings = {
+      throttlingBurstLimit: 20,
+      throttlingRateLimit: 10,
+    };
 
     backendAPI.addRoutes({
       path: "/{proxy+}",
@@ -895,6 +899,41 @@ export class InfrastructureStack extends cdk.Stack {
     const apiLatency = backendAPI.metricLatency({
       period: monitoringPeriod,
       statistic: "p95",
+    });
+    const signUpSuccesses = new cloudWatch.Metric({
+      namespace: "AWS/Cognito",
+      metricName: "SignUpSuccesses",
+      dimensionsMap: {
+        UserPool: userPool.userPoolId,
+        UserPoolClient: userPoolClient.userPoolClientId,
+      },
+      period: monitoringPeriod,
+      statistic: "Sum",
+      label: "Successful signups",
+    });
+    const signUpAttempts = signUpSuccesses.with({
+      statistic: "SampleCount",
+      label: "Signup attempts",
+    });
+    const failedSignUps = new cloudWatch.MathExpression({
+      expression: "attempts - successes",
+      usingMetrics: {
+        attempts: signUpAttempts,
+        successes: signUpSuccesses,
+      },
+      period: monitoringPeriod,
+      label: "Failed signups",
+    });
+    const signUpThrottles = new cloudWatch.Metric({
+      namespace: "AWS/Cognito",
+      metricName: "SignUpThrottles",
+      dimensionsMap: {
+        UserPool: userPool.userPoolId,
+        UserPoolClient: userPoolClient.userPoolClientId,
+      },
+      period: monitoringPeriod,
+      statistic: "Sum",
+      label: "Throttled signups",
     });
     const dynamoDBReadThrottles = dataTable.metric(
       "ReadThrottleEvents",
@@ -1067,6 +1106,66 @@ export class InfrastructureStack extends cdk.Stack {
         },
       );
 
+    const unusualSignUpVolumeAlarm = new cloudWatch.Alarm(
+      this,
+      "UnusualSignUpVolumeAlarm",
+      {
+        alarmName:
+          "DanceVaultDevelopment-UnusualSignUpVolume",
+        alarmDescription:
+          "At least 10 users registered within five minutes.",
+        metric: signUpSuccesses,
+        threshold: 10,
+        evaluationPeriods: 1,
+        datapointsToAlarm: 1,
+        comparisonOperator:
+          cloudWatch.ComparisonOperator
+            .GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData:
+          cloudWatch.TreatMissingData.NOT_BREACHING,
+      },
+    );
+
+    const failedSignUpVolumeAlarm = new cloudWatch.Alarm(
+      this,
+      "FailedSignUpVolumeAlarm",
+      {
+        alarmName:
+          "DanceVaultDevelopment-FailedSignUpVolume",
+        alarmDescription:
+          "At least 25 signup attempts failed within five minutes.",
+        metric: failedSignUps,
+        threshold: 25,
+        evaluationPeriods: 1,
+        datapointsToAlarm: 1,
+        comparisonOperator:
+          cloudWatch.ComparisonOperator
+            .GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData:
+          cloudWatch.TreatMissingData.NOT_BREACHING,
+      },
+    );
+
+    const signUpThrottleAlarm = new cloudWatch.Alarm(
+      this,
+      "SignUpThrottleAlarm",
+      {
+        alarmName:
+          "DanceVaultDevelopment-SignUpThrottles",
+        alarmDescription:
+          "Cognito throttled at least one user registration request.",
+        metric: signUpThrottles,
+        threshold: 1,
+        evaluationPeriods: 1,
+        datapointsToAlarm: 1,
+        comparisonOperator:
+          cloudWatch.ComparisonOperator
+            .GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData:
+          cloudWatch.TreatMissingData.NOT_BREACHING,
+      },
+    );
+
     for (const alarm of [
       lambdaErrorAlarm,
       lambdaThrottleAlarm,
@@ -1074,6 +1173,9 @@ export class InfrastructureStack extends cdk.Stack {
       dynamoDBThrottleAlarm,
       videoDeletionDeadLetterAlarm,
       accountDeletionDeadLetterAlarm,
+      unusualSignUpVolumeAlarm,
+      failedSignUpVolumeAlarm,
+      signUpThrottleAlarm,
     ]) {
       alarm.addAlarmAction(
         new cloudWatchActions.SnsAction(operationsAlertTopic),
@@ -1137,6 +1239,16 @@ export class InfrastructureStack extends cdk.Stack {
         left: [
           failedVideoDeletionJobs,
           failedAccountDeletionJobs,
+        ],
+        width: 12,
+      }),
+      new cloudWatch.GraphWidget({
+        title: "User registration",
+        left: [
+          signUpAttempts,
+          signUpSuccesses,
+          failedSignUps,
+          signUpThrottles,
         ],
         width: 12,
       }),

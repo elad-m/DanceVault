@@ -134,8 +134,14 @@ offered.
 
 ## 1. Privacy, Security, and Legal Baseline
 
-- Audit the public Git history for credentials and personal data.
-- Confirm videos, emails, and user records exist only in AWS, not Git.
+- **Done:** Audit the current repository and public Git history for credential
+  patterns and committed media. No real AWS keys, private keys, or videos were
+  found; invalid test credentials and public frontend AWS identifiers are
+  expected. The personal Git author email remains the separately documented
+  decision below.
+- **Done:** Confirm uploaded videos, user email records, and application records
+  are stored in AWS rather than Git. The public contact address is intentionally
+  present in the legal documents.
 - **Done:** Draft a basic privacy policy, terms of use, acceptable-use and copyright
   rules, retention policy, and face-recording consent expectations.
 - **Done:** Define account and user-data deletion rights and a private contact
@@ -145,7 +151,8 @@ offered.
   SQS, removes DynamoDB and S3 data before the Cognito identity, retains a
   temporary deleted-account tombstone, and alerts if retries reach the DLQ.
   The deployed workflow was verified end to end with a disposable Cognito user.
-- Obtain an Israeli privacy lawyer's review before opening public registration.
+- Obtain an Israeli privacy lawyer's review before commercial use or broader
+  public promotion.
 
 ### Owner setup required before inviting external users
 
@@ -199,10 +206,13 @@ offered.
   be throttled, contact AWS Support and ask for a limit of 50; Service Quotas
   cannot directly request a value below its standard default of 1,000.
 
-### Deferred until self-service registration
+### Added for self-service registration
 
-- Add registration and email-verification metrics.
-- Add signup-abuse monitoring and public-user rate-limit alarms.
+- **Done and deployed; verification pending:** Add registration metrics and
+  alarms for concentrated signup success, failure, and Cognito throttling
+  activity.
+- **Done and deployed; verification pending:** Add an API Gateway rate limit of
+  10 requests per second with a burst capacity of 20 requests.
 - Add per-user usage anomaly alerts and a registration-funnel dashboard.
 - Add frontend real-user monitoring after there is meaningful external usage.
 - Add media-job failure alarms and `jobId` log fields when asynchronous media
@@ -324,23 +334,28 @@ offered.
 
 ## 9. Self-Service User Registration
 
-- Enable Cognito self-registration and email verification.
+- **Done and deployed; verification pending:** Enable Cognito self-registration.
+  Email verification remains mandatory through the existing auto-verification
+  configuration.
 - Add Sign in with Google and Sign in with Apple through Cognito federation,
   including provider setup, callback configuration, and account-linking rules
   for users who previously registered with the same email address.
-- **Done locally:** Require acceptance of the current legal documents before
-  first use of the authenticated application. Store the accepted Privacy Notice
-  version, Terms version, and timestamp on the user's account record. Deploy and
-  verify this gate before enabling registration.
+- **Done and verified:** Require acceptance of the current legal documents
+  before first use of the authenticated application. Store the accepted Privacy
+  Notice version, Terms version, and timestamp on the user's account record.
 - **Done and verified:** Add authenticated self-service account deletion with
   destructive confirmation and automatic sign-out after acceptance.
 - **Done and verified:** Verify the Cognito password-recovery experience through
   the hosted sign-in UI.
-- Add signup-abuse controls before opening registration.
-- Display the privacy notice and terms during registration.
-- **Done locally:** Record the accepted policy versions and acceptance timestamp.
-- Verify that the privacy, security, and developer/support contact addresses
-  are active before registration is opened.
+- **Done and deployed; verification pending:** Add baseline signup-abuse controls
+  using mandatory email verification, Cognito service throttling, API Gateway
+  throttling, per-user quotas, and CloudWatch signup alarms.
+- **Done:** Display Privacy Notice and Terms links before redirecting to Cognito,
+  then require explicit acceptance before first authenticated use.
+- **Done and verified:** Record the accepted policy versions and acceptance
+  timestamp.
+- **Done:** Verify that the privacy, security, and developer/support contact
+  address `elad.apps.contact@gmail.com` is active.
 
 ## Deferred Technical Follow-ups
 

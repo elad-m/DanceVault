@@ -1,7 +1,7 @@
 # DanceVault Terms of Use
 
-**Effective date:** August 3, 2026  
-**Status:** Development draft for the invite-only DanceVault service
+**Effective date:** September 15, 2026<br>
+**Status:** Development draft for the DanceVault development service
 
 DanceVault is operated by **Elad Musba**.
 
@@ -12,12 +12,10 @@ applicable law.
 
 ## 1. Development Service
 
-DanceVault is an invite-only application under active development. Features,
-storage behavior, availability, and these terms can change as the service is
-developed.
-
-Public registration is not currently available. An account may be used only by
-the person to whom it was issued.
+DanceVault is an application under active development. Features, storage
+behavior, availability, and these terms can change as the service is developed.
+Users may register their own account, but an account may be used only by the
+person who registered it.
 
 ## 2. Accounts
 
@@ -83,9 +81,10 @@ notice before uploading videos involving other identifiable people.
 ## 7. Deletion and Account Closure
 
 Users can delete individual segments and videos through the available
-application controls. Account-wide deletion is currently handled manually and
-must include the Cognito account, DynamoDB records, S3 objects, and applicable
-local development copies.
+application controls. Authenticated users can also request account-wide
+deletion through the application. The retryable deletion workflow removes the
+Cognito account, DynamoDB records, and S3 objects, subject to the temporary
+tombstone and operational logs described in the privacy notice.
 
 DanceVault may suspend or close an account that creates a security risk,
 violates these terms, or must be disabled to comply with law. When reasonably
@@ -108,11 +107,11 @@ processing, thumbnails, storage limits, and supported formats. Material changes
 to how personal information is used will also require an update to the privacy
 notice.
 
-## 10. Legal Review Required
+## 10. Legal Review
 
 These terms are a practical development baseline and have not been reviewed by
 a lawyer. Governing-law, dispute-resolution, warranty, and liability provisions
-must be reviewed before public registration or commercial use.
+should be reviewed before commercial use or broader public promotion.
 
 ## 11. Contact
 

@@ -2,8 +2,9 @@
 
 ## Current Scope
 
-DanceVault is an invite-only development service. Security reports are welcome,
-but there is currently no bug-bounty program or guaranteed response time.
+DanceVault is a development service with self-service registration. Security
+reports are welcome, but there is currently no bug-bounty program or guaranteed
+response time.
 
 The deployed development application and the code on the `master` branch are
 the currently supported versions.
