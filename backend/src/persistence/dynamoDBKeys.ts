@@ -1,5 +1,7 @@
 export const VIDEO_ITEM_KEY_PREFIX = "VIDEO#";
 export const SEGMENT_ITEM_KEY_PREFIX = "SEGMENT#";
+export const SEGMENT_EXPORT_ITEM_KEY_PREFIX = "SEGMENT_EXPORT#";
+const ACTIVE_SEGMENT_EXPORT_SORT_KEY = "SEGMENT_EXPORT_ACTIVE";
 const USER_QUOTA_USAGE_SORT_KEY = "QUOTA_USAGE";
 const USER_ACCOUNT_SORT_KEY = "ACCOUNT";
 
@@ -117,6 +119,23 @@ export function createSegmentPrimaryKey({
     return {
         PK: createUserPartitionKey(userID),
         SK: `${SEGMENT_ITEM_KEY_PREFIX}${segmentID}`,
+    };
+}
+
+export function createSegmentExportPrimaryKey(input: {
+    userID: string;
+    segmentID: string;
+}) {
+    return {
+        PK: createUserPartitionKey(input.userID),
+        SK: `${SEGMENT_EXPORT_ITEM_KEY_PREFIX}${input.segmentID}`,
+    };
+}
+
+export function createActiveSegmentExportPrimaryKey(userID: string) {
+    return {
+        PK: createUserPartitionKey(userID),
+        SK: ACTIVE_SEGMENT_EXPORT_SORT_KEY,
     };
 }
 

@@ -1,6 +1,7 @@
 import type {
     CreateSegmentInput,
     Segment,
+    SegmentExport,
     UpdateSegmentInput,
     UpdateVideoInput,
     Video,
@@ -39,6 +40,9 @@ type ApiErrorBody = {
     };
 };
 
+export const legalAcceptanceRequiredEvent =
+    "dancevault:legal-acceptance-required";
+
 export class ApiRequestError extends Error {
     constructor(
         message: string,
@@ -68,6 +72,9 @@ async function requestJson<T>(
 
     if (!response.ok) {
         const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
+        if (body.error?.code === "LEGAL_ACCEPTANCE_REQUIRED") {
+            window.dispatchEvent(new Event(legalAcceptanceRequiredEvent));
+        }
         throw new ApiRequestError(
             body.error?.message ?? `Request failed (${response.status})`,
             response.status,
@@ -223,6 +230,34 @@ export async function deleteSegment(segmentId: string): Promise<void> {
     return requestJson<void>(`/segments/${segmentId}`, {
         method: "DELETE",
     });
+}
+
+export function requestSegmentExport(
+    segmentId: string
+): Promise<SegmentExport> {
+    return requestJson<SegmentExport>(
+        `/segments/${segmentId}/export`,
+        { method: "POST" }
+    );
+}
+
+export function getSegmentExport(
+    segmentId: string
+): Promise<SegmentExport> {
+    return requestJson<SegmentExport>(
+        `/segments/${segmentId}/export`
+    );
+}
+
+export async function getSegmentExportDownloadUrl(
+    segmentId: string
+): Promise<string> {
+    const response = await requestJson<{
+        downloadUrl: string;
+        expiresInSeconds: number;
+    }>(`/segments/${segmentId}/export/download-url`);
+
+    return response.downloadUrl;
 }
 
 export async function uploadSegmentThumbnail(

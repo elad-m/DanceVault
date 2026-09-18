@@ -5,11 +5,13 @@ import {
     setRuntimeForTest,
 } from "../runtime";
 import type { VideoStorageProvider } from "../storage";
+import type { SegmentExportStorageProvider } from "../storage/segmentExportStorageProvider";
 import { createAccountDeletionQueue } from "./createAccountDeletionQueue";
 
 const unusedDependencies = {
     persistenceProvider: {} as PersistenceProvider,
     videoStorageProvider: {} as VideoStorageProvider,
+    segmentExportStorageProvider: {} as SegmentExportStorageProvider,
 };
 
 describe("createAccountDeletionQueue", () => {

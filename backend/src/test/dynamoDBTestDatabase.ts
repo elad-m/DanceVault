@@ -18,6 +18,7 @@ import type { UserQuotaUsage } from "../domain/userQuota";
 import { getUserQuotaUsage } from "../persistence/dynamoDBUserQuotaUsageDataAccess";
 import { createDynamoDBUserAccountDataAccess } from "../persistence/dynamoDBUserAccountDataAccess";
 import { createDynamoDBUserAccountDeletionDataAccess } from "../persistence/dynamoDBUserAccountDeletionDataAccess";
+import { createDynamoDBSegmentExportDataAccess } from "../persistence/dynamoDBSegmentExportDataAccess";
 
 type ResetDynamoDBTestDatabaseInput = {
     persistenceProvider: PersistenceProvider;
@@ -144,6 +145,8 @@ export function createDynamoDBTestPersistenceProvider(): PersistenceProvider {
         videoDataAccess: createDynamoDBVideoDataAccess(connection),
         mainListDataAccess: createDynamoDBMainListDataAccess(connection),
         segmentDataAccess: createDynamoDBSegmentDataAccess(connection),
+        segmentExportDataAccess:
+            createDynamoDBSegmentExportDataAccess(connection),
 
         async close() {
             connection.close();

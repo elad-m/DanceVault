@@ -4,7 +4,6 @@ import {
     Check,
     ChevronsDown,
     ChevronsUp,
-    ListChecks,
     ListPlus,
     LoaderCircle,
     Pencil,
@@ -427,16 +426,17 @@ export function SegmentBrowser({
 
     return (
         <main className="practice-workspace">
-            <header className="practice-header">
-                <div>
-                    <span className="eyebrow">Browse</span>
-                    <h1>
-                        {mode === "main" ? "Main List" : "All segments"}
-                    </h1>
-                </div>
-                <span className="queue-total"><ListChecks size={16} /> {segments.length}</span>
-                {mode === "main" && <button className="secondary-button" disabled={!mainListLoaded || loading || savingList || segments.length >= 500} onClick={() => setAddingSegments(true)}><Plus size={16} /> Add segments</button>}
-            </header>
+            {mode === "main" && (
+                <header className="practice-header">
+                    <button
+                        className="secondary-button"
+                        disabled={!mainListLoaded || loading || savingList || segments.length >= 500}
+                        onClick={() => setAddingSegments(true)}
+                    >
+                        <Plus size={15} /> Add segments
+                    </button>
+                </header>
+            )}
 
             <div className="practice-layout">
                 <SegmentPlayer

@@ -8,14 +8,51 @@ import type {
     Difficulty,
     PracticePriority,
 } from "../domain/segment";
+import type { SegmentExportStatus } from "../domain/segmentExport";
 import {
     createSegmentItemKeys,
     createDynamoDBVideoItemKeys,
     createUserQuotaUsagePrimaryKey,
+    createSegmentExportPrimaryKey,
+    createActiveSegmentExportPrimaryKey,
     type SegmentItemKeys,
     type DynamoDBVideoItemKeys,
     type UserQuotaUsagePrimaryKey,
 } from "./dynamoDBKeys";
+
+export const CURRENT_SEGMENT_EXPORT_SCHEMA_VERSION = 1;
+
+export type SegmentExportItem = ReturnType<
+    typeof createSegmentExportPrimaryKey
+> & {
+    entityType: "segmentExport";
+    schemaVersion: typeof CURRENT_SEGMENT_EXPORT_SCHEMA_VERSION;
+    exportID: string;
+    userID: string;
+    segmentID: string;
+    videoID: string;
+    sourceStorageKey: string;
+    outputStorageKey: string;
+    startMilliseconds: number;
+    endMilliseconds: number;
+    status: SegmentExportStatus;
+    failureMessage?: string;
+    outputSizeBytes?: number;
+    expiresAt?: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type ActiveSegmentExportItem = ReturnType<
+    typeof createActiveSegmentExportPrimaryKey
+> & {
+    entityType: "activeSegmentExport";
+    schemaVersion: typeof CURRENT_SEGMENT_EXPORT_SCHEMA_VERSION;
+    exportID: string;
+    segmentID: string;
+    expiresAt: number;
+    createdAt: string;
+};
 
 export const CURRENT_VIDEO_SCHEMA_VERSION = 3;
 export const CURRENT_SEGMENT_SCHEMA_VERSION = 2;

@@ -2,10 +2,10 @@ import {
     Check,
     Film,
     List,
+    ListOrdered,
     LoaderCircle,
     Pencil,
     Plus,
-    RefreshCw,
     X,
 } from "lucide-react";
 import {
@@ -33,7 +33,6 @@ type VideoSidebarProps = {
     activeView: AppView;
     onViewChange: (view: AppView) => void;
     onSelect: (video: Video) => void;
-    onRefresh: () => void;
     onUpload: () => void;
     onUpdateTitle: (video: Video, title: string) => Promise<boolean>;
     signedInUserLabel: string;
@@ -107,7 +106,6 @@ export function VideoSidebar({
     activeView,
     onViewChange,
     onSelect,
-    onRefresh,
     onUpload,
     onUpdateTitle,
     signedInUserLabel,
@@ -230,38 +228,32 @@ export function VideoSidebar({
 
     return (
         <aside className="sidebar">
-            <div className="brand-row">
-                <div className="brand-mark"><Film size={20} /></div>
-                <div className="brand-copy">
-                    <strong>DanceVault</strong>
-                    <span className="signed-in-user" title={signedInUserLabel}>
-                        {signedInUserLabel}
-                    </span>
+            <div className="sidebar-header">
+                <div className="brand-row">
+                    <div className="brand-mark"><Film size={20} /></div>
+                    <div className="brand-copy">
+                        <strong>DanceVault</strong>
+                        <span className="signed-in-user" title={signedInUserLabel}>
+                            {signedInUserLabel}
+                        </span>
+                    </div>
+                    <AccountMenu
+                        signedInUserLabel={signedInUserLabel}
+                        onSignOut={onSignOut}
+                        onDeleteAccount={onDeleteAccount}
+                    />
                 </div>
-                <AccountMenu
-                    signedInUserLabel={signedInUserLabel}
-                    onSignOut={onSignOut}
-                    onDeleteAccount={onDeleteAccount}
-                />
-            </div>
 
-            <div className="sidebar-actions">
-                <button className="primary-button" onClick={onUpload} aria-label="Add video">
-                    <Plus size={17} /> <span className="add-video-label">Add video</span>
-                </button>
-                <button
-                    className="icon-button"
-                    onClick={onRefresh}
-                    title="Refresh videos"
-                    aria-label="Refresh videos"
-                >
-                    <RefreshCw size={17} className={loading ? "spin" : ""} />
-                </button>
+                <div className="sidebar-actions">
+                    <button className="primary-button" onClick={onUpload} aria-label="Add video">
+                        <Plus size={18} /> <span className="add-video-label">Add video</span>
+                    </button>
+                </div>
             </div>
 
             <nav className="view-navigation" aria-label="Main views">
                 <button className={activeView === "main" ? "active" : ""} onClick={() => onViewChange("main")}>
-                    <List size={16} /> Main List
+                    <ListOrdered size={16} /> Main List
                 </button>
                 <button className={activeView === "videos" ? "active" : ""} onClick={() => onViewChange("videos")}>
                     <Film size={16} /> All videos

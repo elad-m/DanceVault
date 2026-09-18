@@ -20,6 +20,7 @@ import type {
 } from "../media/VideoFrameDecoder";
 import { useVideoOrientationCorrection } from "../media/useVideoOrientationCorrection";
 import type { Segment, Video } from "../types";
+import { SegmentExportButton } from "./SegmentExportButton";
 
 type FrameAction =
     | {
@@ -441,13 +442,20 @@ export function SegmentPlayer({
                     <h2>{segment.name}</h2>
                     <p>{video.title}</p>
                 </div>
-                <button className="secondary-button" onClick={() => onOpenFullVideo(segment)}>
-                    <VideoIcon size={15} />
-                    <span className="full-video-label">Go to full video</span>
-                </button>
+                <div className="practice-player-actions">
+                    <SegmentExportButton
+                        segment={segment}
+                        onError={onError}
+                    />
+                    <button className="secondary-button" onClick={() => onOpenFullVideo(segment)}>
+                        <VideoIcon size={15} />
+                        <span className="full-video-label">Go to full video</span>
+                    </button>
+                </div>
             </div>
 
-            <div className="practice-player-shell" ref={shellRef}>
+            <div className="practice-player-sticky">
+                <div className="practice-player-shell" ref={shellRef}>
                 {playbackUrl ? (
                     <div
                         ref={videoStageRef}
@@ -566,16 +574,17 @@ export function SegmentPlayer({
                         </button>
                     </div>
                 )}
-            </div>
+                </div>
 
-            <div className="practice-navigation">
-                <button className="secondary-button" onClick={onPrevious} disabled={!hasPrevious}>
-                    <ChevronLeft size={16} /> Previous
-                </button>
-                <span>{formatDuration(segment.endMilliseconds - segment.startMilliseconds)}</span>
-                <button className="secondary-button" onClick={onNext} disabled={!hasNext}>
-                    Next <ChevronRight size={16} />
-                </button>
+                <div className="practice-navigation">
+                    <button className="secondary-button" onClick={onPrevious} disabled={!hasPrevious}>
+                        <ChevronLeft size={16} /> Previous
+                    </button>
+                    <span>{formatDuration(segment.endMilliseconds - segment.startMilliseconds)}</span>
+                    <button className="secondary-button" onClick={onNext} disabled={!hasNext}>
+                        Next <ChevronRight size={16} />
+                    </button>
+                </div>
             </div>
         </section>
     );

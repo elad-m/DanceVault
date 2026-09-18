@@ -28,12 +28,21 @@ import { registerAccountWriteGuard } from "./auth/accountWriteGuard";
 import { createAccountDeletionQueue } from "./jobs/createAccountDeletionQueue";
 import type { AccountDeletionQueue } from "./jobs/accountDeletionQueue";
 import { registerLegalAcceptanceGuard } from "./auth/legalAcceptanceGuard";
+import { createSegmentExportStorageProvider, type SegmentExportStorageProvider } from "./storage/segmentExportStorageProvider";
+import { createDockerFFmpegSegmentExportProcessor } from "./media/dockerFFmpegSegmentExportProcessor";
+import type { SegmentExportProcessor } from "./media/segmentExportProcessor";
+import { createSegmentExportQueue } from "./jobs/createSegmentExportQueue";
+import type { SegmentExportQueue } from "./jobs/segmentExportQueue";
+import { registerSegmentExportRoutes } from "./routes/segmentExports";
 
 type BuildAppOptions = {
     videoStorageProvider?: VideoStorageProvider;
     persistenceProvider?: PersistenceProvider;
     videoDeletionQueue?: VideoDeletionQueue;
     accountDeletionQueue?: AccountDeletionQueue;
+    segmentExportStorageProvider?: SegmentExportStorageProvider;
+    segmentExportProcessor?: SegmentExportProcessor;
+    segmentExportQueue?: SegmentExportQueue;
 };
 
 export function buildApp(
@@ -49,11 +58,18 @@ export function buildApp(
         options.persistenceProvider ??
         createPersistenceProvider();
 
+    const segmentExportStorageProvider =
+        options.segmentExportStorageProvider ??
+        createSegmentExportStorageProvider(
+            getActiveVideoStorageProviderName()
+        );
+
     const videoDeletionQueue =
         options.videoDeletionQueue ??
         createVideoDeletionQueue({
             videoStorageProvider,
             persistenceProvider,
+            segmentExportStorageProvider,
         });
 
     const accountDeletionQueue =
@@ -61,6 +77,18 @@ export function buildApp(
         createAccountDeletionQueue({
             videoStorageProvider,
             persistenceProvider,
+            segmentExportStorageProvider,
+        });
+    const segmentExportProcessor =
+        options.segmentExportProcessor ??
+        createDockerFFmpegSegmentExportProcessor();
+    const segmentExportQueue =
+        options.segmentExportQueue ??
+        createSegmentExportQueue({
+            segmentExportDataAccess:
+                persistenceProvider.segmentExportDataAccess,
+            segmentExportStorageProvider,
+            segmentExportProcessor,
         });
 
     const app = Fastify({
@@ -75,6 +103,8 @@ export function buildApp(
 
     app.addHook("onClose", async () => {
         accountDeletionQueue.close();
+        segmentExportQueue.close();
+        segmentExportStorageProvider.close();
         videoDeletionQueue.close();
         videoStorageProvider.close();
         await persistenceProvider.close();
@@ -135,9 +165,19 @@ export function buildApp(
         app,
         videoStorageProvider,
         persistenceProvider.videoDataAccess,
-        persistenceProvider.segmentDataAccess
+        persistenceProvider.segmentDataAccess,
+        persistenceProvider.segmentExportDataAccess,
+        segmentExportStorageProvider
     );
     registerMainListRoutes(app, persistenceProvider);
+    registerSegmentExportRoutes(app, {
+        segmentDataAccess: persistenceProvider.segmentDataAccess,
+        videoDataAccess: persistenceProvider.videoDataAccess,
+        segmentExportDataAccess:
+            persistenceProvider.segmentExportDataAccess,
+        segmentExportQueue,
+        segmentExportStorageProvider,
+    });
     registerAccountRoutes(
         app,
         persistenceProvider.userAccountDataAccess,

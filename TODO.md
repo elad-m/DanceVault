@@ -2,21 +2,40 @@
 
 ## Current Product Work
 
-1. **Done:** Redesign **All videos** as a vertical, thumbnail-led list that
-   scales to larger libraries, and expose the existing video-title editing
-   capability in that view.
-2. **Done:** Add **Main List** as the first/default tab, followed by
-   All videos and All segments. Users explicitly add/remove segments and
-   reorder them with arrow controls or drag-and-drop. The backend API, focused
-   watch-and-order UI, searchable thumbnail picker, persistent membership
-   indicators, add-from-All-segments shortcut, conflict handling, and
-   mouse/touch/keyboard ordering are implemented and locally verified.
-   The ordered, versioned list is stored as one item per user (maximum 500
-   segments), so no new DynamoDB index is needed. Deleted references are hidden
-   on reads and removed from storage on the next list save. Conflicting saves
-   reload the saved list. The feature is deployed.
-   Practice queue and priority/confidence controls are hidden; their backend
-   fields and route remain for compatibility and can be reconsidered later.
+### Next priorities
+
+1. **Product name and icon:** Choose the public-facing brand name, then design
+   the app logo, favicon, and installed-app icons around that name. Keep the
+   existing AWS resource names as internal identifiers.
+2. **Segment timestamp correction:** Let users correct a segment's start and end
+   timestamps after creation. This is useful but not a major pain point because
+   a user can already return to the source video and create a corrected segment.
+
+### Recently completed
+
+- **Done:** Export saved segments as standalone, broadly compatible MP4 files
+  without exposing the complete source video. Exports run asynchronously through
+  a retryable worker, are capped at 30 seconds and one active job per user, and
+  can be explicitly downloaded or shared through the device's native share
+  sheet. See **Segment Export and Sharing** below.
+- **Done:** Refine mobile browsing so the app bar and view tabs remain available,
+  the video surface, playback controls, and Previous/Next navigation behave as
+  one bordered player unit, and the segment collection scrolls independently.
+- **Done:** Redesign **All videos** as a vertical, thumbnail-led list that
+  scales to larger libraries, and expose the existing video-title editing
+  capability in that view.
+- **Done:** Add **Main List** as the first/default tab, followed by All videos
+  and All segments. Users explicitly add/remove segments and reorder them with
+  arrow controls or drag-and-drop. The backend API, focused watch-and-order UI,
+  searchable thumbnail picker, persistent membership indicators,
+  add-from-All-segments shortcut, conflict handling, and
+  mouse/touch/keyboard ordering are implemented and locally verified. The
+  ordered, versioned list is stored as one item per user (maximum 500 segments),
+  so no new DynamoDB index is needed. Deleted references are hidden on reads and
+  removed from storage on the next list save. Conflicting saves reload the
+  saved list. The feature is deployed. Practice queue and priority/confidence
+  controls are hidden; their backend fields and route remain for compatibility
+  and can be reconsidered later.
 
 ## Product Naming
 
@@ -208,11 +227,10 @@ offered.
 
 ### Added for self-service registration
 
-- **Done and deployed; verification pending:** Add registration metrics and
-  alarms for concentrated signup success, failure, and Cognito throttling
-  activity.
-- **Done and deployed; verification pending:** Add an API Gateway rate limit of
-  10 requests per second with a burst capacity of 20 requests.
+- **Done and verified:** Add registration metrics and alarms for concentrated
+  signup success, failure, and Cognito throttling activity.
+- **Done and verified:** Add an API Gateway rate limit of 10 requests per second
+  with a burst capacity of 20 requests.
 - Add per-user usage anomaly alerts and a registration-funnel dashboard.
 - Add frontend real-user monitoring after there is meaningful external usage.
 - Add media-job failure alarms and `jobId` log fields when asynchronous media
@@ -334,9 +352,8 @@ offered.
 
 ## 9. Self-Service User Registration
 
-- **Done and deployed; verification pending:** Enable Cognito self-registration.
-  Email verification remains mandatory through the existing auto-verification
-  configuration.
+- **Done and verified:** Enable Cognito self-registration. Email verification
+  remains mandatory through the existing auto-verification configuration.
 - Add Sign in with Google and Sign in with Apple through Cognito federation,
   including provider setup, callback configuration, and account-linking rules
   for users who previously registered with the same email address.
@@ -347,15 +364,55 @@ offered.
   destructive confirmation and automatic sign-out after acceptance.
 - **Done and verified:** Verify the Cognito password-recovery experience through
   the hosted sign-in UI.
-- **Done and deployed; verification pending:** Add baseline signup-abuse controls
-  using mandatory email verification, Cognito service throttling, API Gateway
-  throttling, per-user quotas, and CloudWatch signup alarms.
+- **Done and verified:** Add baseline signup-abuse controls using mandatory
+  email verification, Cognito service throttling, API Gateway throttling,
+  per-user quotas, and CloudWatch signup alarms.
 - **Done:** Display Privacy Notice and Terms links before redirecting to Cognito,
   then require explicit acceptance before first authenticated use.
 - **Done and verified:** Record the accepted policy versions and acceptance
   timestamp.
 - **Done:** Verify that the privacy, security, and developer/support contact
   address `elad.apps.contact@gmail.com` is active.
+
+## 10. Segment Export and Sharing
+
+- Export only the segment's selected start-to-end range as a standalone video;
+  never give a recipient access to the complete source video.
+- Produce a broadly shareable MP4 output. Exact, frame-accurate cuts may require
+  re-encoding rather than a fast container-level copy when the segment boundary
+  is not on a source-video keyframe or the source codec is not widely supported.
+- Run export as an asynchronous, idempotent media job with
+  `queued -> processing -> ready` or `failed` states, retries, and a dead-letter
+  queue. A large export must not keep an API request or browser tab open.
+- Store generated files under a distinct user-owned S3 prefix such as
+  `users/{userID}/exports/segments/{segmentID}/{exportVersion}.mp4`. Keep local
+  MinIO and AWS S3 behavior equivalent.
+- Invalidate or regenerate an export when the segment timestamps or source
+  video change. Delete exports when their segment, video, or account is deleted.
+- Bound initial export cost with one active export per user, one reusable export
+  per segment version, a globally two-concurrent-worker ceiling, and automatic
+  expiry. Add a separate rolling usage quota before increasing worker
+  concurrency or expected user volume.
+- Allow at most one export job to be active per user in the initial release.
+  This deliberately favors predictable processing cost over export throughput.
+- Limit exported segments to 30 seconds in the initial release.
+- First sharing scope: provide an expiring authenticated download URL and use
+  the mobile Web Share API when available, with download as the desktop and
+  unsupported-browser fallback.
+- Treat public links as a later, separate capability. Public sharing requires
+  unguessable link identifiers, explicit expiry, owner revocation, abuse
+  controls, access logging, and clear privacy/copyright warnings.
+- Show export progress, retryable failure details, and a disabled Share action
+  until the file is ready. Repeated taps must reuse the same active or completed
+  export rather than enqueue duplicate processing jobs.
+- Test frame boundaries, portrait orientation, MP4 and both accepted iPhone MOV
+  variants, mobile sharing, authorization isolation, retries, quota enforcement,
+  expiry, and deletion cleanup.
+- **Implemented locally:** The browser flow, local Docker FFmpeg processing,
+  DynamoDB export lifecycle, one-active-export lock, SQS worker and dead-letter
+  queue, Linux static FFmpeg bundle, scoped IAM, seven-day expiry, deletion
+  cleanup, alerting, and automated unit/integration/CDK coverage are complete.
+  Deployment and hosted MP4/MOV sharing checks remain.
 
 ## Deferred Technical Follow-ups
 

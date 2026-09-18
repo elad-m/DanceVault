@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import {
     type ReactNode,
+    useCallback,
     useEffect,
     useState,
 } from "react";
@@ -19,6 +20,7 @@ import {
 import {
     acceptLegalPolicies,
     getLegalAcceptanceStatus,
+    legalAcceptanceRequiredEvent,
     type LegalPolicyVersions,
 } from "../api";
 import { runtime } from "../runtime";
@@ -45,6 +47,26 @@ export function AuthenticationGate({
         useState<LegalPolicyVersions | null>(null);
     const [accepting, setAccepting] = useState(false);
     const [authenticationCheck, setAuthenticationCheck] = useState(0);
+
+    const requestLegalAcceptanceCheck = useCallback(() => {
+        setError(null);
+        setStatus("checking");
+        setAuthenticationCheck((value) => value + 1);
+    }, []);
+
+    useEffect(() => {
+        window.addEventListener(
+            legalAcceptanceRequiredEvent,
+            requestLegalAcceptanceCheck
+        );
+
+        return () => {
+            window.removeEventListener(
+                legalAcceptanceRequiredEvent,
+                requestLegalAcceptanceCheck
+            );
+        };
+    }, [requestLegalAcceptanceCheck]);
 
     useEffect(() => {
         let isMounted = true;
@@ -236,11 +258,7 @@ export function AuthenticationGate({
                         <button
                             type="button"
                             className="primary-button"
-                            onClick={() => {
-                                setError(null);
-                                setStatus("checking");
-                                setAuthenticationCheck((value) => value + 1);
-                            }}
+                            onClick={requestLegalAcceptanceCheck}
                         >
                             <RefreshCw size={16} />
                             Try again

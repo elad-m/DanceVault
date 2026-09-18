@@ -12,6 +12,7 @@ import {
     TEST_USER_ID,
     OTHER_TEST_USER_ID,
     OTHER_TEST_VIDEO_ID,
+    createUnusedSegmentExportDataAccess,
 } from "../test/routeTestSupport";
 import type {
     CreateVideoUploadUrlInput,
@@ -301,6 +302,8 @@ describe("video data access injection", () => {
                 }),
             },
             segmentDataAccess: unusedSegmentDataAccess,
+            segmentExportDataAccess:
+                createUnusedSegmentExportDataAccess(),
             close: closePersistenceMock,
         };
 
@@ -392,6 +395,8 @@ describe("video data access injection", () => {
                 }),
             },
             segmentDataAccess: unusedSegmentDataAccess,
+            segmentExportDataAccess:
+                createUnusedSegmentExportDataAccess(),
             close: vi.fn(async () => { }),
         };
 
@@ -477,6 +482,8 @@ describe("video data access injection", () => {
                     }),
                 },
                 segmentDataAccess: unusedSegmentDataAccess,
+                segmentExportDataAccess:
+                    createUnusedSegmentExportDataAccess(),
                 close: vi.fn(async () => { }),
             };
             const injectedApp = buildApp({
@@ -835,6 +842,8 @@ describe("POST /video-uploads/:videoId/complete", () => {
                 }),
             },
             segmentDataAccess: unusedSegmentDataAccess,
+            segmentExportDataAccess:
+                createUnusedSegmentExportDataAccess(),
             close: vi.fn(async () => { }),
         };
         const injectedApp = buildApp({

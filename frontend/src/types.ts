@@ -55,3 +55,20 @@ export type UpdateSegmentInput = {
     confidence?: Confidence;
     practicePriority?: PracticePriority;
 };
+
+export type SegmentExportStatus =
+    | "queued"
+    | "processing"
+    | "ready"
+    | "failed";
+
+export type SegmentExport = {
+    id: string;
+    segmentId: string;
+    videoId: string;
+    status: SegmentExportStatus;
+    failureMessage: string | null;
+    outputSizeBytes: number | null;
+    createdAt: string;
+    updatedAt: string;
+};

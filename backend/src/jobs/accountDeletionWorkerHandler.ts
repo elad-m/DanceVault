@@ -11,6 +11,10 @@ import {
     type VideoStorageProvider,
 } from "../storage";
 import {
+    createSegmentExportStorageProvider,
+    type SegmentExportStorageProvider,
+} from "../storage/segmentExportStorageProvider";
+import {
     parseAccountDeletionJob,
     type AccountDeletionJob,
 } from "./accountDeletionQueue";
@@ -65,6 +69,7 @@ type LiveWorkerResources = {
     videoStorageProvider: VideoStorageProvider;
     persistenceProvider: PersistenceProvider;
     userIdentityProvider: UserIdentityProvider;
+    segmentExportStorageProvider: SegmentExportStorageProvider;
 };
 
 function createLiveWorkerResources(): LiveWorkerResources {
@@ -73,11 +78,16 @@ function createLiveWorkerResources(): LiveWorkerResources {
     );
     const persistenceProvider = createPersistenceProvider();
     const userIdentityProvider = createUserIdentityProvider();
+    const segmentExportStorageProvider =
+        createSegmentExportStorageProvider(
+            getActiveVideoStorageProviderName()
+        );
 
     return {
         videoStorageProvider,
         persistenceProvider,
         userIdentityProvider,
+        segmentExportStorageProvider,
 
         dependencies: {
             async processJob(job: AccountDeletionJob): Promise<void> {
@@ -86,6 +96,7 @@ function createLiveWorkerResources(): LiveWorkerResources {
                     videoStorageProvider,
                     persistenceProvider,
                     userIdentityProvider,
+                    segmentExportStorageProvider,
                 });
             },
         },

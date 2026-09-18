@@ -4,6 +4,7 @@ import {
     describe,
     expect,
     it,
+    vi,
 } from "vitest";
 import {
     clearDynamoDBTestDatabase,
@@ -22,9 +23,33 @@ import {
     requestVideoDeletion,
 } from "./videoService";
 import type { VideoStorageProvider } from "../storage";
+import type { SegmentExportStorageProvider } from "../storage/segmentExportStorageProvider";
 
 const persistenceProvider =
     createDynamoDBTestPersistenceProvider();
+
+const deleteSegmentExportObject = vi.fn(async () => undefined);
+const segmentExportStorageProvider: SegmentExportStorageProvider = {
+    async downloadSourceVideoToFile() { throw new Error("Not used"); },
+    async uploadSegmentExportFromFile() { throw new Error("Not used"); },
+    async createSegmentExportDownloadUrl() { throw new Error("Not used"); },
+    deleteSegmentExportObject,
+    close() {},
+};
+
+function executeTestVideoDeletion(
+    input: Omit<
+        Parameters<typeof executeVideoDeletion>[0],
+        "segmentExportDataAccess" | "segmentExportStorageProvider"
+    >
+) {
+    return executeVideoDeletion({
+        ...input,
+        segmentExportDataAccess:
+            persistenceProvider.segmentExportDataAccess,
+        segmentExportStorageProvider,
+    });
+}
 
 const initialTestUserQuotaUsage: UserQuotaUsage = {
     storedVideoBytes: 100_000_000,
@@ -143,6 +168,7 @@ function createFakeVideoStorageProvider(
 
 beforeEach(async () => {
     queuedJobs.length = 0;
+    deleteSegmentExportObject.mockClear();
 
     await resetDynamoDBTestDatabase({
         persistenceProvider,
@@ -155,6 +181,46 @@ afterAll(async () => {
 });
 
 describe("executeVideoDeletion", () => {
+    it("deletes segment exports with their source video", async () => {
+        const exportInput = {
+            exportID: "export-1",
+            userID: TEST_USER_ID,
+            segmentID: "sample-segment-1",
+            videoID: "sample-video-1",
+            sourceStorageKey:
+                "users/test-user-1/videos/sample-video-1.mp4",
+            outputStorageKey:
+                "users/test-user-1/exports/segments/sample-segment-1/export-1.mp4",
+            startMilliseconds: 1_000,
+            endMilliseconds: 5_000,
+            createdAt: new Date(),
+        };
+        await persistenceProvider.segmentExportDataAccess
+            .createSegmentExport(exportInput);
+
+        await executeTestVideoDeletion({
+            videoId: "sample-video-1",
+            userId: TEST_USER_ID,
+            videoStorageProvider:
+                createFakeVideoStorageProvider(),
+            videoDataAccess:
+                persistenceProvider.videoDataAccess,
+            segmentDataAccess:
+                persistenceProvider.segmentDataAccess,
+        });
+
+        expect(deleteSegmentExportObject).toHaveBeenCalledWith(
+            exportInput.outputStorageKey
+        );
+        await expect(
+            persistenceProvider.segmentExportDataAccess
+                .getSegmentExport({
+                    userID: TEST_USER_ID,
+                    segmentID: "sample-segment-1",
+                })
+        ).resolves.toBeNull();
+    });
+
     it("marks the video as deleting before destructive work begins", async () => {
         let statusObservedDuringStorageDeletion:
             string | undefined;
@@ -177,7 +243,7 @@ describe("executeVideoDeletion", () => {
                 }
             );
 
-        const result = await executeVideoDeletion({
+        const result = await executeTestVideoDeletion({
             videoId: "sample-video-1",
             userId: TEST_USER_ID,
             videoStorageProvider,
@@ -208,7 +274,7 @@ describe("executeVideoDeletion", () => {
             });
 
         await expect(
-            executeVideoDeletion({
+            executeTestVideoDeletion({
                 videoId: "sample-video-1",
                 userId: TEST_USER_ID,
                 videoStorageProvider,
@@ -249,7 +315,7 @@ describe("executeVideoDeletion", () => {
             });
 
         await expect(
-            executeVideoDeletion({
+            executeTestVideoDeletion({
                 videoId: "sample-video-1",
                 userId: TEST_USER_ID,
                 videoStorageProvider: failingStorageProvider,
@@ -263,7 +329,7 @@ describe("executeVideoDeletion", () => {
         const workingStorageProvider =
             createFakeVideoStorageProvider();
 
-        const retryResult = await executeVideoDeletion({
+        const retryResult = await executeTestVideoDeletion({
             videoId: "sample-video-1",
             userId: TEST_USER_ID,
             videoStorageProvider: workingStorageProvider,
@@ -308,7 +374,7 @@ describe("executeVideoDeletion", () => {
             }
         );
 
-        const result = await executeVideoDeletion({
+        const result = await executeTestVideoDeletion({
             videoId: "sample-video-1",
             userId: TEST_USER_ID,
             videoStorageProvider,
@@ -348,7 +414,7 @@ describe("executeVideoDeletion", () => {
         );
 
         await expect(
-            executeVideoDeletion({
+            executeTestVideoDeletion({
                 videoId: "sample-video-1",
                 userId: TEST_USER_ID,
                 videoStorageProvider,
@@ -391,7 +457,7 @@ describe("executeVideoDeletion", () => {
             name: "awsS3",
         };
 
-        const result = await executeVideoDeletion({
+        const result = await executeTestVideoDeletion({
             videoId: "sample-video-1",
             userId: TEST_USER_ID,
             videoStorageProvider,
@@ -432,7 +498,7 @@ describe("executeVideoDeletion", () => {
                 storageDeletionCallCount += 1;
             });
 
-        const firstResult = await executeVideoDeletion({
+        const firstResult = await executeTestVideoDeletion({
             videoId: "sample-video-1",
             userId: TEST_USER_ID,
             videoStorageProvider,
@@ -442,7 +508,7 @@ describe("executeVideoDeletion", () => {
                 persistenceProvider.segmentDataAccess,
         });
 
-        const repeatedResult = await executeVideoDeletion({
+        const repeatedResult = await executeTestVideoDeletion({
             videoId: "sample-video-1",
             userId: TEST_USER_ID,
             videoStorageProvider,

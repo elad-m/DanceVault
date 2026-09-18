@@ -11,6 +11,8 @@ import { createDynamoDBUserAccountDataAccess } from "./dynamoDBUserAccountDataAc
 import type { UserAccountDataAccess } from "./userAccountDataAccess";
 import { createDynamoDBUserAccountDeletionDataAccess } from "./dynamoDBUserAccountDeletionDataAccess";
 import type { UserAccountDeletionDataAccess } from "./userAccountDeletionDataAccess";
+import { createDynamoDBSegmentExportDataAccess } from "./dynamoDBSegmentExportDataAccess";
+import type { SegmentExportDataAccess } from "./segmentExportDataAccess";
 
 export type PersistenceProvider = {
     userAccountDataAccess: UserAccountDataAccess;
@@ -18,6 +20,7 @@ export type PersistenceProvider = {
     mainListDataAccess: MainListDataAccess;
     videoDataAccess: VideoDataAccess;
     segmentDataAccess: SegmentDataAccess;
+    segmentExportDataAccess: SegmentExportDataAccess;
     close(): Promise<void>;
 };
 
@@ -34,6 +37,8 @@ export function createPersistenceProvider(): PersistenceProvider {
             createDynamoDBVideoDataAccess(connection),
         segmentDataAccess:
             createDynamoDBSegmentDataAccess(connection),
+        segmentExportDataAccess:
+            createDynamoDBSegmentExportDataAccess(connection),
 
         async close() {
             connection.close();

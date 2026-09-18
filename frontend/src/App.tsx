@@ -289,7 +289,6 @@ export default function App() {
                     window.history.pushState({}, "", `/videos/${video.id}`);
                     setReturnToView(null);
                 }}
-                onRefresh={() => void refreshVideos()}
                 onUpload={() => setUploadOpen(true)}
                 onUpdateTitle={handleUpdateVideoTitle}
                 signedInUserLabel={signedInUserLabel}

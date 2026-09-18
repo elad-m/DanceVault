@@ -13,6 +13,7 @@ import {
     OTHER_TEST_SEGMENT_ID,
     OTHER_TEST_USER_ID,
     OTHER_TEST_VIDEO_ID,
+    createUnusedSegmentExportDataAccess,
 } from "../test/routeTestSupport";
 import { resetRuntimeForTest } from "../runtime";
 import {
@@ -23,6 +24,7 @@ import {
 } from "../test/dynamoDBTestDatabase";
 import type { VideoStorageProvider } from "../storage";
 import type { PersistenceProvider } from "../persistence";
+import type { SegmentExportStorageProvider } from "../storage/segmentExportStorageProvider";
 import {
     SegmentQuotaExceededError,
     type SegmentQuotaLimitName,
@@ -102,12 +104,22 @@ const fakeVideoStorageProvider: VideoStorageProvider = {
     close() { },
 };
 
+const deleteSegmentExportObjectMock = vi.fn(async () => undefined);
+const fakeSegmentExportStorageProvider: SegmentExportStorageProvider = {
+    async downloadSourceVideoToFile() { throw new Error("Not used"); },
+    async uploadSegmentExportFromFile() { throw new Error("Not used"); },
+    async createSegmentExportDownloadUrl() { return "unused"; },
+    deleteSegmentExportObject: deleteSegmentExportObjectMock,
+    close() {},
+};
+
 const persistenceProvider =
     createDynamoDBTestPersistenceProvider();
 
 const app = buildApp({
     persistenceProvider,
     videoStorageProvider: fakeVideoStorageProvider,
+    segmentExportStorageProvider: fakeSegmentExportStorageProvider,
 });
 
 registerTestAuthentication(app);
@@ -116,6 +128,7 @@ beforeEach(async () => {
     vi.clearAllMocks();
     getSegmentThumbnailObjectSizeBytesMock.mockResolvedValue(null);
     moveSegmentThumbnailObjectMock.mockClear();
+    deleteSegmentExportObjectMock.mockClear();
     resetRuntimeForTest();
 
     await resetDynamoDBTestDatabase({
@@ -200,6 +213,8 @@ describe("POST /videos/:videoId/segments", () => {
                         );
                     }),
                 },
+                segmentExportDataAccess:
+                    createUnusedSegmentExportDataAccess(),
                 close: vi.fn(async () => { }),
             };
             const injectedApp = buildApp({
@@ -663,6 +678,40 @@ describe("PATCH /segments/:segmentId", () => {
 });
 
 describe("DELETE /segments/:segmentId", () => {
+    it("deletes the segment's exported clip", async () => {
+        const exportInput = {
+            exportID: "export-1",
+            userID: TEST_USER_ID,
+            segmentID: "sample-segment-3",
+            videoID: "sample-video-1",
+            sourceStorageKey:
+                "users/test-user-1/videos/sample-video-1.mp4",
+            outputStorageKey:
+                "users/test-user-1/exports/segments/sample-segment-3/export-1.mp4",
+            startMilliseconds: 1_000,
+            endMilliseconds: 5_000,
+            createdAt: new Date(),
+        };
+        await persistenceProvider.segmentExportDataAccess
+            .createSegmentExport(exportInput);
+
+        const response = await app.inject({
+            method: "DELETE",
+            url: "/segments/sample-segment-3",
+        });
+
+        expect(response.statusCode).toBe(204);
+        expect(deleteSegmentExportObjectMock).toHaveBeenCalledWith(
+            exportInput.outputStorageKey
+        );
+        await expect(
+            persistenceProvider.segmentExportDataAccess.getSegmentExport({
+                userID: TEST_USER_ID,
+                segmentID: "sample-segment-3",
+            })
+        ).resolves.toBeNull();
+    });
+
     it("deletes an existing segment", async () => {
         const response = await app.inject({
             method: "DELETE",

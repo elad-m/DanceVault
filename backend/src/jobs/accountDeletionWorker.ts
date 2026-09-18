@@ -2,6 +2,7 @@ import type { UserIdentityProvider } from "../auth/userIdentityProvider";
 import type { PersistenceProvider } from "../persistence";
 import { executeVideoDeletion } from "../services/videoService";
 import type { VideoStorageProvider } from "../storage";
+import type { SegmentExportStorageProvider } from "../storage/segmentExportStorageProvider";
 import type { AccountDeletionJob } from "./accountDeletionQueue";
 
 type ProcessAccountDeletionJobInput = {
@@ -9,6 +10,7 @@ type ProcessAccountDeletionJobInput = {
     videoStorageProvider: VideoStorageProvider;
     persistenceProvider: PersistenceProvider;
     userIdentityProvider: UserIdentityProvider;
+    segmentExportStorageProvider: SegmentExportStorageProvider;
 };
 
 export type ProcessAccountDeletionJobResult =
@@ -20,6 +22,7 @@ export async function processAccountDeletionJob({
     videoStorageProvider,
     persistenceProvider,
     userIdentityProvider,
+    segmentExportStorageProvider,
 }: ProcessAccountDeletionJobInput):
     Promise<ProcessAccountDeletionJobResult> {
     const lifecycle =
@@ -50,6 +53,9 @@ export async function processAccountDeletionJob({
                 persistenceProvider.videoDataAccess,
             segmentDataAccess:
                 persistenceProvider.segmentDataAccess,
+            segmentExportDataAccess:
+                persistenceProvider.segmentExportDataAccess,
+            segmentExportStorageProvider,
         });
 
         if (result.kind === "invalid_upload_state") {

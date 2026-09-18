@@ -33,6 +33,10 @@ export const ApiErrorCode = {
         "SEGMENT_THUMBNAIL_UPLOAD_NOT_FOUND",
     SegmentThumbnailUploadTooLarge:
         "SEGMENT_THUMBNAIL_UPLOAD_TOO_LARGE",
+    SegmentExportNotFound: "SEGMENT_EXPORT_NOT_FOUND",
+    SegmentExportNotReady: "SEGMENT_EXPORT_NOT_READY",
+    SegmentExportTooLong: "SEGMENT_EXPORT_TOO_LONG",
+    SegmentExportBusy: "SEGMENT_EXPORT_BUSY",
 } as const;
 
 export type ApiErrorCode =
@@ -80,6 +84,14 @@ export const ApiErrorMessage: ApiErrorMessageMap = {
         "Uploaded segment thumbnail was not found",
     [ApiErrorCode.SegmentThumbnailUploadTooLarge]:
         "Segment thumbnail exceeds the upload-size limit",
+    [ApiErrorCode.SegmentExportNotFound]:
+        "Segment export was not found",
+    [ApiErrorCode.SegmentExportNotReady]:
+        "Segment export is not ready",
+    [ApiErrorCode.SegmentExportTooLong]:
+        "Only segments up to 30 seconds can be exported",
+    [ApiErrorCode.SegmentExportBusy]:
+        "Another segment export is already being prepared",
 };
 
 type SendApiErrorOptions = {

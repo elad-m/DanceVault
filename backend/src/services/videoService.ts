@@ -16,6 +16,9 @@ import type {
     VideoDataAccessItem,
 } from "../persistence/videoDataAccess";
 import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
+import type { SegmentExportDataAccess } from "../persistence/segmentExportDataAccess";
+import type { SegmentExportStorageProvider } from "../storage/segmentExportStorageProvider";
+import { deleteSegmentExport } from "./segmentExportService";
 import {
     CURRENT_VIDEO_DELETION_JOB_SCHEMA_VERSION,
     type VideoDeletionJob,
@@ -443,6 +446,8 @@ type ExecuteVideoDeletionInput =
     VideoStorageOperationInput & {
         videoDataAccess: VideoDataAccess;
         segmentDataAccess: SegmentDataAccess;
+        segmentExportDataAccess: SegmentExportDataAccess;
+        segmentExportStorageProvider: SegmentExportStorageProvider;
     };
 
 export type ExecuteVideoDeletionResult =
@@ -462,6 +467,8 @@ export async function executeVideoDeletion({
     videoStorageProvider,
     videoDataAccess,
     segmentDataAccess,
+    segmentExportDataAccess,
+    segmentExportStorageProvider,
 }: ExecuteVideoDeletionInput): Promise<ExecuteVideoDeletionResult> {
     const video = await videoDataAccess.getVideoByID({
         videoID: videoId,
@@ -502,6 +509,13 @@ export async function executeVideoDeletion({
         });
 
     for (const segment of segments) {
+        await deleteSegmentExport({
+            userID: userId,
+            segmentID: segment.id,
+            segmentExportDataAccess,
+            segmentExportStorageProvider,
+        });
+
         const thumbnailStorageKey =
             createSegmentThumbnailStorageKey({
                 userId,

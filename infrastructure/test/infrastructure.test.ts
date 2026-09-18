@@ -3,10 +3,20 @@ import * as cdk from 'aws-cdk-lib';
 import { InfrastructureStack } from '../lib/infrastructure-stack';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 
+let synthesizedTemplate: Template | undefined;
+
+function getTemplate(): Template {
+  if (!synthesizedTemplate) {
+    const app = new cdk.App();
+    const stack = new InfrastructureStack(app, "TestStack");
+    synthesizedTemplate = Template.fromStack(stack);
+  }
+
+  return synthesizedTemplate;
+}
+
 test('creates a private encrypted development video bucket', () => {
-  const app = new cdk.App();
-  const stack = new InfrastructureStack(app, 'TestStack');
-  const template = Template.fromStack(stack);
+  const template = getTemplate();
 
   template.resourceCountIs("AWS::S3::Bucket", 2);
 
@@ -27,14 +37,25 @@ test('creates a private encrypted development video bucket', () => {
       RestrictPublicBuckets: true,
     },
     LifecycleConfiguration: {
-      Rules: [
-        {
+      Rules: Match.arrayWith([
+        Match.objectLike({
           AbortIncompleteMultipartUpload: {
             DaysAfterInitiation: 1,
           },
           Status: 'Enabled',
-        },
-      ],
+        }),
+        Match.objectLike({
+          Id: "ExpireSegmentExports",
+          ExpirationInDays: 8,
+          Status: "Enabled",
+          TagFilters: [
+            {
+              Key: "dancevault-object",
+              Value: "segment-export",
+            },
+          ],
+        }),
+      ]),
     },
     CorsConfiguration: {
       CorsRules: [
@@ -57,9 +78,7 @@ test('creates a private encrypted development video bucket', () => {
 });
 
 test("creates a private encrypted frontend bucket", () => {
-  const app = new cdk.App();
-  const stack = new InfrastructureStack(app, "TestStack");
-  const template = Template.fromStack(stack);
+  const template = getTemplate();
 
   const buckets =
     template.findResources("AWS::S3::Bucket");
@@ -101,9 +120,7 @@ test("creates a private encrypted frontend bucket", () => {
 });
 
 test('creates a least-privilege role for the local backend', () => {
-  const app = new cdk.App();
-  const stack = new InfrastructureStack(app, 'TestStack');
-  const template = Template.fromStack(stack);
+  const template = getTemplate();
 
   const roles = template.findResources('AWS::IAM::Role');
 
@@ -167,9 +184,7 @@ test('creates a least-privilege role for the local backend', () => {
 });
 
 test('creates Cognito authentication for the development web app', () => {
-  const app = new cdk.App();
-  const stack = new InfrastructureStack(app, 'TestStack');
-  const template = Template.fromStack(stack);
+  const template = getTemplate();
 
   template.resourceCountIs('AWS::Cognito::UserPool', 1);
   template.hasResourceProperties('AWS::Cognito::UserPool', {
@@ -250,9 +265,7 @@ test('creates Cognito authentication for the development web app', () => {
 });
 
 test('creates an encrypted on-demand DanceVault data table', () => {
-  const app = new cdk.App();
-  const stack = new InfrastructureStack(app, 'TestStack');
-  const template = Template.fromStack(stack);
+  const template = getTemplate();
 
   template.resourceCountIs('AWS::DynamoDB::Table', 1);
 
@@ -300,9 +313,7 @@ test('creates an encrypted on-demand DanceVault data table', () => {
 });
 
 test('indexes segments by video and user content by creation time', () => {
-  const app = new cdk.App();
-  const stack = new InfrastructureStack(app, 'TestStack');
-  const template = Template.fromStack(stack);
+  const template = getTemplate();
 
   template.hasResourceProperties('AWS::DynamoDB::Table', {
     GlobalSecondaryIndexes: Match.arrayWith([
@@ -343,9 +354,7 @@ test('indexes segments by video and user content by creation time', () => {
 });
 
 test("creates the development backend Lambda", () => {
-  const app = new cdk.App();
-  const stack = new InfrastructureStack(app, "TestStack");
-  const template = Template.fromStack(stack);
+  const template = getTemplate();
 
   template.hasResourceProperties("AWS::Lambda::Function", {
     FunctionName: "DanceVaultDevelopmentBackend",
@@ -369,6 +378,9 @@ test("creates the development backend Lambda", () => {
         ACCOUNT_DELETION_QUEUE_URL: {
           Ref: Match.stringLikeRegexp("AccountDeletionQueue"),
         },
+        SEGMENT_EXPORT_QUEUE_URL: {
+          Ref: Match.stringLikeRegexp("SegmentExportQueue"),
+        },
         AWS_SQS_REGION: {
           Ref: "AWS::Region",
         },
@@ -376,50 +388,43 @@ test("creates the development backend Lambda", () => {
     },
   });
 
-  template.hasResourceProperties("AWS::IAM::Policy", {
-    PolicyDocument: {
-      Statement: Match.arrayWith([
-        Match.objectLike({
-          Effect: "Allow",
-          Action: Match.arrayWith([
-            "sqs:SendMessage",
-          ]),
-          Resource: {
-            "Fn::GetAtt": [
-              Match.stringLikeRegexp(
-                "VideoDeletionQueue",
-              ),
-              "Arn",
-            ],
-          },
-        }),
-        Match.objectLike({
-          Effect: "Allow",
-          Action: Match.arrayWith([
-            "sqs:SendMessage",
-          ]),
-          Resource: {
-            "Fn::GetAtt": [
-              Match.stringLikeRegexp(
-                "AccountDeletionQueue",
-              ),
-              "Arn",
-            ],
-          },
-        }),
-        Match.objectLike({
-          Effect: "Allow",
-          Action: "s3:ListBucket",
-          Resource: {
-            "Fn::GetAtt": [
-              Match.stringLikeRegexp("VideoBucket"),
-              "Arn",
-            ],
-          },
-        }),
-      ]),
-    },
-  });
+  const functions = template.findResources(
+    "AWS::Lambda::Function",
+  );
+  const backendFunction = Object.values(functions).find(
+    (resource) =>
+      resource.Properties?.FunctionName ===
+      "DanceVaultDevelopmentBackend",
+  );
+
+  if (!backendFunction) {
+    throw new Error("Backend Lambda was not found");
+  }
+
+  const backendRoleLogicalID =
+    backendFunction.Properties.Role["Fn::GetAtt"][0];
+  const policies = template.findResources(
+    "AWS::IAM::Policy",
+  );
+  const backendPolicy = Object.values(policies).find(
+    (resource) =>
+      JSON.stringify(resource.Properties?.Roles).includes(
+        backendRoleLogicalID,
+      ),
+  );
+
+  if (!backendPolicy) {
+    throw new Error("Backend Lambda IAM policy was not found");
+  }
+
+  const policyText = JSON.stringify(
+    backendPolicy.Properties.PolicyDocument.Statement,
+  );
+  expect(policyText).toContain("sqs:SendMessage");
+  expect(policyText).toContain("VideoDeletionQueue");
+  expect(policyText).toContain("AccountDeletionQueue");
+  expect(policyText).toContain("SegmentExportQueue");
+  expect(policyText).toContain("s3:ListBucket");
 
   template.hasResourceProperties("AWS::Logs::LogGroup", {
     LogGroupName:
@@ -428,13 +433,148 @@ test("creates the development backend Lambda", () => {
   });
 });
 
-test("creates the video deletion worker Lambda", () => {
-  const app = new cdk.App();
-  const stack = new InfrastructureStack(
-    app,
-    "TestStack",
+test("creates the segment export worker Lambda", () => {
+  const template = getTemplate();
+
+  template.hasResourceProperties(
+    "AWS::Lambda::Function",
+    {
+      FunctionName:
+        "DanceVaultDevelopmentSegmentExportWorker",
+      Runtime: "nodejs24.x",
+      Architectures: ["x86_64"],
+      Handler: "index.handler",
+      MemorySize: 3008,
+      EphemeralStorage: { Size: 2048 },
+      Timeout: 900,
+      Environment: {
+        Variables: Match.objectLike({
+          APP_ENVIRONMENT: "dev",
+          AWS_DYNAMODB_REGION: {
+            Ref: "AWS::Region",
+          },
+          DYNAMODB_TABLE_NAME: {
+            Ref: Match.stringLikeRegexp(
+              "DataTable",
+            ),
+          },
+          AWS_S3_REGION: {
+            Ref: "AWS::Region",
+          },
+          AWS_S3_BUCKET: {
+            Ref: Match.stringLikeRegexp(
+              "VideoBucket",
+            ),
+          },
+        }),
+      },
+    },
   );
-  const template = Template.fromStack(stack);
+
+  template.hasResourceProperties(
+    "AWS::Lambda::EventSourceMapping",
+    {
+      BatchSize: 1,
+      ScalingConfig: {
+        MaximumConcurrency: 2,
+      },
+      EventSourceArn: {
+        "Fn::GetAtt": [
+          Match.stringLikeRegexp("SegmentExportQueue"),
+          "Arn",
+        ],
+      },
+      FunctionName: {
+        Ref: Match.stringLikeRegexp(
+          "SegmentExportWorkerFunction",
+        ),
+      },
+    },
+  );
+
+  template.hasResourceProperties(
+    "AWS::Logs::LogGroup",
+    {
+      LogGroupName:
+        "/aws/lambda/DanceVaultDevelopmentSegmentExportWorker",
+      RetentionInDays: 7,
+    },
+  );
+
+  const functions = template.findResources(
+    "AWS::Lambda::Function",
+  );
+  const workerFunction = Object.values(functions).find(
+    (resource) =>
+      resource.Properties?.FunctionName ===
+      "DanceVaultDevelopmentSegmentExportWorker",
+  );
+
+  if (!workerFunction) {
+    throw new Error(
+      "Segment export worker Lambda was not found",
+    );
+  }
+
+  const workerRoleLogicalID =
+    workerFunction.Properties.Role["Fn::GetAtt"][0];
+  const policies = template.findResources(
+    "AWS::IAM::Policy",
+  );
+  const workerPolicy = Object.values(policies).find(
+    (resource) =>
+      JSON.stringify(resource.Properties?.Roles).includes(
+        workerRoleLogicalID,
+      ),
+  );
+
+  if (!workerPolicy) {
+    throw new Error(
+      "Segment export worker IAM policy was not found",
+    );
+  }
+
+  const statements =
+    workerPolicy.Properties.PolicyDocument.Statement;
+
+  expect(statements).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        Effect: "Allow",
+        Action: expect.arrayContaining([
+          "sqs:ReceiveMessage",
+          "sqs:ChangeMessageVisibility",
+          "sqs:DeleteMessage",
+        ]),
+      }),
+      expect.objectContaining({
+        Effect: "Allow",
+        Action: "dynamodb:TransactWriteItems",
+      }),
+      expect.objectContaining({
+        Effect: "Allow",
+        Action: "s3:GetObject",
+        Resource: expect.objectContaining({
+          "Fn::Join": expect.any(Array),
+        }),
+      }),
+      expect.objectContaining({
+        Effect: "Allow",
+        Action: expect.arrayContaining([
+          "s3:PutObject",
+          "s3:PutObjectTagging",
+          "s3:DeleteObject",
+        ]),
+        Resource: expect.objectContaining({
+          "Fn::Join": expect.any(Array),
+        }),
+      }),
+    ]),
+  );
+});
+
+test("creates the video deletion worker Lambda", () => {
+  const template = getTemplate();
 
   template.hasResourceProperties(
     "AWS::Lambda::Function",
@@ -571,12 +711,7 @@ test("creates the video deletion worker Lambda", () => {
 });
 
 test("creates the account deletion worker Lambda", () => {
-  const app = new cdk.App();
-  const stack = new InfrastructureStack(
-    app,
-    "TestStack",
-  );
-  const template = Template.fromStack(stack);
+  const template = getTemplate();
 
   template.hasResourceProperties(
     "AWS::Lambda::Function",
@@ -730,9 +865,7 @@ test("creates the account deletion worker Lambda", () => {
 });
 
 test("creates an HTTP API connected to the backend Lambda", () => {
-  const app = new cdk.App();
-  const stack = new InfrastructureStack(app, "TestStack");
-  const template = Template.fromStack(stack);
+  const template = getTemplate();
 
   template.hasResourceProperties("AWS::ApiGatewayV2::Api", {
     Name: "DanceVaultDevelopmentAPI",
@@ -831,9 +964,7 @@ test("creates an HTTP API connected to the backend Lambda", () => {
 });
 
 test("monitors development backend failures and emails operations alerts", () => {
-  const app = new cdk.App();
-  const stack = new InfrastructureStack(app, "TestStack");
-  const template = Template.fromStack(stack);
+  const template = getTemplate();
 
   template.hasParameter("MonitoringAlertEmail", {
     Type: "String",
@@ -851,7 +982,7 @@ test("monitors development backend failures and emails operations alerts", () =>
     },
   });
 
-  template.resourceCountIs("AWS::CloudWatch::Alarm", 9);
+  template.resourceCountIs("AWS::CloudWatch::Alarm", 10);
 
   for (const alarmName of [
     "DanceVaultDevelopment-LambdaErrors",
@@ -860,6 +991,7 @@ test("monitors development backend failures and emails operations alerts", () =>
     "DanceVaultDevelopment-DynamoDBThrottles",
     "DanceVaultDevelopment-VideoDeletionDeadLetters",
     "DanceVaultDevelopment-AccountDeletionDeadLetters",
+    "DanceVaultDevelopment-SegmentExportDeadLetters",
     "DanceVaultDevelopment-SignUpThrottles",
   ]) {
     template.hasResourceProperties("AWS::CloudWatch::Alarm", {
@@ -876,6 +1008,28 @@ test("monitors development backend failures and emails operations alerts", () =>
       ]),
     });
   }
+
+  template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+    AlarmName:
+      "DanceVaultDevelopment-SegmentExportDeadLetters",
+    Namespace: "AWS/SQS",
+    MetricName:
+      "ApproximateNumberOfMessagesVisible",
+    Statistic: "Maximum",
+    Dimensions: Match.arrayWith([
+      Match.objectLike({
+        Name: "QueueName",
+        Value: {
+          "Fn::GetAtt": [
+            Match.stringLikeRegexp(
+              "SegmentExportDeadLetterQueue",
+            ),
+            "QueueName",
+          ],
+        },
+      }),
+    ]),
+  });
 
   template.hasResourceProperties("AWS::CloudWatch::Alarm", {
     AlarmName: "DanceVaultDevelopment-LambdaErrors",
@@ -990,7 +1144,7 @@ test("monitors development backend failures and emails operations alerts", () =>
     "Recent API failures",
   );
   expect(JSON.stringify(dashboards)).toContain(
-    "Failed deletion jobs",
+    "Failed background jobs",
   );
   expect(JSON.stringify(dashboards)).toContain(
     "User registration",
@@ -998,9 +1152,7 @@ test("monitors development backend failures and emails operations alerts", () =>
 });
 
 test("hosts the frontend through CloudFront", () => {
-  const app = new cdk.App();
-  const stack = new InfrastructureStack(app, "TestStack");
-  const template = Template.fromStack(stack);
+  const template = getTemplate();
 
   template.hasResourceProperties(
     "AWS::CloudFront::Distribution",
@@ -1066,18 +1218,41 @@ test("hosts the frontend through CloudFront", () => {
   );
 });
 
-test("creates retryable deletion queues", () => {
-  const app = new cdk.App();
-  const stack = new InfrastructureStack(app, "TestStack");
-  const template = Template.fromStack(stack);
+test("creates retryable background job queues", () => {
+  const template = getTemplate();
 
-  template.resourceCountIs("AWS::SQS::Queue", 4);
+  template.resourceCountIs("AWS::SQS::Queue", 6);
 
   template.hasResourceProperties("AWS::SQS::Queue", {
     QueueName:
       "DanceVaultDevelopmentVideoDeletionDeadLetters",
     MessageRetentionPeriod: 1_209_600,
     SqsManagedSseEnabled: true,
+  });
+
+  template.hasResourceProperties("AWS::SQS::Queue", {
+    QueueName:
+      "DanceVaultDevelopmentSegmentExportDeadLetters",
+    MessageRetentionPeriod: 1_209_600,
+    SqsManagedSseEnabled: true,
+  });
+
+  template.hasResourceProperties("AWS::SQS::Queue", {
+    QueueName: "DanceVaultDevelopmentSegmentExportJobs",
+    MessageRetentionPeriod: 1_209_600,
+    VisibilityTimeout: 960,
+    SqsManagedSseEnabled: true,
+    RedrivePolicy: {
+      deadLetterTargetArn: {
+        "Fn::GetAtt": [
+          Match.stringLikeRegexp(
+            "SegmentExportDeadLetterQueue",
+          ),
+          "Arn",
+        ],
+      },
+      maxReceiveCount: 5,
+    },
   });
 
   template.hasResourceProperties("AWS::SQS::Queue", {

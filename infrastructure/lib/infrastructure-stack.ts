@@ -155,6 +155,34 @@ export class InfrastructureStack extends cdk.Stack {
       },
     );
 
+    const segmentExportDeadLetterQueue = new sqs.Queue(
+      this,
+      "SegmentExportDeadLetterQueue",
+      {
+        queueName:
+          "DanceVaultDevelopmentSegmentExportDeadLetters",
+        encryption: sqs.QueueEncryption.SQS_MANAGED,
+        retentionPeriod: cdk.Duration.days(14),
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
+
+    const segmentExportQueue = new sqs.Queue(
+      this,
+      "SegmentExportQueue",
+      {
+        queueName: "DanceVaultDevelopmentSegmentExportJobs",
+        encryption: sqs.QueueEncryption.SQS_MANAGED,
+        retentionPeriod: cdk.Duration.days(14),
+        visibilityTimeout: cdk.Duration.minutes(16),
+        deadLetterQueue: {
+          queue: segmentExportDeadLetterQueue,
+          maxReceiveCount: 5,
+        },
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
+
     const userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: 'DanceVaultDevelopmentUsers',
       featurePlan: cognito.FeaturePlan.ESSENTIALS,
@@ -449,6 +477,13 @@ export class InfrastructureStack extends cdk.Stack {
         {
           abortIncompleteMultipartUploadAfter: cdk.Duration.days(1),
         },
+        {
+          id: "ExpireSegmentExports",
+          expiration: cdk.Duration.days(8),
+          tagFilters: {
+            "dancevault-object": "segment-export",
+          },
+        },
       ],
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
@@ -588,6 +623,8 @@ export class InfrastructureStack extends cdk.Stack {
           VIDEO_DELETION_QUEUE_URL: videoDeletionQueue.queueUrl,
           ACCOUNT_DELETION_QUEUE_URL:
             accountDeletionQueue.queueUrl,
+          SEGMENT_EXPORT_QUEUE_URL:
+            segmentExportQueue.queueUrl,
           AWS_SQS_REGION: this.region,
         },
       },
@@ -595,6 +632,7 @@ export class InfrastructureStack extends cdk.Stack {
 
     videoDeletionQueue.grantSendMessages(backendFunction);
     accountDeletionQueue.grantSendMessages(backendFunction);
+    segmentExportQueue.grantSendMessages(backendFunction);
 
     const videoDeletionWorkerFunctionName =
       "DanceVaultDevelopmentVideoDeletionWorker";
@@ -671,6 +709,117 @@ export class InfrastructureStack extends cdk.Stack {
     );
     videoBucket.grantDelete(
       videoDeletionWorkerFunction,
+    );
+
+    const segmentExportWorkerFunctionName =
+      "DanceVaultDevelopmentSegmentExportWorker";
+
+    const segmentExportWorkerLogGroup = new logs.LogGroup(
+      this,
+      "SegmentExportWorkerLogGroup",
+      {
+        logGroupName:
+          `/aws/lambda/${segmentExportWorkerFunctionName}`,
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
+
+    const segmentExportWorkerFunction =
+      new lambdaNodejs.NodejsFunction(
+        this,
+        "SegmentExportWorkerFunction",
+        {
+          functionName: segmentExportWorkerFunctionName,
+          logGroup: segmentExportWorkerLogGroup,
+          entry: path.join(
+            __dirname,
+            "../../backend/src/jobs/segmentExportWorkerHandler.ts",
+          ),
+          projectRoot: path.join(
+            __dirname,
+            "../../backend",
+          ),
+          depsLockFilePath: path.join(
+            __dirname,
+            "../../backend/package-lock.json",
+          ),
+          handler: "handler",
+          runtime: lambda.Runtime.NODEJS_24_X,
+          architecture: lambda.Architecture.X86_64,
+          memorySize: 3008,
+          ephemeralStorageSize: cdk.Size.gibibytes(2),
+          timeout: cdk.Duration.minutes(15),
+          bundling: {
+            bundleAwsSDK: true,
+            sourceMap: true,
+            nodeModules: ["ffmpeg-static"],
+            forceDockerBundling: true,
+            commandHooks: {
+              beforeInstall() {
+                return [
+                  "npm config set allow-scripts=ffmpeg-static --location=user",
+                ];
+              },
+              beforeBundling() {
+                return [];
+              },
+              afterBundling() {
+                return [
+                  "test -x /asset-output/node_modules/ffmpeg-static/ffmpeg && /asset-output/node_modules/ffmpeg-static/ffmpeg -version >/dev/null",
+                ];
+              },
+            },
+          },
+          environment: {
+            APP_ENVIRONMENT: "dev",
+            AWS_DYNAMODB_REGION: this.region,
+            DYNAMODB_TABLE_NAME: dataTable.tableName,
+            AWS_S3_REGION: this.region,
+            AWS_S3_BUCKET: videoBucket.bucketName,
+          },
+        },
+      );
+
+    segmentExportWorkerFunction.addEventSource(
+      new lambdaEventSources.SqsEventSource(
+        segmentExportQueue,
+        {
+          batchSize: 1,
+          maxConcurrency: 2,
+        },
+      ),
+    );
+
+    dataTable.grantReadWriteData(segmentExportWorkerFunction);
+    segmentExportWorkerFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["dynamodb:TransactWriteItems"],
+        resources: [dataTable.tableArn],
+      }),
+    );
+    segmentExportWorkerFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["s3:GetObject"],
+        resources: [
+          `${videoBucket.bucketArn}/users/*/videos/*`,
+        ],
+      }),
+    );
+    segmentExportWorkerFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "s3:PutObject",
+          "s3:PutObjectTagging",
+          "s3:DeleteObject",
+        ],
+        resources: [
+          `${videoBucket.bucketArn}/users/*/exports/segments/*`,
+        ],
+      }),
     );
 
     const accountDeletionWorkerFunctionName =
@@ -976,6 +1125,12 @@ export class InfrastructureStack extends cdk.Stack {
           period: monitoringPeriod,
           statistic: "Maximum",
         });
+    const failedSegmentExportJobs =
+      segmentExportDeadLetterQueue
+        .metricApproximateNumberOfMessagesVisible({
+          period: monitoringPeriod,
+          statistic: "Maximum",
+        });
 
     const operationsAlertTopic = new sns.Topic(
       this,
@@ -1106,6 +1261,27 @@ export class InfrastructureStack extends cdk.Stack {
         },
       );
 
+    const segmentExportDeadLetterAlarm =
+      new cloudWatch.Alarm(
+        this,
+        "SegmentExportDeadLetterAlarm",
+        {
+          alarmName:
+            "DanceVaultDevelopment-SegmentExportDeadLetters",
+          alarmDescription:
+            "At least one segment export job exhausted all retries.",
+          metric: failedSegmentExportJobs,
+          threshold: 1,
+          evaluationPeriods: 1,
+          datapointsToAlarm: 1,
+          comparisonOperator:
+            cloudWatch.ComparisonOperator
+              .GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+          treatMissingData:
+            cloudWatch.TreatMissingData.NOT_BREACHING,
+        },
+      );
+
     const unusualSignUpVolumeAlarm = new cloudWatch.Alarm(
       this,
       "UnusualSignUpVolumeAlarm",
@@ -1173,6 +1349,7 @@ export class InfrastructureStack extends cdk.Stack {
       dynamoDBThrottleAlarm,
       videoDeletionDeadLetterAlarm,
       accountDeletionDeadLetterAlarm,
+      segmentExportDeadLetterAlarm,
       unusualSignUpVolumeAlarm,
       failedSignUpVolumeAlarm,
       signUpThrottleAlarm,
@@ -1235,10 +1412,11 @@ export class InfrastructureStack extends cdk.Stack {
         width: 12,
       }),
       new cloudWatch.GraphWidget({
-        title: "Failed deletion jobs",
+        title: "Failed background jobs",
         left: [
           failedVideoDeletionJobs,
           failedAccountDeletionJobs,
+          failedSegmentExportJobs,
         ],
         width: 12,
       }),

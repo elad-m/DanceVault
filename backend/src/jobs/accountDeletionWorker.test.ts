@@ -5,6 +5,10 @@ import type { VideoDataAccessItem } from "../persistence/videoDataAccess";
 import type { VideoStorageProvider } from "../storage";
 import type { AccountDeletionJob } from "./accountDeletionQueue";
 import { processAccountDeletionJob } from "./accountDeletionWorker";
+import {
+    createUnusedSegmentExportDataAccess,
+    createUnusedSegmentExportStorageProvider,
+} from "../test/routeTestSupport";
 
 const deletionRequestedAt = "2026-09-10T12:00:00.000Z";
 const job: AccountDeletionJob = {
@@ -125,6 +129,8 @@ function createWorkerTestContext(input: {
             async updateSegmentMetadata() { throw new Error("Not used by worker tests"); },
             async deleteSegment() { throw new Error("Not used by worker tests"); },
         },
+        segmentExportDataAccess:
+            createUnusedSegmentExportDataAccess(),
         mainListDataAccess: {
             async getMainList() { throw new Error("Not used by worker tests"); },
             async saveMainList() { throw new Error("Not used by worker tests"); },
@@ -171,6 +177,8 @@ function createWorkerTestContext(input: {
         persistenceProvider,
         videoStorageProvider,
         userIdentityProvider,
+        segmentExportStorageProvider:
+            createUnusedSegmentExportStorageProvider(),
         setIdentityError(error: Error | null) {
             identityError = error;
         },

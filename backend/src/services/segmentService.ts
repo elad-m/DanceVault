@@ -8,6 +8,9 @@ import {
 } from "../domain/segment";
 import { randomUUID } from "node:crypto";
 import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
+import type { SegmentExportDataAccess } from "../persistence/segmentExportDataAccess";
+import type { SegmentExportStorageProvider } from "../storage/segmentExportStorageProvider";
+import { deleteSegmentExport } from "./segmentExportService";
 import {
     videoUrlExpirationSeconds,
     type VideoStorageProvider,
@@ -227,7 +230,10 @@ export async function getSegmentThumbnailPlaybackUrl(
 }
 
 export async function deleteSegmentWithThumbnail(
-    input: SegmentThumbnailStorageInput
+    input: SegmentThumbnailStorageInput & {
+        segmentExportDataAccess: SegmentExportDataAccess;
+        segmentExportStorageProvider: SegmentExportStorageProvider;
+    }
 ): Promise<DeleteSegmentWithThumbnailResult> {
     const segment =
         await input.segmentDataAccess.getSegmentByID({
@@ -240,6 +246,14 @@ export async function deleteSegmentWithThumbnail(
             kind: "not_found",
         };
     }
+
+    await deleteSegmentExport({
+        userID: input.userId,
+        segmentID: segment.id,
+        segmentExportDataAccess: input.segmentExportDataAccess,
+        segmentExportStorageProvider:
+            input.segmentExportStorageProvider,
+    });
 
     const storageKey = createSegmentThumbnailStorageKey({
         userId: input.userId,

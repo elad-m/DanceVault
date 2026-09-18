@@ -29,6 +29,8 @@ import {
 import type { SegmentDataAccess } from "../persistence/segmentDataAccess";
 import type { VideoDataAccess } from "../persistence/videoDataAccess";
 import type { VideoStorageProvider } from "../storage";
+import type { SegmentExportDataAccess } from "../persistence/segmentExportDataAccess";
+import type { SegmentExportStorageProvider } from "../storage/segmentExportStorageProvider";
 import {
     SegmentQuotaExceededError,
     type SegmentQuotaLimitName,
@@ -509,13 +511,17 @@ async function deleteSegmentHandler(
     request: FastifyRequest<SegmentParams>,
     reply: FastifyReply,
     videoStorageProvider: VideoStorageProvider,
-    segmentDataAccess: SegmentDataAccess
+    segmentDataAccess: SegmentDataAccess,
+    segmentExportDataAccess: SegmentExportDataAccess,
+    segmentExportStorageProvider: SegmentExportStorageProvider
 ) {
     const result = await deleteSegmentWithThumbnail({
         userId: request.userId,
         segmentId: request.params.segmentId,
         videoStorageProvider,
         segmentDataAccess,
+        segmentExportDataAccess,
+        segmentExportStorageProvider,
     });
 
     if (result.kind === "not_found") {
@@ -541,7 +547,9 @@ export function registerSegmentRoutes(
     app: FastifyInstance,
     videoStorageProvider: VideoStorageProvider,
     videoDataAccess: VideoDataAccess,
-    segmentDataAccess: SegmentDataAccess
+    segmentDataAccess: SegmentDataAccess,
+    segmentExportDataAccess: SegmentExportDataAccess,
+    segmentExportStorageProvider: SegmentExportStorageProvider
 ) {
     app.post<CreateSegmentRequest>(
         "/videos/:videoId/segments",
@@ -598,7 +606,9 @@ export function registerSegmentRoutes(
                 request,
                 reply,
                 videoStorageProvider,
-                segmentDataAccess
+                segmentDataAccess,
+                segmentExportDataAccess,
+                segmentExportStorageProvider
             )
     );
     app.post<CreateSegmentThumbnailUploadRequest>(
